@@ -321,7 +321,8 @@ async function generateSynthesis(args: {
   return generateObject({
     model: args.model,
     schema: synthesisSchema,
-    maxOutputTokens: 2048,
+    // Gemini flash can spend most of a small budget on reasoning tokens.
+    maxOutputTokens: 4096,
     system: `You write the cross-cutting synthesis for a daily market/tech email.
 Only use the provided today/previous brief material. Do not invent facts.
 

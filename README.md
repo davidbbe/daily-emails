@@ -16,7 +16,8 @@ Every day at **12:00 UTC** (Hobby timing may land anytime in the 12:00–12:59 w
 6. Compares against yesterday’s snapshot for **trend movers** and **watchlist delta**
 7. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
 8. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest
-9. Saves a slim snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
+9. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
+10. Saves a slim snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
 
 Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGIONS`, `DEFAULT_MODEL`).
 
@@ -36,6 +37,7 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 | **Web trends · Thailand / Bulgaria** | Google Trends RSS (`geo=TH`, `geo=BG`) | Localize + short description; email shows **traffic + news links** |
 | **Also rising in 2+ regions** | — | **No LLM** — string match on English titles |
 | **Trend movers** | Previous brief snapshot | **No LLM** — new today / still rising / fell off |
+| **Usage watch** | AI Gateway, Fast Origin Transfer, Blob size/ops, function invocations, Resend | **No LLM** — flags anything ≥50% of its Hobby/free limit |
 | **Delivery** | — | **Resend API** sends HTML + plain-text email |
 
 In practice that means **up to four** Gateway model calls per daily run:
@@ -57,15 +59,20 @@ cp .env.example .env
 
 2. Fill in:
 
-| Variable                 | Required | Notes                                                                                                      |
-| ------------------------ | -------- | ---------------------------------------------------------------------------------------------------------- |
-| `RESEND_API_KEY`         | Yes      | From [Resend](https://resend.com)                                                                          |
-| `EMAIL_FROM`             | Yes      | Verified Resend domain (sent as `Agent Dave <EMAIL_FROM>`)                                                 |
-| `EMAIL_TO`               | No       | Defaults to `streethouse4@gmail.com`                                                                       |
-| `CRON_SECRET`            | Prod     | Random string; same value in Vercel env                                                                    |
-| `AI_GATEWAY_API_KEY`     | Local    | From the [AI Gateway](https://vercel.com/docs/ai-gateway) dashboard; on Vercel, OIDC can work without this |
-| `AI_MODEL`               | No       | Defaults to `google/gemini-2.5-flash`                                                                      |
-| `BLOB_READ_WRITE_TOKEN`  | Prod*    | From a [Vercel Blob](https://vercel.com/docs/vercel-blob) store — enables durable day-over-day history     |
+| Variable                     | Required | Notes                                                                                                      |
+| ---------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| `RESEND_API_KEY`             | Yes      | From [Resend](https://resend.com)                                                                          |
+| `EMAIL_FROM`                 | Yes      | Verified Resend domain (sent as `Agent Dave <EMAIL_FROM>`)                                                 |
+| `EMAIL_TO`                   | No       | Defaults to `streethouse4@gmail.com`                                                                       |
+| `CRON_SECRET`                | Prod     | Random string; same value in Vercel env                                                                    |
+| `AI_GATEWAY_API_KEY`         | Local    | From the [AI Gateway](https://vercel.com/docs/ai-gateway) dashboard; on Vercel, OIDC can work without this |
+| `AI_MODEL`                   | No       | Defaults to `google/gemini-2.5-flash`                                                                      |
+| `AI_GATEWAY_MONTHLY_BUDGET`  | No       | USD free-credit budget for usage watch (default `5`)                                                       |
+| `RESEND_DAILY_LIMIT`         | No       | Daily email quota for usage watch (default `100`)                                                          |
+| `RESEND_MONTHLY_LIMIT`       | No       | Monthly email quota for usage watch (default `3000`)                                                       |
+| `BLOB_READ_WRITE_TOKEN`      | Prod*    | From a [Vercel Blob](https://vercel.com/docs/vercel-blob) store — enables durable day-over-day history     |
+| `VERCEL_TOKEN`               | Prod*    | [Account token](https://vercel.com/account/tokens) for Fast Origin Transfer / platform usage via `/v2/usage` |
+| `VERCEL_TEAM_ID`             | No       | Team id (defaults to `orgId` in `.vercel/project.json` when linked)                                      |
 
 \*Without Blob, local runs still persist to `.data/previous-brief.json`. On Vercel without Blob, day-over-day sections stay empty until a store is connected.
 
@@ -101,6 +108,7 @@ Optional: set `AI_MODEL` to any free-tier Gateway model slug.
 ## Free-tier notes
 
 - **Vercel Hobby**: up to **100 cron jobs** per project, but each may run **only once per day** (no hourly/minute schedules). Timing has a flexible **1-hour** window (e.g. `0 12 * * *` may fire anytime 12:00–12:59 UTC). This project’s noon schedule qualifies.
-- **Resend free**: 100 emails/day — one daily digest is fine
-- **AI Gateway**: every Vercel team gets **$5 of monthly free credits** that AI Gateway uses. That is more than enough for this once-daily brief on a lite/flash model. Credits start on first Gateway request; buying paid credits moves you off the monthly free allowance. Monitor usage in the AI Gateway dashboard.
-- **Vercel Blob**: free tier is enough for one small JSON snapshot overwritten daily
+- **AI Gateway**: every Vercel team gets **$5 of monthly free credits** that AI Gateway uses. That is more than enough for this once-daily brief on a lite/flash model. Credits start on first Gateway request; buying paid credits moves you off the monthly free allowance. The daily email reports remaining balance and flags usage ≥50% of `AI_GATEWAY_MONTHLY_BUDGET` (default $5).
+- **Fast Origin Transfer**: Hobby includes **10 GB** (rolling ~30 days). The daily email reads this from Vercel’s `/v2/usage` API when `VERCEL_TOKEN` is set (CLI auth works locally).
+- **Vercel Blob**: Hobby includes **1 GB** storage, **10k** simple ops, and **2k** advanced ops. Storage size comes from `list()`; ops come from `/v2/usage`.
+- **Resend free**: 100 emails/day and 3,000/month — one daily digest is fine; quotas appear in the usage section when Resend returns quota headers (or from the last send cache for send-only keys).

@@ -24,6 +24,29 @@ export type TrendRegionId = (typeof TREND_REGIONS)[number]["id"];
 /** Free-tier-friendly Gateway model with reliable structured output */
 export const DEFAULT_MODEL = "google/gemini-2.5-flash";
 
+/** Flag metrics in the daily email when used/limit is at or above this % */
+export const USAGE_WATCH_THRESHOLD = 50;
+
+/** Default AI Gateway free monthly credit allowance (USD) */
+export const AI_GATEWAY_MONTHLY_BUDGET_USD = 5;
+
+/** Hobby Blob included storage (1 GB) for near-limit watch */
+export const BLOB_HOBBY_STORAGE_BYTES = 1 * 1024 * 1024 * 1024;
+
+/** Hobby Blob included operations (per month / rolling window) */
+export const BLOB_HOBBY_SIMPLE_OPS = 10_000;
+export const BLOB_HOBBY_ADVANCED_OPS = 2_000;
+
+/** Hobby Fast Origin Transfer included (10 GB) */
+export const HOBBY_FAST_ORIGIN_TRANSFER_BYTES = 10 * 1024 * 1024 * 1024;
+
+/** Hobby Function Invocations included */
+export const HOBBY_FUNCTION_INVOCATIONS = 1_000_000;
+
+/** Resend free-plan email quotas */
+export const RESEND_DAILY_LIMIT = 100;
+export const RESEND_MONTHLY_LIMIT = 3000;
+
 export function getModel() {
   return process.env.AI_MODEL?.trim() || DEFAULT_MODEL;
 }

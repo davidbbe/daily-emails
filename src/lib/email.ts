@@ -1,4 +1,3 @@
-import { Resend } from "resend";
 import type {
   BulletFlag,
   DailyBrief,
@@ -6,7 +5,15 @@ import type {
   TrendMovers,
 } from "@/lib/brief";
 import { getEmailFrom, getEmailTo, PEOPLE, TICKERS } from "@/lib/config";
+import { formatHumanDate } from "@/lib/dates";
 import type { BriefTrendItem } from "@/lib/trends";
+import {
+  formatMetricLimit,
+  formatMetricUsed,
+  persistResendQuotaFromHeaders,
+  type UsageMetric,
+  type UsageReport,
+} from "@/lib/usage";
 
 const FONT =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
@@ -339,9 +346,103 @@ function renderTrendMovers(movers: TrendMovers, hasPrevious: boolean) {
   </tr>`;
 }
 
-export function renderBriefHtml(brief: DailyBrief) {
-  const date = new Date(brief.generatedAt).toUTCString();
-  const dateShort = new Date(brief.generatedAt).toISOString().slice(0, 10);
+function percentColor(percent: number, available: boolean) {
+  if (!available) return "#94a3b8";
+  if (percent >= 90) return "#b42318";
+  if (percent >= 70) return "#b45309";
+  if (percent >= 50) return "#a16207";
+  return "#047857";
+}
+
+function renderUsageWatch(usage: UsageReport) {
+  if (usage.watch.length === 0) {
+    return `<tr>
+      <td style="padding:0 0 14px 0;">
+        <div style="font-size:14px;line-height:1.5;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:14px 16px;">
+          All tracked quotas are under ${usage.thresholdPercent}% of their limits.
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  const rows = usage.watch
+    .map((m) => {
+      const color = percentColor(m.percent, true);
+      return `<tr>
+        <td style="padding:8px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
+          <div style="font-size:14px;font-weight:650;color:#0f172a;">${escapeHtml(m.label)}</div>
+          <div style="margin-top:2px;font-size:13px;color:#475569;">${escapeHtml(m.detail)}</div>
+        </td>
+        <td style="padding:8px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;text-align:right;white-space:nowrap;">
+          <span style="font-size:16px;font-weight:750;color:${color};">${m.percent}%</span>
+        </td>
+      </tr>`;
+    })
+    .join("");
+
+  return `<tr>
+    <td style="padding:0 0 14px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:14px;overflow:hidden;">
+        <tr>
+          <td style="padding:12px 16px;border-bottom:1px solid #fde68a;">
+            <span style="font-size:15px;font-weight:700;color:#92400e;">Usage watch</span>
+            <span style="margin-left:8px;font-size:12px;color:#b45309;">≥ ${usage.thresholdPercent}% of limit</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 16px 8px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>`;
+}
+
+function renderUsageRow(m: UsageMetric) {
+  const color = percentColor(m.percent, m.available);
+  const pct = m.available ? `${m.percent}%` : "—";
+  const usedLimit = m.available
+    ? `${formatMetricUsed(m)} / ${formatMetricLimit(m)}`
+    : "n/a";
+  return `<tr>
+    <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
+      <div style="font-size:14px;font-weight:650;color:#0f172a;">${escapeHtml(m.label)}</div>
+      <div style="margin-top:2px;font-size:12px;line-height:1.45;color:#64748b;">${escapeHtml(m.detail)}</div>
+    </td>
+    <td style="padding:10px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top;text-align:right;white-space:nowrap;">
+      <div style="font-size:13px;font-weight:600;color:#334155;">${escapeHtml(usedLimit)}</div>
+      <div style="margin-top:2px;font-size:15px;font-weight:750;color:${color};">${pct}</div>
+    </td>
+  </tr>`;
+}
+
+function renderUsageReport(usage: UsageReport) {
+  const rows = usage.metrics.map(renderUsageRow).join("");
+  return `
+    ${renderUsageWatch(usage)}
+    <tr>
+      <td style="padding:0 0 14px 0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+          <tr>
+            <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
+              <span style="font-size:15px;font-weight:700;color:#0f172a;">Vercel &amp; delivery usage</span>
+              <span style="margin-left:8px;font-size:12px;color:#94a3b8;">Gateway · FOT · Blob · Resend</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:4px 16px 8px 16px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`;
+}
+
+export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
+  const date = formatHumanDate(brief.generatedAt);
+  const dateShort = formatHumanDate(brief.generatedAt, { withTime: false });
 
   const tickerSections = TICKERS.map((ticker) => {
     const section = brief.tickers.find((t) => t.id === ticker.id);
@@ -516,6 +617,8 @@ export function renderBriefHtml(brief: DailyBrief) {
             ${sectionLabel("Trend movers")}
             ${renderTrendMovers(brief.trendMovers, brief.hasPreviousBrief)}
 
+            ${usage ? `${sectionLabel("Usage")}${renderUsageReport(usage)}` : ""}
+
             <tr>
               <td style="padding:18px 8px 8px 8px;text-align:center;">
                 <div style="font-size:12px;line-height:1.5;color:#94a3b8;">
@@ -531,10 +634,10 @@ export function renderBriefHtml(brief: DailyBrief) {
 </html>`;
 }
 
-export function renderBriefText(brief: DailyBrief) {
+export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
   const lines = [
     "Daily Market & Tech Brief",
-    `Past ${brief.windowHours} hours · ${brief.generatedAt} · ${brief.model}`,
+    `Past ${brief.windowHours} hours · ${formatHumanDate(brief.generatedAt)} · ${brief.model}`,
     "",
     "THEME OF THE DAY",
     brief.themeOfTheDay,
@@ -629,29 +732,74 @@ export function renderBriefText(brief: DailyBrief) {
     lines.push(`Fell off: ${brief.trendMovers.fellOff.join(" · ") || "None"}`);
   }
 
+  if (usage) {
+    lines.push("", "USAGE WATCH");
+    if (usage.watch.length === 0) {
+      lines.push(
+        `All tracked quotas are under ${usage.thresholdPercent}% of their limits.`,
+      );
+    } else {
+      for (const m of usage.watch) {
+        lines.push(
+          `- ${m.label}: ${m.percent}% (${formatMetricUsed(m)} / ${formatMetricLimit(m)})`,
+        );
+        lines.push(`  ${m.detail}`);
+      }
+    }
+
+    lines.push("", "VERCEL & DELIVERY USAGE");
+    for (const m of usage.metrics) {
+      if (!m.available) {
+        lines.push(`- ${m.label}: unavailable — ${m.detail}`);
+        continue;
+      }
+      lines.push(
+        `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.percent}%)`,
+      );
+      lines.push(`  ${m.detail}`);
+    }
+  }
+
   return lines.join("\n");
 }
 
-export async function sendBriefEmail(brief: DailyBrief) {
+export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     throw new Error("RESEND_API_KEY is required");
   }
 
-  const resend = new Resend(apiKey);
-  const dateLabel = new Date(brief.generatedAt).toISOString().slice(0, 10);
-
-  const { data, error } = await resend.emails.send({
-    from: getEmailFrom(),
-    to: [getEmailTo()],
-    subject: `Daily Brief · ${dateLabel}`,
-    html: renderBriefHtml(brief),
-    text: renderBriefText(brief),
+  const dateLabel = formatHumanDate(brief.generatedAt, { withTime: false });
+  // Use fetch (not the SDK) so we can read quota response headers — needed for
+  // send-only API keys that cannot call GET /emails.
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: getEmailFrom(),
+      to: [getEmailTo()],
+      subject: `Daily Brief · ${dateLabel}`,
+      html: renderBriefHtml(brief, usage),
+      text: renderBriefText(brief, usage),
+    }),
   });
 
-  if (error) {
-    throw new Error(`Resend error: ${error.message}`);
+  const payload = (await response.json().catch(() => null)) as {
+    id?: string;
+    message?: string;
+    name?: string;
+  } | null;
+
+  if (!response.ok) {
+    throw new Error(
+      `Resend error: ${payload?.message || response.statusText || response.status}`,
+    );
   }
 
-  return data;
+  await persistResendQuotaFromHeaders(response.headers);
+
+  return payload?.id ? { id: payload.id } : null;
 }

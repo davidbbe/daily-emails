@@ -55,11 +55,17 @@ async function streamToText(stream: ReadableStream<Uint8Array>) {
   return new Response(stream).text();
 }
 
+function blobToken() {
+  return process.env.BLOB_READ_WRITE_TOKEN?.trim() || undefined;
+}
+
 async function loadFromBlob(): Promise<BriefSnapshot | null> {
   try {
+    const token = blobToken();
     const result = await get(BLOB_PATHNAME, {
       access: "private",
       useCache: false,
+      ...(token ? { token } : {}),
     });
     if (!result || result.statusCode !== 200 || !result.stream) return null;
     const text = await streamToText(result.stream);
@@ -71,12 +77,14 @@ async function loadFromBlob(): Promise<BriefSnapshot | null> {
 }
 
 async function saveToBlob(snapshot: BriefSnapshot) {
+  const token = blobToken();
   await put(BLOB_PATHNAME, JSON.stringify(snapshot, null, 2), {
     access: "private",
     contentType: "application/json",
     allowOverwrite: true,
     addRandomSuffix: false,
     cacheControlMaxAge: 60,
+    ...(token ? { token } : {}),
   });
 }
 

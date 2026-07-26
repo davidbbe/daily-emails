@@ -2,6 +2,7 @@ import { generateDailyBrief } from "@/lib/brief";
 import { sendBriefEmail } from "@/lib/email";
 import { loadPreviousBrief, savePreviousBrief, toSnapshot } from "@/lib/history";
 import { collectResearch } from "@/lib/research";
+import { collectUsageReport } from "@/lib/usage";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -27,7 +28,9 @@ export async function GET(request: Request) {
     const research = await collectResearch(24);
     const brief = await generateDailyBrief(research, previous);
     await savePreviousBrief(toSnapshot(brief));
-    const email = await sendBriefEmail(brief);
+    // Collect after the brief so AI Gateway balance includes today's spend.
+    const usage = await collectUsageReport();
+    const email = await sendBriefEmail(brief, usage);
 
     return Response.json({
       ok: true,
@@ -57,6 +60,21 @@ export async function GET(request: Request) {
         newToday: brief.trendMovers.newToday.length,
         stillRising: brief.trendMovers.stillRising.length,
         fellOff: brief.trendMovers.fellOff.length,
+      },
+      usage: {
+        thresholdPercent: usage.thresholdPercent,
+        watch: usage.watch.map((m) => ({
+          id: m.id,
+          label: m.label,
+          percent: m.percent,
+        })),
+        metrics: usage.metrics.map((m) => ({
+          id: m.id,
+          label: m.label,
+          percent: m.percent,
+          available: m.available,
+          detail: m.detail,
+        })),
       },
     });
   } catch (error) {
