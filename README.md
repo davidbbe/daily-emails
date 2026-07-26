@@ -1,10 +1,10 @@
 # Agent Dave
 
-Daily noon-UTC email brief for markets, tech people, catalysts, and web trends.
+Daily 09:00-UTC email brief for markets, tech people, catalysts, and web trends.
 
 ## What it does
 
-Every day at **12:00 UTC** (Hobby timing may land anytime in the 12:00–12:59 window), Vercel Cron hits `/api/daily-brief`, which:
+Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 window), Vercel Cron hits `/api/daily-brief`, which:
 
 1. Pulls the last 24 hours of Google News headlines for **TSLA, MU, META, BTC**
 2. Checks for speeches/announcements by **Andrej Karpathy, Jensen Huang, Alex Karp, Sam Altman**
@@ -101,13 +101,13 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://your-app.vercel.app/api/dai
 2. Set env vars: `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_TO`, `CRON_SECRET`
 3. (Recommended) Create a Blob store and set `BLOB_READ_WRITE_TOKEN` for day-over-day movers / watchlist delta
 4. Deploy to **Production** (crons only run on production)
-5. Cron schedule is defined in `vercel.json`: `0 12 * * *` → `/api/daily-brief`
+5. Cron schedule is defined in `vercel.json`: `0 9 * * *` → `/api/daily-brief`
 
 Optional: set `AI_MODEL` to any free-tier Gateway model slug.
 
 ## Free-tier notes
 
-- **Vercel Hobby**: up to **100 cron jobs** per project, but each may run **only once per day** (no hourly/minute schedules). Timing has a flexible **1-hour** window (e.g. `0 12 * * *` may fire anytime 12:00–12:59 UTC). This project’s noon schedule qualifies.
+- **Vercel Hobby**: up to **100 cron jobs** per project, but each may run **only once per day** (no hourly/minute schedules). Timing has a flexible **1-hour** window (e.g. `0 9 * * *` may fire anytime 09:00–09:59 UTC). This project’s 09:00 UTC schedule qualifies.
 - **AI Gateway**: every Vercel team gets **$5 of monthly free credits** that AI Gateway uses. That is more than enough for this once-daily brief on a lite/flash model. Credits start on first Gateway request; buying paid credits moves you off the monthly free allowance. The daily email reports remaining balance and flags usage ≥50% of `AI_GATEWAY_MONTHLY_BUDGET` (default $5).
 - **Fast Origin Transfer**: Hobby includes **10 GB** (rolling ~30 days). The daily email reads this from Vercel’s `/v2/usage` API when `VERCEL_TOKEN` is set (CLI auth works locally).
 - **Vercel Blob**: Hobby includes **1 GB** storage, **10k** simple ops, and **2k** advanced ops. Storage size comes from `list()`; ops come from `/v2/usage`.
