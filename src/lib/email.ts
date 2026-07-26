@@ -45,17 +45,27 @@ function escapeHtml(value: string) {
     .replaceAll('"', "&quot;");
 }
 
-function sectionLabel(text: string) {
+function sectionDivider() {
   return `<tr>
-    <td style="padding:12px 4px 10px 4px;">
+    <td style="padding:16px 0 0 0;">
+      <div style="height:1px;background:#cbd5e1;line-height:1px;font-size:1px;">&nbsp;</div>
+    </td>
+  </tr>`;
+}
+
+function sectionLabel(text: string, opts?: { first?: boolean }) {
+  const topPad = opts?.first ? "4px" : "22px";
+  return `${opts?.first ? "" : sectionDivider()}
+  <tr>
+    <td style="padding:${topPad} 4px 12px 4px;">
       <div style="font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#475569;">${text}</div>
     </td>
   </tr>`;
 }
 
-function calloutBox(title: string, body: string, accent = "#0f766e") {
+function calloutBox(title: string, body: string, accent = "#0f766e", topPad = "0") {
   return `<tr>
-    <td style="padding:0 0 14px 0;">
+    <td style="padding:${topPad} 0 14px 0;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
         <tr>
           <td style="width:5px;background:${accent};"></td>
@@ -596,7 +606,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             </tr>
 
             ${calloutBox("Theme of the day", brief.themeOfTheDay, "#7c3aed")}
-            ${sectionLabel("Overnight")}
+            ${sectionLabel("Overnight", { first: true })}
             ${renderOvernightOpeners(brief)}
 
             ${sectionLabel("Markets")}
@@ -608,7 +618,8 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             ${sectionLabel("Speeches &amp; announcements")}
             ${peopleSections}
 
-            ${calloutBox("Regional pulse", brief.regionalPulse, "#c2410c")}
+            ${sectionDivider()}
+            ${calloutBox("Regional pulse", brief.regionalPulse, "#c2410c", "22px")}
 
             ${sectionLabel("Web trends")}
             ${trendSections}
