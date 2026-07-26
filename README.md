@@ -103,12 +103,33 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://your-app.vercel.app/api/dai
 4. Deploy to **Production** (crons only run on production)
 5. Cron schedule is defined in `vercel.json`: `0 9 * * *` → `/api/daily-brief`
 
-Optional: set `AI_MODEL` to any free-tier Gateway model slug.
+Optional: set `AI_MODEL` to a free-tier Gateway model slug (see below).
 
 ## Free-tier notes
 
 - **Vercel Hobby**: up to **100 cron jobs** per project, but each may run **only once per day** (no hourly/minute schedules). Timing has a flexible **1-hour** window (e.g. `0 9 * * *` may fire anytime 09:00–09:59 UTC). This project’s 09:00 UTC schedule qualifies.
-- **AI Gateway**: every Vercel team gets **$5 of monthly free credits** that AI Gateway uses. That is more than enough for this once-daily brief on a lite/flash model. Credits start on first Gateway request; buying paid credits moves you off the monthly free allowance. The daily email reports remaining balance and flags usage ≥50% of `AI_GATEWAY_MONTHLY_BUDGET` (default $5).
+- **AI Gateway**: every Vercel team gets **$5 of monthly free credits**. Once-daily briefs on a flash/lite model usually stay well under $1/month. Credits start on the first Gateway request. Free credits only work with [Free Tier models](https://vercel.com/ai-gateway/models?freeTier=true); newer flagships (Gemini 3.x, Claude Sonnet/Opus 4+, GPT-5.4/5.5/5.6 full, Grok 4.3/4.5) are paid-only. Free-tier requests also have lower rate limits (429s are possible). **Buying AI Gateway credits ends the monthly free allowance** for that team. The daily email reports remaining balance and flags usage ≥50% of `AI_GATEWAY_MONTHLY_BUDGET` (default `$5`).
 - **Fast Origin Transfer**: Hobby includes **10 GB** (rolling ~30 days). The daily email reads this from Vercel’s `/v2/usage` API when `VERCEL_TOKEN` is set (CLI auth works locally).
 - **Vercel Blob**: Hobby includes **1 GB** storage, **10k** simple ops, and **2k** advanced ops. Storage size comes from `list()`; ops come from `/v2/usage`.
 - **Resend free**: 100 emails/day and 3,000/month — one daily digest is fine; quotas appear in the usage section when Resend returns quota headers (or from the last send cache for send-only keys).
+
+### Strongest free-tier model alternatives
+
+Default: **`google/gemini-2.5-flash`** (also Google’s strongest free-tier chat model — Gemini 3.x is paid-only). Override with `AI_MODEL`. One strong free-tier option per maker:
+
+| Maker | Model slug | Approx. price (in / out per 1M tokens) | Why consider it |
+| --- | --- | --- | --- |
+| **Google** *(default)* | `google/gemini-2.5-flash` | $0.30 / $2.50 | Best free Google option; reliable structured JSON for this brief |
+| **OpenAI** | `openai/gpt-5.2` | $1.75 / $14.00 | Strongest free OpenAI general model; pricier — still fine for 1 run/day |
+| **xAI** | `xai/grok-4.1-fast-reasoning` | $0.20 / $0.50 | Strongest free Grok; cheap with reasoning |
+| **Anthropic** | `anthropic/claude-3-haiku` | $0.25 / $1.25 | Only Claude on free credits (newer Haiku/Sonnet/Opus are paid-only) |
+| **Meta** | `meta/llama-4-maverick` | $0.24 / $0.97 | Strongest free Llama 4 instruct model |
+| **DeepSeek** | `deepseek/deepseek-r1` | $1.35 / $5.40 | Strongest free DeepSeek for harder synthesis / reasoning |
+
+Example:
+
+```bash
+AI_MODEL=openai/gpt-5.2
+```
+
+Browse the live Free Tier catalog (filters change over time): https://vercel.com/ai-gateway/models?freeTier=true
