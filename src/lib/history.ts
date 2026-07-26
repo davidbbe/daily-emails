@@ -1,0 +1,115 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { get, put } from "@vercel/blob";
+import type { DailyBrief } from "@/lib/brief";
+import type { TrendRegionId } from "@/lib/config";
+
+const BLOB_PATHNAME = "agent-dave/previous-brief.json";
+const LOCAL_PATH = path.join(process.cwd(), ".data", "previous-brief.json");
+
+/** Slim snapshot used for day-over-day comparisons */
+export type BriefSnapshot = {
+  generatedAt: string;
+  tickers: Array<{
+    id: string;
+    bullets: string[];
+    whyItMatters: string;
+  }>;
+  people: Array<{ id: string; summary: string }>;
+  trendTitles: Partial<Record<TrendRegionId, string[]>>;
+  themeOfTheDay: string;
+};
+
+export function toSnapshot(brief: DailyBrief): BriefSnapshot {
+  const trendTitles: BriefSnapshot["trendTitles"] = {};
+  for (const region of brief.trends.regions) {
+    trendTitles[region.id] = region.items.map(
+      (item) => item.titleEn.trim() || item.title.trim(),
+    );
+  }
+
+  return {
+    generatedAt: brief.generatedAt,
+    tickers: brief.tickers.map((t) => ({
+      id: t.id,
+      bullets: t.bullets.map((b) => b.text),
+      whyItMatters: t.whyItMatters,
+    })),
+    people: brief.people.map((p) => ({
+      id: p.id,
+      summary: p.summary,
+    })),
+    trendTitles,
+    themeOfTheDay: brief.themeOfTheDay,
+  };
+}
+
+function canUseBlob() {
+  return Boolean(
+    process.env.BLOB_READ_WRITE_TOKEN?.trim() ||
+      process.env.BLOB_STORE_ID?.trim(),
+  );
+}
+
+async function streamToText(stream: ReadableStream<Uint8Array>) {
+  return new Response(stream).text();
+}
+
+async function loadFromBlob(): Promise<BriefSnapshot | null> {
+  try {
+    const result = await get(BLOB_PATHNAME, {
+      access: "private",
+      useCache: false,
+    });
+    if (!result || result.statusCode !== 200 || !result.stream) return null;
+    const text = await streamToText(result.stream);
+    return JSON.parse(text) as BriefSnapshot;
+  } catch (error) {
+    console.warn("history: blob load failed", error);
+    return null;
+  }
+}
+
+async function saveToBlob(snapshot: BriefSnapshot) {
+  await put(BLOB_PATHNAME, JSON.stringify(snapshot, null, 2), {
+    access: "private",
+    contentType: "application/json",
+    allowOverwrite: true,
+    addRandomSuffix: false,
+    cacheControlMaxAge: 60,
+  });
+}
+
+async function loadFromLocal(): Promise<BriefSnapshot | null> {
+  try {
+    const text = await readFile(LOCAL_PATH, "utf8");
+    return JSON.parse(text) as BriefSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+async function saveToLocal(snapshot: BriefSnapshot) {
+  await mkdir(path.dirname(LOCAL_PATH), { recursive: true });
+  await writeFile(LOCAL_PATH, JSON.stringify(snapshot, null, 2), "utf8");
+}
+
+export async function loadPreviousBrief(): Promise<BriefSnapshot | null> {
+  if (canUseBlob()) {
+    const fromBlob = await loadFromBlob();
+    if (fromBlob) return fromBlob;
+  }
+  return loadFromLocal();
+}
+
+export async function savePreviousBrief(snapshot: BriefSnapshot): Promise<void> {
+  if (canUseBlob()) {
+    try {
+      await saveToBlob(snapshot);
+      return;
+    } catch (error) {
+      console.warn("history: blob save failed, falling back to local", error);
+    }
+  }
+  await saveToLocal(snapshot);
+}

@@ -28,6 +28,7 @@ export type ResearchBundle = {
   windowHours: number;
   tickers: Record<string, NewsItem[]>;
   people: Record<string, NewsItem[]>;
+  catalysts: Record<string, NewsItem[]>;
   trends: Record<TrendRegionId, TrendItem[]>;
 };
 
@@ -130,7 +131,10 @@ function sortAndCapTrends(items: TrendItem[], limit = 10): TrendItem[] {
 
 async function fetchTrendsXml(geo: string): Promise<string> {
   const response = await fetch(googleTrendsRssUrl(geo), {
-    headers: { "User-Agent": TRENDS_UA, Accept: "application/rss+xml,application/xml,text/xml,*/*" },
+    headers: {
+      "User-Agent": TRENDS_UA,
+      Accept: "application/rss+xml,application/xml,text/xml,*/*",
+    },
     signal: AbortSignal.timeout(15000),
   });
   if (!response.ok) {
@@ -166,9 +170,14 @@ async function fetchRecentNews(query: string, hours = 24): Promise<NewsItem[]> {
   return items.slice(0, 8);
 }
 
+function catalystQuery(tickerQuery: string) {
+  return `(${tickerQuery}) (earnings OR "earnings call" OR "investor day" OR "product launch" OR catalyst OR guidance OR "reports results" OR "reports earnings")`;
+}
+
 export async function collectResearch(hours = 24): Promise<ResearchBundle> {
   const tickers: Record<string, NewsItem[]> = {};
   const people: Record<string, NewsItem[]> = {};
+  const catalysts: Record<string, NewsItem[]> = {};
   const trends = {} as Record<TrendRegionId, TrendItem[]>;
 
   await Promise.all([
@@ -177,6 +186,12 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
     }),
     ...PEOPLE.map(async (person) => {
       people[person.id] = await fetchRecentNews(person.query, hours);
+    }),
+    ...TICKERS.map(async (ticker) => {
+      catalysts[ticker.id] = await fetchRecentNews(
+        catalystQuery(ticker.query),
+        24 * 7,
+      );
     }),
     ...TREND_REGIONS.map(async (region) => {
       try {
@@ -193,6 +208,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
     windowHours: hours,
     tickers,
     people,
+    catalysts,
     trends,
   };
 }

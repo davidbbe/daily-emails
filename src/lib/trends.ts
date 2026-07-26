@@ -24,7 +24,7 @@ export type BriefTrends = {
   crossRegion: string[];
 };
 
-/** Regions that get short English descriptions and no traffic badge in email */
+/** Regions that get short English descriptions (traffic + news links still shown) */
 const DESCRIBED_REGIONS = new Set<TrendRegionId>(["thailand", "bulgaria"]);
 
 const translationSchema = z.object({

@@ -1,6 +1,11 @@
 import { Resend } from "resend";
+import type {
+  BulletFlag,
+  DailyBrief,
+  EarningsEvent,
+  TrendMovers,
+} from "@/lib/brief";
 import { getEmailFrom, getEmailTo, PEOPLE, TICKERS } from "@/lib/config";
-import type { DailyBrief } from "@/lib/brief";
 import type { BriefTrendItem } from "@/lib/trends";
 
 const FONT =
@@ -19,12 +24,52 @@ const TREND_ACCENTS: Record<string, string> = {
   bulgaria: "#7c3aed",
 };
 
+const FLAG_STYLES: Record<BulletFlag, { bg: string; text: string }> = {
+  Actionable: { bg: "#ecfdf5", text: "#047857" },
+  Watch: { bg: "#fffbeb", text: "#b45309" },
+  Noise: { bg: "#f1f5f9", text: "#64748b" },
+};
+
 function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function sectionLabel(text: string) {
+  return `<tr>
+    <td style="padding:12px 4px 10px 4px;">
+      <div style="font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#475569;">${text}</div>
+    </td>
+  </tr>`;
+}
+
+function calloutBox(title: string, body: string, accent = "#0f766e") {
+  return `<tr>
+    <td style="padding:0 0 14px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+        <tr>
+          <td style="width:5px;background:${accent};"></td>
+          <td style="padding:14px 16px;">
+            <div style="font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${accent};margin:0 0 6px 0;">${escapeHtml(title)}</div>
+            <div style="font-size:15px;line-height:1.55;color:#1e293b;">${escapeHtml(body)}</div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>`;
+}
+
+function flagBadge(flag: BulletFlag) {
+  const style = FLAG_STYLES[flag];
+  return `<span style="display:inline-block;margin-right:8px;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:${style.text};background:${style.bg};border-radius:999px;padding:2px 7px;vertical-align:middle;">${flag}</span>`;
+}
+
+function sourceLink(url?: string) {
+  if (!url) return "";
+  return ` <a href="${escapeHtml(url)}" style="color:#2563eb;text-decoration:none;font-size:12px;font-weight:600;">Source →</a>`;
 }
 
 function trendDisplayTitle(item: BriefTrendItem) {
@@ -37,7 +82,7 @@ function trendDisplayTitle(item: BriefTrendItem) {
 }
 
 function trendNewsLine(item: BriefTrendItem) {
-  const headline = (item.newsTitleEn || item.newsTitle || "").trim();
+  const headline = (item.newsTitleEn || item.newsTitle || item.descriptionEn || "").trim();
   if (!headline) return "";
   const source = item.newsSource ? `${escapeHtml(item.newsSource)} — ` : "";
   const text = `${source}${escapeHtml(headline)}`;
@@ -45,6 +90,10 @@ function trendNewsLine(item: BriefTrendItem) {
     return `<a href="${escapeHtml(item.newsUrl)}" style="color:#64748b;text-decoration:none;">${text}</a>`;
   }
   return text;
+}
+
+function trafficBadge(approxTraffic: string) {
+  return `<span style="display:inline-block;margin-left:8px;font-size:11px;font-weight:700;letter-spacing:0.02em;color:#0f766e;background:#ecfdf5;border-radius:999px;padding:2px 8px;vertical-align:middle;">${escapeHtml(approxTraffic)}</span>`;
 }
 
 function renderTrendRows(items: BriefTrendItem[]) {
@@ -63,7 +112,7 @@ function renderTrendRows(items: BriefTrendItem[]) {
               <td style="vertical-align:top;">
                 <div style="font-size:15px;line-height:1.4;font-weight:650;color:#0f172a;">
                   ${trendDisplayTitle(item)}
-                  <span style="display:inline-block;margin-left:8px;font-size:11px;font-weight:700;letter-spacing:0.02em;color:#0f766e;background:#ecfdf5;border-radius:999px;padding:2px 8px;vertical-align:middle;">${escapeHtml(item.approxTraffic)}</span>
+                  ${trafficBadge(item.approxTraffic)}
                 </div>
                 ${news ? `<div style="margin-top:4px;font-size:13px;line-height:1.45;color:#64748b;">${news}</div>` : ""}
               </td>
@@ -75,7 +124,7 @@ function renderTrendRows(items: BriefTrendItem[]) {
     .join("");
 }
 
-/** Compact list for side-by-side Thailand / Bulgaria columns */
+/** Compact list for side-by-side Thailand / Bulgaria — includes traffic + news links */
 function renderCompactTrendRows(items: BriefTrendItem[]) {
   if (items.length === 0) {
     return `<tr><td style="padding:6px 0;font-size:12px;color:#94a3b8;font-style:italic;">No trends.</td></tr>`;
@@ -85,18 +134,23 @@ function renderCompactTrendRows(items: BriefTrendItem[]) {
     .map((item) => {
       const title = escapeHtml(item.titleEn.trim() || item.title.trim());
       const description = (item.descriptionEn || item.newsTitleEn || "").trim();
+      const news = trendNewsLine(item);
       return `<tr>
         <td style="padding:7px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             <tr>
               <td style="width:20px;vertical-align:top;font-size:11px;font-weight:700;color:#94a3b8;padding-top:1px;">#${item.rank}</td>
               <td style="vertical-align:top;">
-                <div style="font-size:13px;line-height:1.35;font-weight:650;color:#0f172a;">${title}</div>
+                <div style="font-size:13px;line-height:1.35;font-weight:650;color:#0f172a;">
+                  ${title}
+                  ${trafficBadge(item.approxTraffic)}
+                </div>
                 ${
-                  description
+                  description && !news
                     ? `<div style="margin-top:2px;font-size:11px;line-height:1.4;color:#64748b;">${escapeHtml(description)}</div>`
                     : ""
                 }
+                ${news ? `<div style="margin-top:2px;font-size:11px;line-height:1.4;color:#64748b;">${news}</div>` : ""}
               </td>
             </tr>
           </table>
@@ -156,6 +210,135 @@ function renderCompactTrendColumn(region: {
     </table>`;
 }
 
+function renderOvernightOpeners(brief: DailyBrief) {
+  const rows = TICKERS.map((ticker) => {
+    const section = brief.tickers.find((t) => t.id === ticker.id);
+    const colors = TICKER_COLORS[ticker.id] ?? {
+      bg: "#f8fafc",
+      text: "#334155",
+      accent: "#64748b",
+    };
+    return `<tr>
+      <td style="padding:8px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
+        <span style="display:inline-block;font-size:11px;font-weight:700;color:${colors.text};background:${colors.bg};border-radius:999px;padding:2px 8px;margin-right:8px;">${escapeHtml(ticker.id)}</span>
+        <span style="font-size:14px;line-height:1.5;color:#334155;">${escapeHtml(section?.overnightOpener || "Quiet overnight.")}</span>
+      </td>
+    </tr>`;
+  }).join("");
+
+  return `<tr>
+    <td style="padding:0 0 14px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+        <tr>
+          <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
+            <span style="font-size:15px;font-weight:700;color:#0f172a;">Overnight openers</span>
+            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">Pre-market / session context</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 16px 8px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>`;
+}
+
+function renderEarningsCalendar(events: EarningsEvent[]) {
+  if (events.length === 0) {
+    return `<tr>
+      <td style="padding:0 0 14px 0;">
+        <div style="font-size:14px;line-height:1.5;color:#94a3b8;font-style:italic;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
+          No dated earnings or catalysts found in the last 7 days of headlines.
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  const rows = events
+    .map((event) => {
+      const link = event.sourceUrl
+        ? ` <a href="${escapeHtml(event.sourceUrl)}" style="color:#2563eb;text-decoration:none;font-size:12px;font-weight:600;">Source →</a>`
+        : "";
+      return `<tr>
+        <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;width:72px;">
+          <span style="display:inline-block;font-size:11px;font-weight:700;color:#334155;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:2px 8px;">${escapeHtml(event.tickerId)}</span>
+        </td>
+        <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
+          <div style="font-size:14px;font-weight:650;color:#0f172a;">${escapeHtml(event.when)}</div>
+          <div style="margin-top:2px;font-size:13px;line-height:1.45;color:#475569;">${escapeHtml(event.event)}${link}</div>
+        </td>
+      </tr>`;
+    })
+    .join("");
+
+  return `<tr>
+    <td style="padding:0 0 14px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+        <tr>
+          <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
+            <span style="font-size:15px;font-weight:700;color:#0f172a;">Earnings &amp; catalysts</span>
+            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">Next ~7 days (from headlines)</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 16px 8px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>`;
+}
+
+function renderTrendMovers(movers: TrendMovers, hasPrevious: boolean) {
+  if (!hasPrevious) {
+    return `<tr>
+      <td style="padding:0 0 14px 0;">
+        <div style="font-size:14px;line-height:1.5;color:#94a3b8;font-style:italic;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
+          Day-over-day trend movers appear after the second brief (store a prior snapshot with Vercel Blob or local .data/).
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  const groups: Array<{ label: string; items: string[]; color: string }> = [
+    { label: "New today", items: movers.newToday, color: "#047857" },
+    { label: "Still rising", items: movers.stillRising, color: "#1d4ed8" },
+    { label: "Fell off", items: movers.fellOff, color: "#b45309" },
+  ];
+
+  const body = groups
+    .map((group) => {
+      const items =
+        group.items.length > 0
+          ? escapeHtml(group.items.join(" · "))
+          : `<span style="color:#94a3b8;font-style:italic;">None</span>`;
+      return `<div style="margin:0 0 10px 0;">
+        <div style="font-size:12px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:${group.color};margin:0 0 4px 0;">${group.label}</div>
+        <div style="font-size:14px;line-height:1.5;color:#334155;">${items}</div>
+      </div>`;
+    })
+    .join("");
+
+  return `<tr>
+    <td style="padding:0 0 14px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+        <tr>
+          <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
+            <span style="font-size:15px;font-weight:700;color:#0f172a;">Trend movers</span>
+            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">vs yesterday</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 16px 4px 16px;">${body}</td>
+        </tr>
+      </table>
+    </td>
+  </tr>`;
+}
+
 export function renderBriefHtml(brief: DailyBrief) {
   const date = new Date(brief.generatedAt).toUTCString();
   const dateShort = new Date(brief.generatedAt).toISOString().slice(0, 10);
@@ -176,7 +359,9 @@ export function renderBriefHtml(brief: DailyBrief) {
                   <td style="padding:0 0 10px 0;vertical-align:top;width:18px;">
                     <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${colors.accent};margin-top:6px;"></span>
                   </td>
-                  <td style="padding:0 0 10px 0;font-size:15px;line-height:1.55;color:#1e293b;">${escapeHtml(b)}</td>
+                  <td style="padding:0 0 10px 0;font-size:15px;line-height:1.55;color:#1e293b;">
+                    ${flagBadge(b.flag)}${escapeHtml(b.text)}${sourceLink(b.sourceUrl)}
+                  </td>
                 </tr>`,
             )
             .join("")
@@ -197,6 +382,16 @@ export function renderBriefHtml(brief: DailyBrief) {
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${bullets}</table>
               </td>
             </tr>
+            <tr>
+              <td style="padding:0 18px 14px 18px;">
+                <div style="font-size:13px;line-height:1.5;color:#334155;background:#f8fafc;border-radius:10px;padding:10px 12px;">
+                  <span style="font-weight:700;color:#0f172a;">Why it matters:</span> ${escapeHtml(section?.whyItMatters || "Limited coverage today.")}
+                </div>
+                <div style="margin-top:8px;font-size:12px;line-height:1.45;color:#64748b;">
+                  <span style="font-weight:700;color:#475569;">vs yesterday:</span> ${escapeHtml(section?.watchlistDelta || "n/a")}
+                </div>
+              </td>
+            </tr>
           </table>
         </td>
       </tr>`;
@@ -208,6 +403,10 @@ export function renderBriefHtml(brief: DailyBrief) {
     const isNone = summary.toLowerCase() === "none found";
     const accents = ["#0d9488", "#2563eb", "#db2777", "#ca8a04"];
     const accent = accents[index % accents.length];
+    const quote = section?.quote?.trim();
+    const link = !isNone && section?.sourceUrl
+      ? sourceLink(section.sourceUrl)
+      : "";
 
     return `
       <tr>
@@ -217,7 +416,12 @@ export function renderBriefHtml(brief: DailyBrief) {
               <td style="width:5px;background:${accent};border-radius:12px 0 0 12px;"></td>
               <td style="padding:14px 16px;">
                 <div style="font-size:15px;font-weight:700;color:#0f172a;margin:0 0 6px 0;">${escapeHtml(person.name)}</div>
-                <div style="font-size:14px;line-height:1.55;color:${isNone ? "#94a3b8" : "#334155"};font-style:${isNone ? "italic" : "normal"};">${escapeHtml(summary)}</div>
+                <div style="font-size:14px;line-height:1.55;color:${isNone ? "#94a3b8" : "#334155"};font-style:${isNone ? "italic" : "normal"};">${escapeHtml(summary)}${link}</div>
+                ${
+                  quote
+                    ? `<div style="margin-top:8px;font-size:13px;line-height:1.5;color:#475569;border-left:3px solid ${accent};padding-left:10px;font-style:italic;">“${escapeHtml(quote)}”</div>`
+                    : ""
+                }
               </td>
             </tr>
           </table>
@@ -290,27 +494,27 @@ export function renderBriefHtml(brief: DailyBrief) {
               </td>
             </tr>
 
-            <tr>
-              <td style="padding:0 4px 10px 4px;">
-                <div style="font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#475569;">Markets</div>
-              </td>
-            </tr>
+            ${calloutBox("Theme of the day", brief.themeOfTheDay, "#7c3aed")}
+            ${sectionLabel("Overnight")}
+            ${renderOvernightOpeners(brief)}
+
+            ${sectionLabel("Markets")}
             ${tickerSections}
 
-            <tr>
-              <td style="padding:12px 4px 10px 4px;">
-                <div style="font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#475569;">Speeches &amp; announcements</div>
-              </td>
-            </tr>
+            ${sectionLabel("Earnings &amp; catalysts")}
+            ${renderEarningsCalendar(brief.earningsCalendar)}
+
+            ${sectionLabel("Speeches &amp; announcements")}
             ${peopleSections}
 
-            <tr>
-              <td style="padding:12px 4px 10px 4px;">
-                <div style="font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#475569;">Web trends</div>
-              </td>
-            </tr>
+            ${calloutBox("Regional pulse", brief.regionalPulse, "#c2410c")}
+
+            ${sectionLabel("Web trends")}
             ${trendSections}
             ${crossRegion}
+
+            ${sectionLabel("Trend movers")}
+            ${renderTrendMovers(brief.trendMovers, brief.hasPreviousBrief)}
 
             <tr>
               <td style="padding:18px 8px 8px 8px;text-align:center;">
@@ -332,16 +536,40 @@ export function renderBriefText(brief: DailyBrief) {
     "Daily Market & Tech Brief",
     `Past ${brief.windowHours} hours · ${brief.generatedAt} · ${brief.model}`,
     "",
-    "MARKETS",
+    "THEME OF THE DAY",
+    brief.themeOfTheDay,
+    "",
+    "OVERNIGHT OPENERS",
   ];
 
   for (const ticker of TICKERS) {
     const section = brief.tickers.find((t) => t.id === ticker.id);
+    lines.push(`${ticker.id}: ${section?.overnightOpener || "Quiet overnight."}`);
+  }
+
+  lines.push("", "MARKETS");
+  for (const ticker of TICKERS) {
+    const section = brief.tickers.find((t) => t.id === ticker.id);
     lines.push("", ticker.label);
     if (section?.bullets?.length) {
-      for (const bullet of section.bullets) lines.push(`- ${bullet}`);
+      for (const bullet of section.bullets) {
+        const link = bullet.sourceUrl ? ` (${bullet.sourceUrl})` : "";
+        lines.push(`- [${bullet.flag}] ${bullet.text}${link}`);
+      }
     } else {
       lines.push("- No material headlines in the last 24 hours.");
+    }
+    lines.push(`Why it matters: ${section?.whyItMatters || "n/a"}`);
+    lines.push(`vs yesterday: ${section?.watchlistDelta || "n/a"}`);
+  }
+
+  lines.push("", "EARNINGS & CATALYSTS");
+  if (brief.earningsCalendar.length === 0) {
+    lines.push("No dated earnings or catalysts found in recent headlines.");
+  } else {
+    for (const event of brief.earningsCalendar) {
+      const link = event.sourceUrl ? ` (${event.sourceUrl})` : "";
+      lines.push(`- ${event.tickerId} · ${event.when}: ${event.event}${link}`);
     }
   }
 
@@ -349,7 +577,11 @@ export function renderBriefText(brief: DailyBrief) {
   for (const person of PEOPLE) {
     const section = brief.people.find((p) => p.id === person.id);
     lines.push("", person.name, section?.summary?.trim() || "None found");
+    if (section?.quote) lines.push(`  “${section.quote}”`);
+    if (section?.sourceUrl) lines.push(`  ${section.sourceUrl}`);
   }
+
+  lines.push("", "REGIONAL PULSE", brief.regionalPulse);
 
   lines.push("", "WEB TRENDS");
   for (const region of brief.trends?.regions ?? []) {
@@ -358,28 +590,24 @@ export function renderBriefText(brief: DailyBrief) {
       lines.push("- No trends available.");
       continue;
     }
-    const compact = region.id === "thailand" || region.id === "bulgaria";
     for (const item of region.items) {
       const en = item.titleEn.trim();
       const original = item.title.trim();
       const title =
-        !compact &&
-        en &&
-        original &&
-        en.toLowerCase() !== original.toLowerCase()
+        en && original && en.toLowerCase() !== original.toLowerCase()
           ? `${en} (${original})`
           : en || original;
-      if (compact) {
-        lines.push(`#${item.rank} ${title}`);
-        const description = (item.descriptionEn || item.newsTitleEn || "").trim();
-        if (description) lines.push(`  ${description}`);
-      } else {
-        lines.push(`#${item.rank} ${title} · ${item.approxTraffic}`);
-        const headline = (item.newsTitleEn || item.newsTitle || "").trim();
-        if (headline) {
-          const source = item.newsSource ? `${item.newsSource} — ` : "";
-          lines.push(`  ${source}${headline}`);
-        }
+      lines.push(`#${item.rank} ${title} · ${item.approxTraffic}`);
+      const headline = (
+        item.descriptionEn ||
+        item.newsTitleEn ||
+        item.newsTitle ||
+        ""
+      ).trim();
+      if (headline) {
+        const source = item.newsSource ? `${item.newsSource} — ` : "";
+        const url = item.newsUrl ? ` (${item.newsUrl})` : "";
+        lines.push(`  ${source}${headline}${url}`);
       }
     }
   }
@@ -388,6 +616,17 @@ export function renderBriefText(brief: DailyBrief) {
       "",
       `Also rising in 2+ regions: ${brief.trends.crossRegion.join(" · ")}`,
     );
+  }
+
+  lines.push("", "TREND MOVERS");
+  if (!brief.hasPreviousBrief) {
+    lines.push("No prior brief stored yet for day-over-day movers.");
+  } else {
+    lines.push(`New today: ${brief.trendMovers.newToday.join(" · ") || "None"}`);
+    lines.push(
+      `Still rising: ${brief.trendMovers.stillRising.join(" · ") || "None"}`,
+    );
+    lines.push(`Fell off: ${brief.trendMovers.fellOff.join(" · ") || "None"}`);
   }
 
   return lines.join("\n");

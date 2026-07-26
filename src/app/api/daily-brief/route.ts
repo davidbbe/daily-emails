@@ -1,9 +1,10 @@
 import { generateDailyBrief } from "@/lib/brief";
 import { sendBriefEmail } from "@/lib/email";
+import { loadPreviousBrief, savePreviousBrief, toSnapshot } from "@/lib/history";
 import { collectResearch } from "@/lib/research";
 
 export const runtime = "nodejs";
-export const maxDuration = 90;
+export const maxDuration = 120;
 
 function isAuthorized(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
@@ -22,8 +23,10 @@ export async function GET(request: Request) {
   }
 
   try {
+    const previous = await loadPreviousBrief();
     const research = await collectResearch(24);
-    const brief = await generateDailyBrief(research);
+    const brief = await generateDailyBrief(research, previous);
+    await savePreviousBrief(toSnapshot(brief));
     const email = await sendBriefEmail(brief);
 
     return Response.json({
@@ -31,16 +34,30 @@ export async function GET(request: Request) {
       emailId: email?.id ?? null,
       model: brief.model,
       generatedAt: brief.generatedAt,
+      hasPreviousBrief: brief.hasPreviousBrief,
+      themeOfTheDay: brief.themeOfTheDay,
+      earningsCount: brief.earningsCalendar.length,
       tickerCounts: Object.fromEntries(
         Object.entries(research.tickers).map(([id, items]) => [id, items.length]),
       ),
       peopleCounts: Object.fromEntries(
         Object.entries(research.people).map(([id, items]) => [id, items.length]),
       ),
+      catalystCounts: Object.fromEntries(
+        Object.entries(research.catalysts).map(([id, items]) => [
+          id,
+          items.length,
+        ]),
+      ),
       trendCounts: Object.fromEntries(
         Object.entries(research.trends).map(([id, items]) => [id, items.length]),
       ),
       crossRegionCount: brief.trends.crossRegion.length,
+      trendMovers: {
+        newToday: brief.trendMovers.newToday.length,
+        stillRising: brief.trendMovers.stillRising.length,
+        fellOff: brief.trendMovers.fellOff.length,
+      },
     });
   } catch (error) {
     console.error("daily-brief failed", error);
