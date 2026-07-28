@@ -27,7 +27,10 @@ export async function GET(request: Request) {
     const previous = await loadPreviousBrief();
     const research = await collectResearch(24);
     const brief = await generateDailyBrief(research, previous);
-    await savePreviousBrief(toSnapshot(brief));
+    // Snapshot is best-effort — never block the email on history persistence.
+    await savePreviousBrief(toSnapshot(brief)).catch((error) => {
+      console.warn("daily-brief: previous-brief save failed", error);
+    });
     // Collect after the brief so AI Gateway balance includes today's spend.
     const usage = await collectUsageReport();
     const email = await sendBriefEmail(brief, usage);

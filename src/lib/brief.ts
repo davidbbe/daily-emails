@@ -275,6 +275,10 @@ async function generateCoreBrief(bundle: ResearchBundle, model: string) {
     model,
     schema: coreBriefSchema,
     maxOutputTokens: 6144,
+    // Keep thinking off so structured JSON is not truncated by reasoning tokens.
+    providerOptions: {
+      google: { thinkingConfig: { thinkingBudget: 0 } },
+    },
     system: `You are a concise market and tech briefing analyst.
 Only use the provided headlines. Do not invent events, dates, prices, or quotes.
 Prefer material news over rumor.
@@ -321,8 +325,10 @@ async function generateSynthesis(args: {
   return generateObject({
     model: args.model,
     schema: synthesisSchema,
-    // Gemini flash can spend most of a small budget on reasoning tokens.
     maxOutputTokens: 4096,
+    providerOptions: {
+      google: { thinkingConfig: { thinkingBudget: 0 } },
+    },
     system: `You write the cross-cutting synthesis for a daily market/tech email.
 Only use the provided today/previous brief material. Do not invent facts.
 

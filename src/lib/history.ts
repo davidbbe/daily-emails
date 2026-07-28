@@ -44,6 +44,10 @@ export function toSnapshot(brief: DailyBrief): BriefSnapshot {
   };
 }
 
+function isVercelRuntime() {
+  return Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+}
+
 function canUseBlob() {
   return Boolean(
     process.env.BLOB_READ_WRITE_TOKEN?.trim() ||
@@ -107,17 +111,39 @@ export async function loadPreviousBrief(): Promise<BriefSnapshot | null> {
     const fromBlob = await loadFromBlob();
     if (fromBlob) return fromBlob;
   }
+  // Serverless FS is read-only / ephemeral — only use local disk in dev.
+  if (isVercelRuntime()) return null;
   return loadFromLocal();
 }
 
+/**
+ * Persist a snapshot for day-over-day comparisons.
+ * Never throws: a failed save must not block the daily email.
+ */
 export async function savePreviousBrief(snapshot: BriefSnapshot): Promise<void> {
   if (canUseBlob()) {
     try {
       await saveToBlob(snapshot);
       return;
     } catch (error) {
-      console.warn("history: blob save failed, falling back to local", error);
+      console.warn("history: blob save failed", error);
+      if (isVercelRuntime()) {
+        // Do not fall back to local mkdir under /var/task — that throws ENOENT
+        // and previously aborted the cron before Resend ran.
+        return;
+      }
+      console.warn("history: falling back to local snapshot store");
     }
+  } else if (isVercelRuntime()) {
+    console.warn(
+      "history: Blob not configured on Vercel; day-over-day movers will be unavailable until BLOB_READ_WRITE_TOKEN is set",
+    );
+    return;
   }
-  await saveToLocal(snapshot);
+
+  try {
+    await saveToLocal(snapshot);
+  } catch (error) {
+    console.warn("history: local save failed", error);
+  }
 }

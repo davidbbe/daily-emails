@@ -84,29 +84,38 @@ async function translateUsItems(
 
   if (jobs.length === 0) return map;
 
-  const { object } = await generateObject({
-    model: getModel(),
-    schema: translationSchema,
-    maxOutputTokens: 2048,
-    system: `You translate Google Trends search queries and related news headlines into clear, concise English.
+  try {
+    const { object } = await generateObject({
+      model: getModel(),
+      schema: translationSchema,
+      maxOutputTokens: 4096,
+      // Gemini 2.5 Flash burns thinking tokens against maxOutputTokens; disable
+      // so structured JSON is not truncated (finishReason: length).
+      providerOptions: {
+        google: { thinkingConfig: { thinkingBudget: 0 } },
+      },
+      system: `You translate Google Trends search queries and related news headlines into clear, concise English.
 Translate literally — do not invent context or explain.
 Keep proper nouns when they are already Latin-script names.
 Return every requested id exactly once.
 If newsTitleEn is not needed (no news title provided), omit it.`,
-    prompt: `Translate these trend strings to English:
+      prompt: `Translate these trend strings to English:
 ${jobs
   .map((job) => {
     const news = job.newsTitle ? `\n  news: ${job.newsTitle}` : "";
     return `- id=${job.id}\n  title: ${job.title}${news}`;
   })
   .join("\n")}`,
-  });
-
-  for (const item of object.items) {
-    map.set(item.id, {
-      titleEn: item.titleEn.trim() || item.id,
-      newsTitleEn: item.newsTitleEn?.trim() || undefined,
     });
+
+    for (const item of object.items) {
+      map.set(item.id, {
+        titleEn: item.titleEn.trim() || item.id,
+        newsTitleEn: item.newsTitleEn?.trim() || undefined,
+      });
+    }
+  } catch (error) {
+    console.warn("trends: US translation failed; using original titles", error);
   }
 
   return map;
@@ -135,28 +144,39 @@ async function describeLocalTrends(
 
   if (jobs.length === 0) return map;
 
-  const { object } = await generateObject({
-    model: getModel(),
-    schema: descriptionSchema,
-    maxOutputTokens: 3072,
-    system: `You localize Google Trends items for an English email brief.
+  try {
+    const { object } = await generateObject({
+      model: getModel(),
+      schema: descriptionSchema,
+      maxOutputTokens: 4096,
+      // Same as translateUsItems — keep thinking off so JSON completes.
+      providerOptions: {
+        google: { thinkingConfig: { thinkingBudget: 0 } },
+      },
+      system: `You localize Google Trends items for an English email brief.
 For each item:
 - titleEn: English search-query label (translate if needed; keep proper nouns)
 - descriptionEn: one short English sentence (max 14 words) explaining why it is trending, based only on the provided news headline. Do not invent facts. If no news is given, write a brief neutral gloss of the query itself.`,
-    prompt: `Localize these trends:
+      prompt: `Localize these trends:
 ${jobs
   .map((job) => {
     const news = job.newsTitle ? `\n  news: ${job.newsTitle}` : "\n  news: (none)";
     return `- id=${job.id}\n  title: ${job.title}${news}`;
   })
   .join("\n")}`,
-  });
-
-  for (const item of object.items) {
-    map.set(item.id, {
-      titleEn: item.titleEn.trim() || item.id,
-      descriptionEn: item.descriptionEn.trim() || undefined,
     });
+
+    for (const item of object.items) {
+      map.set(item.id, {
+        titleEn: item.titleEn.trim() || item.id,
+        descriptionEn: item.descriptionEn.trim() || undefined,
+      });
+    }
+  } catch (error) {
+    console.warn(
+      "trends: local description failed; using original titles",
+      error,
+    );
   }
 
   return map;
