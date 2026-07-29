@@ -1,4 +1,4 @@
-import { list } from "@vercel/blob";
+import { get, list, put } from "@vercel/blob";
 import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -222,6 +222,19 @@ const RESEND_CACHE_PATH = path.join(
   ".data",
   "resend-usage.json",
 );
+const RESEND_BLOB_PATHNAME = "agent-dave/resend-usage.json";
+
+function isVercelRuntime() {
+  return Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+}
+
+function blobToken() {
+  return process.env.BLOB_READ_WRITE_TOKEN?.trim() || undefined;
+}
+
+async function streamToText(stream: ReadableStream<Uint8Array>) {
+  return new Response(stream).text();
+}
 
 function buildResendMetrics(
   dailyUsed: number | null,
@@ -285,14 +298,81 @@ function buildResendMetrics(
   return metrics;
 }
 
-async function loadCachedResendQuota(): Promise<UsageMetric[] | null> {
+function parseResendCache(text: string): ResendQuotaCache | null {
   try {
-    const text = await readFile(RESEND_CACHE_PATH, "utf8");
     const cached = JSON.parse(text) as ResendQuotaCache;
     if (cached.dailyUsed == null && cached.monthlyUsed == null) return null;
-    return buildResendMetrics(cached.dailyUsed, cached.monthlyUsed, "last-send");
+    return cached;
   } catch {
     return null;
+  }
+}
+
+async function loadResendCacheFromBlob(): Promise<ResendQuotaCache | null> {
+  if (!canUseBlob()) return null;
+  try {
+    const token = blobToken();
+    // Store is public (private access is rejected by the Blob API).
+    const result = await get(RESEND_BLOB_PATHNAME, {
+      access: "public",
+      useCache: false,
+      ...(token ? { token } : {}),
+    });
+    if (!result || result.statusCode !== 200 || !result.stream) return null;
+    return parseResendCache(await streamToText(result.stream));
+  } catch (error) {
+    console.warn("usage: Resend Blob cache load failed", error);
+    return null;
+  }
+}
+
+async function loadResendCacheFromLocal(): Promise<ResendQuotaCache | null> {
+  try {
+    return parseResendCache(await readFile(RESEND_CACHE_PATH, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+async function loadCachedResendQuota(): Promise<UsageMetric[] | null> {
+  const cached =
+    (await loadResendCacheFromBlob()) ??
+    (isVercelRuntime() ? null : await loadResendCacheFromLocal());
+  if (!cached) return null;
+  return buildResendMetrics(cached.dailyUsed, cached.monthlyUsed, "last-send");
+}
+
+async function saveResendCache(payload: ResendQuotaCache) {
+  const body = JSON.stringify(payload, null, 2);
+
+  if (canUseBlob()) {
+    try {
+      const token = blobToken();
+      await put(RESEND_BLOB_PATHNAME, body, {
+        access: "public",
+        contentType: "application/json",
+        allowOverwrite: true,
+        addRandomSuffix: false,
+        cacheControlMaxAge: 60,
+        ...(token ? { token } : {}),
+      });
+      if (isVercelRuntime()) return;
+    } catch (error) {
+      console.warn("usage: Resend Blob cache save failed", error);
+      if (isVercelRuntime()) return;
+    }
+  } else if (isVercelRuntime()) {
+    console.warn(
+      "usage: Blob not configured; Resend quotas cannot persist across cron runs with a send-only API key",
+    );
+    return;
+  }
+
+  try {
+    await mkdir(path.dirname(RESEND_CACHE_PATH), { recursive: true });
+    await writeFile(RESEND_CACHE_PATH, body, "utf8");
+  } catch (error) {
+    console.warn("usage: failed to cache Resend quotas locally", error);
   }
 }
 
@@ -302,17 +382,18 @@ export async function persistResendQuotaFromHeaders(headers: Headers) {
   const monthlyUsed = headerNumber(headers, "x-resend-monthly-quota");
   if (dailyUsed == null && monthlyUsed == null) return;
 
-  try {
-    await mkdir(path.dirname(RESEND_CACHE_PATH), { recursive: true });
-    const payload: ResendQuotaCache = {
-      updatedAt: new Date().toISOString(),
-      dailyUsed,
-      monthlyUsed,
-    };
-    await writeFile(RESEND_CACHE_PATH, JSON.stringify(payload, null, 2), "utf8");
-  } catch (error) {
-    console.warn("usage: failed to cache Resend quotas", error);
+  await saveResendCache({
+    updatedAt: new Date().toISOString(),
+    dailyUsed,
+    monthlyUsed,
+  });
+}
+
+function resendUnavailableReason(status: number, body: string) {
+  if (status === 401 && body.includes("restricted_api_key")) {
+    return "Send-only Resend API key — quotas appear after the next send (cached in Blob)";
   }
+  return `Resend API ${status}${body ? `: ${body.slice(0, 120)}` : ""}`;
 }
 
 /** Lightweight Resend API call to read quota headers (does not send mail). */
@@ -339,6 +420,10 @@ async function collectResendQuota(): Promise<UsageMetric[]> {
     ];
   }
 
+  // Prefer durable last-send cache first — send-only keys cannot GET /emails,
+  // and serverless FS does not keep the local fallback between cron runs.
+  const cached = await loadCachedResendQuota();
+
   try {
     const response = await fetch("https://api.resend.com/emails?limit=1", {
       method: "GET",
@@ -346,11 +431,9 @@ async function collectResendQuota(): Promise<UsageMetric[]> {
     });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      const cached = await loadCachedResendQuota();
       if (cached) return cached;
-
-      const reason = `Resend API ${response.status}${body ? `: ${body.slice(0, 120)}` : ""}`;
+      const body = await response.text().catch(() => "");
+      const reason = resendUnavailableReason(response.status, body);
       return [
         unavailable(
           "resend-daily",
@@ -369,13 +452,23 @@ async function collectResendQuota(): Promise<UsageMetric[]> {
       ];
     }
 
-    return buildResendMetrics(
+    const live = buildResendMetrics(
       headerNumber(response.headers, "x-resend-daily-quota"),
       headerNumber(response.headers, "x-resend-monthly-quota"),
       "live",
     );
+    // Keep Blob/local cache warm when a full-access key returns quotas live.
+    const dailyUsed = headerNumber(response.headers, "x-resend-daily-quota");
+    const monthlyUsed = headerNumber(response.headers, "x-resend-monthly-quota");
+    if (dailyUsed != null || monthlyUsed != null) {
+      void saveResendCache({
+        updatedAt: new Date().toISOString(),
+        dailyUsed,
+        monthlyUsed,
+      });
+    }
+    return live;
   } catch (error) {
-    const cached = await loadCachedResendQuota();
     if (cached) return cached;
 
     const message =
@@ -544,12 +637,119 @@ function sumField(days: UsageApiDay[], field: keyof UsageApiDay) {
   return total;
 }
 
+const PLATFORM_BLOB_PATHNAME = "agent-dave/platform-usage.json";
+
+type PlatformUsageCache = {
+  updatedAt: string;
+  metrics: Array<{
+    id: string;
+    label: string;
+    used: number;
+    limit: number;
+    unit: string;
+    detail: string;
+  }>;
+};
+
+function platformUnavailable(reason: string): UsageMetric[] {
+  return [
+    unavailable(
+      "fast-origin-transfer",
+      "Fast Origin Transfer",
+      HOBBY_FAST_ORIGIN_TRANSFER_BYTES,
+      "bytes",
+      reason,
+    ),
+    unavailable(
+      "function-invocations",
+      "Function invocations",
+      HOBBY_FUNCTION_INVOCATIONS,
+      "invocations",
+      reason,
+    ),
+    unavailable(
+      "blob-simple-ops",
+      "Blob simple operations",
+      BLOB_HOBBY_SIMPLE_OPS,
+      "ops",
+      reason,
+    ),
+    unavailable(
+      "blob-advanced-ops",
+      "Blob advanced operations",
+      BLOB_HOBBY_ADVANCED_OPS,
+      "ops",
+      reason,
+    ),
+  ];
+}
+
+async function loadPlatformUsageCache(): Promise<UsageMetric[] | null> {
+  if (!canUseBlob()) return null;
+  try {
+    const token = blobToken();
+    const result = await get(PLATFORM_BLOB_PATHNAME, {
+      access: "public",
+      useCache: false,
+      ...(token ? { token } : {}),
+    });
+    if (!result || result.statusCode !== 200 || !result.stream) return null;
+    const cached = JSON.parse(
+      await streamToText(result.stream),
+    ) as PlatformUsageCache;
+    if (!Array.isArray(cached.metrics) || cached.metrics.length === 0) {
+      return null;
+    }
+    const asOf = cached.updatedAt
+      ? ` · cached ${formatHumanDate(cached.updatedAt)}`
+      : " · from last successful sync";
+    return cached.metrics.map((m) =>
+      metric({
+        id: m.id,
+        label: m.label,
+        used: m.used,
+        limit: m.limit,
+        unit: m.unit,
+        detail: `${m.detail}${asOf}`,
+        available: true,
+      }),
+    );
+  } catch (error) {
+    console.warn("usage: platform Blob cache load failed", error);
+    return null;
+  }
+}
+
+async function savePlatformUsageCache(metrics: UsageMetric[]) {
+  if (!canUseBlob()) return;
+  try {
+    const token = blobToken();
+    const payload: PlatformUsageCache = {
+      updatedAt: new Date().toISOString(),
+      metrics: metrics.map((m) => ({
+        id: m.id,
+        label: m.label,
+        used: m.used,
+        limit: m.limit,
+        unit: m.unit,
+        detail: m.detail,
+      })),
+    };
+    await put(PLATFORM_BLOB_PATHNAME, JSON.stringify(payload, null, 2), {
+      access: "public",
+      contentType: "application/json",
+      allowOverwrite: true,
+      addRandomSuffix: false,
+      cacheControlMaxAge: 60,
+      ...(token ? { token } : {}),
+    });
+  } catch (error) {
+    console.warn("usage: platform Blob cache save failed", error);
+  }
+}
+
 /** Hobby platform quotas from GET /v2/usage (works without Observability Plus). */
 async function collectPlatformUsage(): Promise<UsageMetric[]> {
-  const fotLimit = HOBBY_FAST_ORIGIN_TRANSFER_BYTES;
-  const invLimit = HOBBY_FUNCTION_INVOCATIONS;
-  const simpleLimit = BLOB_HOBBY_SIMPLE_OPS;
-  const advancedLimit = BLOB_HOBBY_ADVANCED_OPS;
   const { label } = usageWindow();
 
   try {
@@ -574,78 +774,62 @@ async function collectPlatformUsage(): Promise<UsageMetric[]> {
     const simpleOps = sumField(blobDays, "blob_simple_request_count");
     const advancedOps = sumField(blobDays, "blob_advanced_request_count");
 
-    return [
+    const metrics = [
       metric({
         id: "fast-origin-transfer",
         label: "Fast Origin Transfer",
         used: transferBytes,
-        limit: fotLimit,
+        limit: HOBBY_FAST_ORIGIN_TRANSFER_BYTES,
         unit: "bytes",
-        detail: `${formatBytes(transferBytes)} / ${formatBytes(fotLimit)} · ${label} (Hobby included)${requests.lastUpdate ? ` · updated ${formatHumanDate(requests.lastUpdate)}` : ""}`,
+        detail: `${formatBytes(transferBytes)} / ${formatBytes(HOBBY_FAST_ORIGIN_TRANSFER_BYTES)} · ${label} (Hobby included)${requests.lastUpdate ? ` · updated ${formatHumanDate(requests.lastUpdate)}` : ""}`,
         available: true,
       }),
       metric({
         id: "function-invocations",
         label: "Function invocations",
         used: invocations,
-        limit: invLimit,
+        limit: HOBBY_FUNCTION_INVOCATIONS,
         unit: "invocations",
-        detail: `${invocations.toLocaleString("en-US")} / ${invLimit.toLocaleString("en-US")} · ${label}`,
+        detail: `${invocations.toLocaleString("en-US")} / ${HOBBY_FUNCTION_INVOCATIONS.toLocaleString("en-US")} · ${label}`,
         available: true,
       }),
       metric({
         id: "blob-simple-ops",
         label: "Blob simple operations",
         used: simpleOps,
-        limit: simpleLimit,
+        limit: BLOB_HOBBY_SIMPLE_OPS,
         unit: "ops",
-        detail: `${simpleOps.toLocaleString("en-US")} / ${simpleLimit.toLocaleString("en-US")} · ${label}`,
+        detail: `${simpleOps.toLocaleString("en-US")} / ${BLOB_HOBBY_SIMPLE_OPS.toLocaleString("en-US")} · ${label}`,
         available: true,
       }),
       metric({
         id: "blob-advanced-ops",
         label: "Blob advanced operations",
         used: advancedOps,
-        limit: advancedLimit,
+        limit: BLOB_HOBBY_ADVANCED_OPS,
         unit: "ops",
-        detail: `${advancedOps.toLocaleString("en-US")} / ${advancedLimit.toLocaleString("en-US")} · ${label}`,
+        detail: `${advancedOps.toLocaleString("en-US")} / ${BLOB_HOBBY_ADVANCED_OPS.toLocaleString("en-US")} · ${label}`,
         available: true,
       }),
     ];
+
+    // Durable cache so Vercel cron can show last sync when VERCEL_TOKEN is unset.
+    await savePlatformUsageCache(metrics);
+    return metrics;
   } catch (error) {
+    const cached = await loadPlatformUsageCache();
+    if (cached) {
+      console.warn(
+        "usage: platform usage live fetch failed; using Blob cache",
+        error,
+      );
+      return cached;
+    }
+
     const message =
       error instanceof Error ? error.message : "Platform usage unavailable";
     console.warn("usage: platform usage failed", error);
-    return [
-      unavailable(
-        "fast-origin-transfer",
-        "Fast Origin Transfer",
-        fotLimit,
-        "bytes",
-        message,
-      ),
-      unavailable(
-        "function-invocations",
-        "Function invocations",
-        invLimit,
-        "invocations",
-        message,
-      ),
-      unavailable(
-        "blob-simple-ops",
-        "Blob simple operations",
-        simpleLimit,
-        "ops",
-        message,
-      ),
-      unavailable(
-        "blob-advanced-ops",
-        "Blob advanced operations",
-        advancedLimit,
-        "ops",
-        message,
-      ),
-    ];
+    return platformUnavailable(message);
   }
 }
 

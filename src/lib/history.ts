@@ -66,8 +66,9 @@ function blobToken() {
 async function loadFromBlob(): Promise<BriefSnapshot | null> {
   try {
     const token = blobToken();
+    // Store is public (private access is rejected by the Blob API).
     const result = await get(BLOB_PATHNAME, {
-      access: "private",
+      access: "public",
       useCache: false,
       ...(token ? { token } : {}),
     });
@@ -83,7 +84,7 @@ async function loadFromBlob(): Promise<BriefSnapshot | null> {
 async function saveToBlob(snapshot: BriefSnapshot) {
   const token = blobToken();
   await put(BLOB_PATHNAME, JSON.stringify(snapshot, null, 2), {
-    access: "private",
+    access: "public",
     contentType: "application/json",
     allowOverwrite: true,
     addRandomSuffix: false,

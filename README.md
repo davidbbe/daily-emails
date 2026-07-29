@@ -109,9 +109,9 @@ Optional: set `AI_MODEL` to a free-tier Gateway model slug (see below).
 
 - **Vercel Hobby**: up to **100 cron jobs** per project, but each may run **only once per day** (no hourly/minute schedules). Timing has a flexible **1-hour** window (e.g. `0 9 * * *` may fire anytime 09:00–09:59 UTC). This project’s 09:00 UTC schedule qualifies.
 - **AI Gateway**: every Vercel team gets **$5 of monthly free credits**. Once-daily briefs on a flash/lite model usually stay well under $1/month. Credits start on the first Gateway request. Free credits only work with [Free Tier models](https://vercel.com/ai-gateway/models?freeTier=true); newer flagships (Gemini 3.x, Claude Sonnet/Opus 4+, GPT-5.4/5.5/5.6 full, Grok 4.3/4.5) are paid-only. Free-tier requests also have lower rate limits (429s are possible). **Buying AI Gateway credits ends the monthly free allowance** for that team. The daily email reports remaining balance and flags usage ≥50% of `AI_GATEWAY_MONTHLY_BUDGET` (default `$5`).
-- **Fast Origin Transfer**: Hobby includes **10 GB** (rolling ~30 days). The daily email reads this from Vercel’s `/v2/usage` API when `VERCEL_TOKEN` is set (CLI auth works locally).
-- **Vercel Blob**: Hobby includes **1 GB** storage, **10k** simple ops, and **2k** advanced ops. Storage size comes from `list()`; ops come from `/v2/usage`.
-- **Resend free**: 100 emails/day and 3,000/month — one daily digest is fine; quotas appear in the usage section when Resend returns quota headers (or from the last send cache for send-only keys).
+- **Fast Origin Transfer**: Hobby includes **10 GB** (rolling ~30 days). The daily email reads this from Vercel’s `/v2/usage` API when `VERCEL_TOKEN` is set (CLI auth works locally). Without a token on Vercel, it falls back to the last successful sync cached in Blob.
+- **Vercel Blob**: Hobby includes **1 GB** storage, **10k** simple ops, and **2k** advanced ops. Storage size comes from `list()`; ops come from `/v2/usage`. Day-over-day snapshots and usage caches use `access: "public"` (required for public Blob stores).
+- **Resend free**: 100 emails/day and 3,000/month — one daily digest is fine. Send-only API keys cannot read live quotas; the daily email caches send-response headers in Blob for the next run.
 
 ### Strongest free-tier model alternatives
 
