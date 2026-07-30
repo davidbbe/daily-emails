@@ -132,7 +132,7 @@ function formatSources(bundle: ResearchBundle) {
     lines.push(formatIndexedNews(bundle.people[person.id] ?? []));
   }
 
-  lines.push("\n## Catalyst / earnings headlines (last 7 days)");
+  lines.push("\n## Catalyst / earnings headlines (last 14 days)");
   for (const ticker of TICKERS) {
     lines.push(`\n### ${ticker.id}`);
     lines.push(formatIndexedNews(bundle.catalysts[ticker.id] ?? [], 6));
@@ -299,7 +299,8 @@ For each person:
 - sourceIndex: best supporting headline index when there is material news.
 
 earningsCalendar:
-- Only include events where the headlines explicitly mention earnings, investor day, product launch, guidance, or a dated catalyst in the next ~7 days.
+- Only include events where the headlines explicitly mention earnings, investor day, product launch, guidance, or a dated catalyst in the next ~14 days.
+- Include any tracked ticker with a clear upcoming dated event in that window.
 - when: use an explicit date from the headline when present; otherwise a short relative phrase like "This week" or "Date unclear".
 - Do not invent calendar dates. Omit tickers with no clear catalyst.
 - sourceIndex refers to the catalyst headline list for that tickerId.

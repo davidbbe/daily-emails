@@ -190,7 +190,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
     ...TICKERS.map(async (ticker) => {
       catalysts[ticker.id] = await fetchRecentNews(
         catalystQuery(ticker.query),
-        24 * 7,
+        24 * 14,
       );
     }),
     ...TREND_REGIONS.map(async (region) => {

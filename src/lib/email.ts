@@ -267,7 +267,7 @@ function renderEarningsCalendar(events: EarningsEvent[]) {
     return `<tr>
       <td style="padding:0 0 14px 0;">
         <div style="font-size:14px;line-height:1.5;color:#94a3b8;font-style:italic;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
-          No dated earnings or catalysts found in the last 7 days of headlines.
+          No dated earnings or catalysts found for tracked stocks in the next 14 days.
         </div>
       </td>
     </tr>`;
@@ -296,7 +296,7 @@ function renderEarningsCalendar(events: EarningsEvent[]) {
         <tr>
           <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
             <span style="font-size:15px;font-weight:700;color:#0f172a;">Earnings &amp; catalysts</span>
-            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">Next ~7 days (from headlines)</span>
+            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">Next 14 days (from headlines)</span>
           </td>
         </tr>
         <tr>
@@ -467,16 +467,13 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             .map(
               (b) =>
                 `<tr>
-                  <td style="padding:0 0 10px 0;vertical-align:top;width:18px;">
-                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${colors.accent};margin-top:6px;"></span>
-                  </td>
                   <td style="padding:0 0 10px 0;font-size:15px;line-height:1.55;color:#1e293b;">
                     ${flagBadge(b.flag)}${escapeHtml(b.text)}${sourceLink(b.sourceUrl)}
                   </td>
                 </tr>`,
             )
             .join("")
-        : `<tr><td colspan="2" style="font-size:15px;color:#64748b;">No material headlines in the last 24 hours.</td></tr>`;
+        : `<tr><td style="font-size:15px;color:#64748b;">No material headlines in the last 24 hours.</td></tr>`;
 
     return `
       <tr>
@@ -588,7 +585,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(180deg,#dbeafe 0%,#eef2ff 180px,#f8fafc 180px);padding:28px 12px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;margin:0 auto;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:760px;margin:0 auto;">
             <tr>
               <td style="padding:0 0 18px 0;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#0f766e 0%,#1d4ed8 55%,#7c3aed 100%);border-radius:18px;overflow:hidden;">
@@ -679,7 +676,7 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
 
   lines.push("", "EARNINGS & CATALYSTS");
   if (brief.earningsCalendar.length === 0) {
-    lines.push("No dated earnings or catalysts found in recent headlines.");
+    lines.push("No dated earnings or catalysts found for tracked stocks in the next 14 days.");
   } else {
     for (const event of brief.earningsCalendar) {
       const link = event.sourceUrl ? ` (${event.sourceUrl})` : "";
