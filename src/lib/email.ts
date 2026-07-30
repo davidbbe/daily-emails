@@ -23,6 +23,10 @@ const TICKER_COLORS: Record<string, { bg: string; text: string; accent: string }
   MU: { bg: "#eff8ff", text: "#175cd3", accent: "#2e90fa" },
   META: { bg: "#f4f3ff", text: "#5925dc", accent: "#7a5af8" },
   BTC: { bg: "#fff6ed", text: "#b54708", accent: "#f79009" },
+  AVGO: { bg: "#ecfdf3", text: "#067647", accent: "#12b76a" },
+  CRCL: { bg: "#f0f9ff", text: "#026aa2", accent: "#0ba5ec" },
+  SPCX: { bg: "#f8fafc", text: "#334155", accent: "#64748b" },
+  MSFT: { bg: "#eff8ff", text: "#1849a9", accent: "#1570ef" },
 };
 
 const TREND_ACCENTS: Record<string, string> = {

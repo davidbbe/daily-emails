@@ -6,7 +6,7 @@ Daily 09:00-UTC email brief for markets, tech people, catalysts, and web trends.
 
 Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 window), Vercel Cron hits `/api/daily-brief`, which:
 
-1. Pulls the last 24 hours of Google News headlines for **TSLA, MU, META, BTC**
+1. Pulls the last 24 hours of Google News headlines for **TSLA, MU, META, BTC, AVGO, CRCL, SPCX, MSFT**
 2. Checks for speeches/announcements by **Andrej Karpathy, Jensen Huang, Alex Karp, Sam Altman**
 3. Pulls catalyst/earnings headlines for the watchlist over the last **7 days**
 4. Pulls Google Trends top searches for:
@@ -29,7 +29,7 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 | --- | --- | --- |
 | **Theme of the day** | Markets + people + trends context | AI Gateway — one cross-cutting sentence |
 | **Overnight openers** | Google News RSS — last 24h per ticker | Same core brief call — one session-context line each |
-| **Markets** (TSLA, MU, META, BTC) | Google News RSS — last 24h | Core brief: 3–5 bullets with **Watch / Noise / Actionable** flags, **source links**, **why it matters**, **vs yesterday** delta |
+| **Markets** (TSLA, MU, META, BTC, AVGO, CRCL, SPCX, MSFT) | Google News RSS — last 24h | Core brief: 3–5 bullets with **Watch / Noise / Actionable** flags, **source links**, **why it matters**, **vs yesterday** delta |
 | **Earnings & catalysts** | Google News RSS — last 7d catalyst queries | Core brief extracts only explicitly mentioned dated events |
 | **Speeches & announcements** | Google News RSS — last 24h per person | Core brief: one sentence each, optional **quote** + source link |
 | **Regional pulse** | Trends across US / TH / BG | Synthesis call — 2–3 sentences comparing regions |
