@@ -9,9 +9,10 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
 1. Pulls the last 24 hours of Google News headlines for **TSLA, MU, META, BTC, AVGO, CRCL, SPCX, MSFT**
 2. Checks for speeches/announcements by **Andrej Karpathy, Jensen Huang, Alex Karp, Sam Altman**
 3. Pulls catalyst/earnings headlines for the watchlist over the last **7 days**
-4. Pulls Google Trends top searches for:
+4. Pulls Google Trends top searches (Trending Now) for:
    - **United States** — top 10 (with traffic + related news; non-English titles translated)
    - **Thailand** and **Bulgaria** — top 5 each (English labels + short descriptions, traffic badges, news links)
+   - Fetches **2×** each region’s limit, drops **Sports**-category rows, then keeps the configured top N
 5. Flags topics rising in **2+ regions**
 6. Compares against yesterday’s snapshot for **trend movers** and **watchlist delta**
 7. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
@@ -33,8 +34,8 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 | **Earnings & catalysts** | Google News RSS — last 7d catalyst queries | Core brief extracts only explicitly mentioned dated events |
 | **Speeches & announcements** | Google News RSS — last 24h per person | Core brief: one sentence each, optional **quote** + source link |
 | **Regional pulse** | Trends across US / TH / BG | Synthesis call — 2–3 sentences comparing regions |
-| **Web trends · United States** | Google Trends RSS (`geo=US`) | Optional translation when non-English |
-| **Web trends · Thailand / Bulgaria** | Google Trends RSS (`geo=TH`, `geo=BG`) | Localize + short description; email shows **traffic + news links** |
+| **Web trends · United States** | Google Trends Trending Now (`geo=US`); Sports filtered | Optional translation when non-English |
+| **Web trends · Thailand / Bulgaria** | Google Trends Trending Now (`geo=TH`, `geo=BG`); Sports filtered | Localize + short description; email shows **traffic + news links** |
 | **Also rising in 2+ regions** | — | **No LLM** — string match on English titles |
 | **Trend movers** | Previous brief snapshot | **No LLM** — new today / still rising / fell off |
 | **Usage watch** | AI Gateway, Fast Origin Transfer, Blob size/ops, function invocations, Resend | **No LLM** — flags anything ≥50% of its Hobby/free limit |
@@ -47,7 +48,7 @@ In practice that means **up to four** Gateway model calls per daily run:
 3. One Thailand/Bulgaria localize-and-describe pass
 4. One synthesis pass (theme, regional pulse, watchlist delta)
 
-RSS fetches, day-over-day trend diffs, snapshot I/O, and email sending do not use AI credits.
+Trend fetches, day-over-day trend diffs, snapshot I/O, and email sending do not use AI credits.
 
 ## Setup
 

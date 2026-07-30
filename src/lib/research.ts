@@ -1,3 +1,9 @@
+import {
+  categories,
+  fetchTrendingNews,
+  fetchTrendingNow,
+  type TrendingNowItem,
+} from "google-trends-now";
 import Parser from "rss-parser";
 import {
   PEOPLE,
@@ -39,15 +45,12 @@ const parser = new Parser({
   },
 });
 
-const TRENDS_UA = "agent-dave-daily-brief/1.0";
+/** Google Trends Trending Now category id for Sports */
+const SPORTS_CATEGORY_ID = categories.sports;
 
 function googleNewsRssUrl(query: string) {
   const q = encodeURIComponent(query);
   return `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
-}
-
-function googleTrendsRssUrl(geo: string) {
-  return `https://trends.google.com/trending/rss?geo=${encodeURIComponent(geo)}`;
 }
 
 function isWithinHours(date: Date, hours: number) {
@@ -61,91 +64,95 @@ export function parseTrafficScore(approxTraffic: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function decodeXmlEntities(value: string) {
-  return value
-    .replaceAll("&quot;", '"')
-    .replaceAll("&amp;", "&")
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">")
-    .replaceAll("&#39;", "'")
-    .replaceAll("&apos;", "'");
-}
-
-function firstTag(block: string, tag: string): string | undefined {
-  const re = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, "i");
-  const match = block.match(re);
-  if (!match?.[1]) return undefined;
-  return decodeXmlEntities(match[1].trim());
-}
-
-function parseTrendsXml(xml: string): TrendItem[] {
-  const items: TrendItem[] = [];
-  const itemRe = /<item>([\s\S]*?)<\/item>/gi;
-  let match: RegExpExecArray | null;
-
-  while ((match = itemRe.exec(xml)) !== null) {
-    const block = match[1];
-    const title = firstTag(block, "title");
-    if (!title) continue;
-
-    const approxTraffic = firstTag(block, "ht:approx_traffic") ?? "";
-    const newsBlock = block.match(/<ht:news_item>([\s\S]*?)<\/ht:news_item>/i)?.[1];
-    const newsTitle = newsBlock
-      ? firstTag(newsBlock, "ht:news_item_title")
-      : undefined;
-    const newsUrl = newsBlock
-      ? firstTag(newsBlock, "ht:news_item_url")
-      : undefined;
-    const newsSource = newsBlock
-      ? firstTag(newsBlock, "ht:news_item_source")
-      : undefined;
-    const pubDate = firstTag(block, "pubDate");
-    let publishedAt: string | undefined;
-    if (pubDate) {
-      const date = new Date(pubDate);
-      if (!Number.isNaN(date.getTime())) publishedAt = date.toISOString();
-    }
-
-    items.push({
-      title,
-      approxTraffic,
-      trafficScore: parseTrafficScore(approxTraffic),
-      publishedAt,
-      newsTitle,
-      newsUrl,
-      newsSource,
-    });
+function trafficScoreFromItem(item: TrendingNowItem): number {
+  if (typeof item.search_volume === "number" && Number.isFinite(item.search_volume)) {
+    return item.search_volume;
   }
-
-  return items;
+  return parseTrafficScore(item.search_volume_label ?? "");
 }
 
-function sortAndCapTrends(items: TrendItem[], limit = 10): TrendItem[] {
-  return [...items]
-    .sort((a, b) => {
-      if (b.trafficScore !== a.trafficScore) return b.trafficScore - a.trafficScore;
-      return 0;
-    })
-    .slice(0, limit);
-}
-
-async function fetchTrendsXml(geo: string): Promise<string> {
-  const response = await fetch(googleTrendsRssUrl(geo), {
-    headers: {
-      "User-Agent": TRENDS_UA,
-      Accept: "application/rss+xml,application/xml,text/xml,*/*",
-    },
-    signal: AbortSignal.timeout(15000),
+function isSportsTrend(item: TrendingNowItem): boolean {
+  return item.categories.some((category) => {
+    if (category.id === SPORTS_CATEGORY_ID) return true;
+    return String(category.name).toLowerCase() === "sports";
   });
-  if (!response.ok) {
-    throw new Error(`Google Trends RSS failed for geo=${geo}: ${response.status}`);
-  }
-  return response.text();
 }
 
+async function attachNews(
+  item: TrendingNowItem,
+  geo: string,
+): Promise<Pick<TrendItem, "newsTitle" | "newsUrl" | "newsSource">> {
+  const ref = item.news_refs?.[0];
+  if (!ref) return {};
+
+  try {
+    const articles = await fetchTrendingNews([ref], {
+      geo,
+      hl: "en",
+      timeoutMs: 12000,
+    });
+    const article = articles[0];
+    if (!article?.title) return {};
+    return {
+      newsTitle: article.title,
+      newsUrl: article.url ?? undefined,
+      newsSource: article.source ?? undefined,
+    };
+  } catch (error) {
+    console.warn(`trends news resolve failed for "${item.query}"`, error);
+    return {};
+  }
+}
+
+/**
+ * Pull 2× the display limit from Trending Now, drop Sports-category rows,
+ * then keep the top `limit` remaining (by search volume).
+ */
 async function fetchCountryTrends(geo: string, limit = 10): Promise<TrendItem[]> {
-  const xml = await fetchTrendsXml(geo);
-  return sortAndCapTrends(parseTrendsXml(xml), limit);
+  const fetchLimit = Math.max(limit * 2, limit);
+  const output = await fetchTrendingNow({
+    geo,
+    hours: 24,
+    status: "active",
+    sort: "volume",
+    limit: fetchLimit,
+    fallback: "rss",
+    timeoutMs: 20000,
+  });
+
+  if (output.fetch_status !== "success" && output.items.length === 0) {
+    throw new Error(
+      `Google Trends failed for geo=${geo}: ${output.error ?? output.fetch_status}`,
+    );
+  }
+
+  if (output.source === "rss_limited") {
+    console.warn(
+      `trends: geo=${geo} fell back to RSS (no category field); sports filter skipped`,
+    );
+  }
+
+  const withoutSports =
+    output.source === "rss_limited"
+      ? output.items
+      : output.items.filter((item) => !isSportsTrend(item));
+
+  const selected = withoutSports.slice(0, limit);
+  const newsFields = await Promise.all(
+    selected.map((item) => attachNews(item, geo)),
+  );
+
+  return selected.map((item, index) => {
+    const approxTraffic = item.search_volume_label || "—";
+    const publishedAt = item.started_at ?? undefined;
+    return {
+      title: item.query,
+      approxTraffic,
+      trafficScore: trafficScoreFromItem(item),
+      publishedAt,
+      ...newsFields[index],
+    };
+  });
 }
 
 async function fetchRecentNews(query: string, hours = 24): Promise<NewsItem[]> {
