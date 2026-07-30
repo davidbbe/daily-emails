@@ -18,6 +18,15 @@ import {
 const FONT =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
+function windowDays(hours: number) {
+  return Math.max(1, Math.round(hours / 24));
+}
+
+function briefWindowLabel(brief: DailyBrief) {
+  const catalystDays = windowDays(brief.catalystWindowHours);
+  return `Past ${brief.windowHours} hours · Catalysts past ${catalystDays} days`;
+}
+
 const TICKER_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
   TSLA: { bg: "#fff1f0", text: "#b42318", accent: "#f04438" },
   MU: { bg: "#eff8ff", text: "#175cd3", accent: "#2e90fa" },
@@ -266,12 +275,16 @@ function renderOvernightOpeners(brief: DailyBrief) {
   </tr>`;
 }
 
-function renderEarningsCalendar(events: EarningsEvent[]) {
+function renderEarningsCalendar(
+  events: EarningsEvent[],
+  catalystWindowHours: number,
+) {
+  const catalystDays = windowDays(catalystWindowHours);
   if (events.length === 0) {
     return `<tr>
       <td style="padding:0 0 14px 0;">
         <div style="font-size:14px;line-height:1.5;color:#94a3b8;font-style:italic;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
-          No dated earnings or catalysts found for tracked stocks in the next 14 days.
+          No dated earnings or catalysts found for tracked stocks in the next ${catalystDays} days.
         </div>
       </td>
     </tr>`;
@@ -300,7 +313,7 @@ function renderEarningsCalendar(events: EarningsEvent[]) {
         <tr>
           <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
             <span style="font-size:15px;font-weight:700;color:#0f172a;">Earnings &amp; catalysts</span>
-            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">Next 14 days (from headlines)</span>
+            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">Next ${catalystDays} days (from headlines)</span>
           </td>
         </tr>
         <tr>
@@ -598,7 +611,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
                       <div style="font-size:12px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#ccfbf1;margin:0 0 8px 0;">Agent Dave</div>
                       <div style="font-size:28px;line-height:1.2;font-weight:750;color:#ffffff;margin:0 0 10px 0;">Daily Market &amp; Tech Brief</div>
                       <div style="font-size:13px;line-height:1.5;color:#e0e7ff;">
-                        Past ${brief.windowHours} hours · ${escapeHtml(date)}
+                        ${briefWindowLabel(brief)} · ${escapeHtml(date)}
                       </div>
                     </td>
                   </tr>
@@ -614,7 +627,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             ${tickerSections}
 
             ${sectionLabel("Earnings &amp; catalysts")}
-            ${renderEarningsCalendar(brief.earningsCalendar)}
+            ${renderEarningsCalendar(brief.earningsCalendar, brief.catalystWindowHours)}
 
             ${sectionLabel("Speeches &amp; announcements")}
             ${peopleSections}
@@ -649,7 +662,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
 export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
   const lines = [
     "Daily Market & Tech Brief",
-    `Past ${brief.windowHours} hours · ${formatHumanDate(brief.generatedAt)} · ${brief.model}`,
+    `${briefWindowLabel(brief)} · ${formatHumanDate(brief.generatedAt)} · ${brief.model}`,
     "",
     "THEME OF THE DAY",
     brief.themeOfTheDay,
@@ -680,7 +693,9 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
 
   lines.push("", "EARNINGS & CATALYSTS");
   if (brief.earningsCalendar.length === 0) {
-    lines.push("No dated earnings or catalysts found for tracked stocks in the next 14 days.");
+    lines.push(
+      `No dated earnings or catalysts found for tracked stocks in the next ${windowDays(brief.catalystWindowHours)} days.`,
+    );
   } else {
     for (const event of brief.earningsCalendar) {
       const link = event.sourceUrl ? ` (${event.sourceUrl})` : "";

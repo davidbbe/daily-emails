@@ -92,6 +92,7 @@ const brief: DailyBrief = {
   generatedAt: new Date().toISOString(),
   model: "test-send (no LLM)",
   windowHours: 24,
+  catalystWindowHours: 24 * 14,
   hasPreviousBrief: true,
 };
 

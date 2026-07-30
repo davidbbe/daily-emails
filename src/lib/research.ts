@@ -29,9 +29,13 @@ export type TrendItem = {
   newsSource?: string;
 };
 
+/** Lookback for catalyst/earnings headlines (distinct from the daily news window). */
+export const CATALYST_WINDOW_HOURS = 24 * 14;
+
 export type ResearchBundle = {
   collectedAt: string;
   windowHours: number;
+  catalystWindowHours: number;
   tickers: Record<string, NewsItem[]>;
   people: Record<string, NewsItem[]>;
   catalysts: Record<string, NewsItem[]>;
@@ -197,7 +201,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
     ...TICKERS.map(async (ticker) => {
       catalysts[ticker.id] = await fetchRecentNews(
         catalystQuery(ticker.query),
-        24 * 14,
+        CATALYST_WINDOW_HOURS,
       );
     }),
     ...TREND_REGIONS.map(async (region) => {
@@ -213,6 +217,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
   return {
     collectedAt: new Date().toISOString(),
     windowHours: hours,
+    catalystWindowHours: CATALYST_WINDOW_HOURS,
     tickers,
     people,
     catalysts,

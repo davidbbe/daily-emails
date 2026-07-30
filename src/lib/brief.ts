@@ -57,6 +57,7 @@ export type DailyBrief = {
   generatedAt: string;
   model: string;
   windowHours: number;
+  catalystWindowHours: number;
   hasPreviousBrief: boolean;
 };
 
@@ -132,7 +133,9 @@ function formatSources(bundle: ResearchBundle) {
     lines.push(formatIndexedNews(bundle.people[person.id] ?? []));
   }
 
-  lines.push("\n## Catalyst / earnings headlines (last 14 days)");
+  lines.push(
+    `\n## Catalyst / earnings headlines (last ${Math.round(bundle.catalystWindowHours / 24)} days)`,
+  );
   for (const ticker of TICKERS) {
     lines.push(`\n### ${ticker.id}`);
     lines.push(formatIndexedNews(bundle.catalysts[ticker.id] ?? [], 6));
@@ -299,7 +302,7 @@ For each person:
 - sourceIndex: best supporting headline index when there is material news.
 
 earningsCalendar:
-- Only include events where the headlines explicitly mention earnings, investor day, product launch, guidance, or a dated catalyst in the next ~14 days.
+- Only include events where the headlines explicitly mention earnings, investor day, product launch, guidance, or a dated catalyst in the next ~${Math.round(bundle.catalystWindowHours / 24)} days.
 - Include any tracked ticker with a clear upcoming dated event in that window.
 - when: use an explicit date from the headline when present; otherwise a short relative phrase like "This week" or "Date unclear".
 - Do not invent calendar dates. Omit tickers with no clear catalyst.
@@ -484,6 +487,7 @@ export async function generateDailyBrief(
   return {
     model,
     windowHours: bundle.windowHours,
+    catalystWindowHours: bundle.catalystWindowHours,
     generatedAt: new Date().toISOString(),
     trends,
     trendMovers,
