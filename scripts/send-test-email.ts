@@ -76,7 +76,29 @@ const brief: DailyBrief = {
     { id: "karp", name: "Alex Karp", summary: "None found" },
     { id: "altman", name: "Sam Altman", summary: "None found" },
   ],
-  earningsCalendar: [],
+  earningsCalendar: [
+    {
+      tickerId: "TSLA",
+      label: "Tesla (TSLA)",
+      previousDate: "2026-07-22",
+      nextDate: "2026-10-21",
+      nextConfirmed: false,
+    },
+    {
+      tickerId: "MU",
+      label: "Micron (MU)",
+      previousDate: "2026-06-24",
+      nextDate: "2026-09-22",
+      nextConfirmed: false,
+    },
+    {
+      tickerId: "META",
+      label: "Meta (META)",
+      previousDate: "2026-07-29",
+      nextDate: "2026-10-28",
+      nextConfirmed: false,
+    },
+  ],
   themeOfTheDay:
     "TEST EMAIL — review the Usage watch + Vercel & delivery usage sections at the bottom.",
   regionalPulse: "Placeholder regional pulse for layout review.",
@@ -103,7 +125,6 @@ const brief: DailyBrief = {
   generatedAt: new Date().toISOString(),
   model: "test-send (no LLM)",
   windowHours: 24,
-  catalystWindowHours: 24 * 14,
   hasPreviousBrief: true,
 };
 

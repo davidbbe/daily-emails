@@ -49,12 +49,12 @@ export async function GET(request: Request) {
       peopleCounts: Object.fromEntries(
         Object.entries(research.people).map(([id, items]) => [id, items.length]),
       ),
-      catalystCounts: Object.fromEntries(
-        Object.entries(research.catalysts).map(([id, items]) => [
-          id,
-          items.length,
-        ]),
-      ),
+      earnings: brief.earningsCalendar.map((event) => ({
+        tickerId: event.tickerId,
+        previousDate: event.previousDate ?? null,
+        nextDate: event.nextDate ?? null,
+        nextConfirmed: event.nextConfirmed ?? null,
+      })),
       trendCounts: Object.fromEntries(
         Object.entries(research.trends).map(([id, items]) => [id, items.length]),
       ),

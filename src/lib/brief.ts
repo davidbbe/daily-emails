@@ -35,9 +35,9 @@ export type PersonBrief = {
 export type EarningsEvent = {
   tickerId: string;
   label: string;
-  event: string;
-  when: string;
-  sourceUrl?: string;
+  previousDate?: string;
+  nextDate?: string;
+  nextConfirmed?: boolean;
 };
 
 export type DailyBrief = {
@@ -50,7 +50,6 @@ export type DailyBrief = {
   generatedAt: string;
   model: string;
   windowHours: number;
-  catalystWindowHours: number;
   hasPreviousBrief: boolean;
 };
 
@@ -78,14 +77,6 @@ const coreBriefSchema = z.object({
       name: z.string(),
       summary: z.string(),
       quote: z.string().optional(),
-      sourceIndex: z.number().int().optional(),
-    }),
-  ),
-  earningsCalendar: z.array(
-    z.object({
-      tickerId: z.string(),
-      event: z.string(),
-      when: z.string(),
       sourceIndex: z.number().int().optional(),
     }),
   ),
@@ -124,14 +115,6 @@ function formatSources(bundle: ResearchBundle) {
   for (const person of PEOPLE) {
     lines.push(`\n## ${person.name} (id=${person.id})`);
     lines.push(formatIndexedNews(bundle.people[person.id] ?? []));
-  }
-
-  lines.push(
-    `\n## Catalyst / earnings headlines (last ${Math.round(bundle.catalystWindowHours / 24)} days)`,
-  );
-  for (const ticker of TICKERS) {
-    lines.push(`\n### ${ticker.id}`);
-    lines.push(formatIndexedNews(bundle.catalysts[ticker.id] ?? [], 6));
   }
 
   return lines.join("\n");
@@ -249,13 +232,6 @@ For each person:
 - quote: only if a short attributed quote appears in the headlines; otherwise omit.
 - sourceIndex: best supporting headline index when there is material news.
 
-earningsCalendar:
-- Only include events where the headlines explicitly mention earnings, investor day, product launch, guidance, or a dated catalyst in the next ~${Math.round(bundle.catalystWindowHours / 24)} days.
-- Include any tracked ticker with a clear upcoming dated event in that window.
-- when: use an explicit date from the headline when present; otherwise a short relative phrase like "This week" or "Date unclear".
-- Do not invent calendar dates. Omit tickers with no clear catalyst.
-- sourceIndex refers to the catalyst headline list for that tickerId.
-
 Always include every requested ticker and person id.`,
     prompt: `Create today's brief from these sources collected at ${bundle.collectedAt}:
 ${formatSources(bundle)}
@@ -311,7 +287,6 @@ function normalizeCore(
 ): {
   tickers: Omit<TickerBrief, "watchlistDelta">[];
   people: PersonBrief[];
-  earningsCalendar: EarningsEvent[];
 } {
   const tickers = TICKERS.map((ticker) => {
     const found = object.tickers.find((t) => t.id === ticker.id);
@@ -368,27 +343,24 @@ function normalizeCore(
     };
   });
 
-  const earningsCalendar: EarningsEvent[] = [];
-  for (const entry of object.earningsCalendar ?? []) {
+  return { tickers, people };
+}
+
+function mapEarningsCalendar(bundle: ResearchBundle): EarningsEvent[] {
+  const events: EarningsEvent[] = [];
+  for (const entry of bundle.earnings) {
     const ticker = TICKERS.find((t) => t.id === entry.tickerId);
     if (!ticker) continue;
-    const event = entry.event.trim();
-    const when = entry.when.trim();
-    if (!event || !when) continue;
-    const source = resolveSource(
-      bundle.catalysts[ticker.id],
-      entry.sourceIndex,
-    );
-    earningsCalendar.push({
+    if (!entry.previousDate && !entry.nextDate) continue;
+    events.push({
       tickerId: ticker.id,
       label: ticker.label,
-      event,
-      when,
-      sourceUrl: source.sourceUrl,
+      previousDate: entry.previousDate,
+      nextDate: entry.nextDate,
+      nextConfirmed: entry.nextConfirmed,
     });
   }
-
-  return { tickers, people, earningsCalendar: earningsCalendar.slice(0, 10) };
+  return events;
 }
 
 export async function generateDailyBrief(
@@ -434,7 +406,6 @@ export async function generateDailyBrief(
   return {
     model,
     windowHours: bundle.windowHours,
-    catalystWindowHours: bundle.catalystWindowHours,
     generatedAt: new Date().toISOString(),
     trends,
     hasPreviousBrief: Boolean(previous),
@@ -446,6 +417,6 @@ export async function generateDailyBrief(
       "Regional trend coverage was thin today.",
     tickers,
     people: core.people,
-    earningsCalendar: core.earningsCalendar,
+    earningsCalendar: mapEarningsCalendar(bundle),
   };
 }

@@ -17,13 +17,8 @@ import {
 const FONT =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
-function windowDays(hours: number) {
-  return Math.max(1, Math.round(hours / 24));
-}
-
 function briefWindowLabel(brief: DailyBrief) {
-  const catalystDays = windowDays(brief.catalystWindowHours);
-  return `Past ${brief.windowHours} hours · Catalysts past ${catalystDays} days`;
+  return `Past ${brief.windowHours} hours`;
 }
 
 const TICKER_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
@@ -245,16 +240,19 @@ function renderOvernightOpeners(brief: DailyBrief) {
   </tr>`;
 }
 
-function renderEarningsCalendar(
-  events: EarningsEvent[],
-  catalystWindowHours: number,
-) {
-  const catalystDays = windowDays(catalystWindowHours);
+function formatEarningsDate(value?: string, opts?: { est?: boolean }) {
+  if (!value) return "—";
+  const formatted = formatHumanDate(value, { withTime: false });
+  if (opts?.est) return `${formatted} (est.)`;
+  return formatted;
+}
+
+function renderEarningsCalendar(events: EarningsEvent[]) {
   if (events.length === 0) {
     return `<tr>
       <td style="padding:0 0 14px 0;">
         <div style="font-size:14px;line-height:1.5;color:#94a3b8;font-style:italic;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
-          No dated earnings or catalysts found for tracked stocks in the next ${catalystDays} days.
+          No earnings dates available for tracked stocks.
         </div>
       </td>
     </tr>`;
@@ -262,16 +260,23 @@ function renderEarningsCalendar(
 
   const rows = events
     .map((event) => {
-      const link = event.sourceUrl
-        ? ` <a href="${escapeHtml(event.sourceUrl)}" style="color:#2563eb;text-decoration:none;font-size:12px;font-weight:600;">Source →</a>`
-        : "";
+      const previous = formatEarningsDate(event.previousDate);
+      const next = formatEarningsDate(event.nextDate, {
+        est: Boolean(event.nextDate) && event.nextConfirmed === false,
+      });
       return `<tr>
         <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;width:72px;">
           <span style="display:inline-block;font-size:11px;font-weight:700;color:#334155;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:2px 8px;">${escapeHtml(event.tickerId)}</span>
         </td>
         <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
-          <div style="font-size:14px;font-weight:650;color:#0f172a;">${escapeHtml(event.when)}</div>
-          <div style="margin-top:2px;font-size:13px;line-height:1.45;color:#475569;">${escapeHtml(event.event)}${link}</div>
+          <div style="font-size:14px;line-height:1.45;color:#0f172a;">
+            <span style="color:#64748b;font-weight:600;">Previous</span>
+            <span style="margin-left:6px;font-weight:650;">${escapeHtml(previous)}</span>
+          </div>
+          <div style="margin-top:3px;font-size:14px;line-height:1.45;color:#0f172a;">
+            <span style="color:#64748b;font-weight:600;">Next</span>
+            <span style="margin-left:6px;font-weight:650;">${escapeHtml(next)}</span>
+          </div>
         </td>
       </tr>`;
     })
@@ -280,12 +285,6 @@ function renderEarningsCalendar(
   return `<tr>
     <td style="padding:0 0 14px 0;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
-        <tr>
-          <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
-            <span style="font-size:15px;font-weight:700;color:#0f172a;">Earnings &amp; catalysts</span>
-            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">Next ${catalystDays} days (from headlines)</span>
-          </td>
-        </tr>
         <tr>
           <td style="padding:4px 16px 8px 16px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
@@ -531,7 +530,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#0f766e 0%,#1d4ed8 55%,#7c3aed 100%);border-radius:18px;overflow:hidden;">
                   <tr>
                     <td style="padding:28px 28px 24px 28px;">
-                      <div style="font-size:12px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#ccfbf1;margin:0 0 8px 0;">Agent Dave</div>
+                      <div style="font-size:12px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#ccfbf1;margin:0 0 8px 0;">Cloud Agent</div>
                       <div style="font-size:28px;line-height:1.2;font-weight:750;color:#ffffff;margin:0 0 10px 0;">Daily Market &amp; Tech Brief</div>
                       <div style="font-size:13px;line-height:1.5;color:#e0e7ff;">
                         ${briefWindowLabel(brief)} · ${escapeHtml(date)}
@@ -550,7 +549,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             ${tickerSections}
 
             ${sectionLabel("Earnings &amp; catalysts")}
-            ${renderEarningsCalendar(brief.earningsCalendar, brief.catalystWindowHours)}
+            ${renderEarningsCalendar(brief.earningsCalendar)}
 
             ${sectionLabel("Speeches &amp; announcements")}
             ${peopleSections}
@@ -567,7 +566,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             <tr>
               <td style="padding:18px 8px 8px 8px;text-align:center;">
                 <div style="font-size:12px;line-height:1.5;color:#94a3b8;">
-                  Generated by Agent Dave · ${escapeHtml(brief.model)}
+                  Generated by Cloud Agent · ${escapeHtml(brief.model)}
                 </div>
               </td>
             </tr>
@@ -613,13 +612,14 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
 
   lines.push("", "EARNINGS & CATALYSTS");
   if (brief.earningsCalendar.length === 0) {
-    lines.push(
-      `No dated earnings or catalysts found for tracked stocks in the next ${windowDays(brief.catalystWindowHours)} days.`,
-    );
+    lines.push("No earnings dates available for tracked stocks.");
   } else {
     for (const event of brief.earningsCalendar) {
-      const link = event.sourceUrl ? ` (${event.sourceUrl})` : "";
-      lines.push(`- ${event.tickerId} · ${event.when}: ${event.event}${link}`);
+      const previous = formatEarningsDate(event.previousDate);
+      const next = formatEarningsDate(event.nextDate, {
+        est: Boolean(event.nextDate) && event.nextConfirmed === false,
+      });
+      lines.push(`- ${event.tickerId} · Previous ${previous} · Next ${next}`);
     }
   }
 

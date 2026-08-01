@@ -8,7 +8,7 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
 
 1. Pulls the last 24 hours of Google News headlines for **TSLA, MU, META, BTC, AVGO, CRCL, SPCX, MSFT**
 2. Checks for speeches/announcements by **Andrej Karpathy, Jensen Huang, Alex Karp, Sam Altman**
-3. Pulls catalyst/earnings headlines for the watchlist over the last **14 days**
+3. Pulls previous + next earnings report dates for public tickers on the watchlist
 4. Pulls Google Trends top searches (Trending Now) for:
    - **United States** — top 10 (with traffic + related news; non-English titles translated)
    - **Thailand** and **Bulgaria** — top 3 each, summarized in English (what’s rising and why; no local-language text)
@@ -31,7 +31,7 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 | **Theme of the day** | Markets + people + trends context | AI Gateway — one cross-cutting sentence |
 | **Overnight openers** | Google News RSS — last 24h per ticker | Same core brief call — one session-context line each |
 | **Markets** (TSLA, MU, META, BTC, AVGO, CRCL, SPCX, MSFT) | Google News RSS — last 24h | Core brief: 3–5 bullets with **Watch / Noise / Actionable** flags, **source links**, **why it matters**, **vs yesterday** delta |
-| **Earnings & catalysts** | Google News RSS — last 14d catalyst queries | Core brief extracts only explicitly mentioned dated events |
+| **Earnings & catalysts** | Stock Analysis earnings calendar (prev + next report dates) | **No LLM** — skips BTC / SPCX |
 | **Speeches & announcements** | Google News RSS — last 24h per person | Core brief: one sentence each, optional **quote** + source link |
 | **Regional pulse** | Trends across US / TH / BG | Synthesis call — 2–3 sentences comparing regions |
 | **Web trends · United States** | Google Trends Trending Now (`geo=US`); Sports filtered | Optional translation when non-English |
@@ -42,7 +42,7 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 
 In practice that means **up to four** Gateway model calls per daily run:
 
-1. One structured core brief (markets, people, earnings, overnight, flags, quotes)
+1. One structured core brief (markets, people, overnight, flags, quotes)
 2. One optional US translation pass if non-English strings appear
 3. One Thailand/Bulgaria English summary pass (top 3 each)
 4. One synthesis pass (theme, regional pulse, watchlist delta)
@@ -62,7 +62,7 @@ cp .env.example .env
 | Variable                     | Required | Notes                                                                                                      |
 | ---------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
 | `RESEND_API_KEY`             | Yes      | From [Resend](https://resend.com)                                                                          |
-| `EMAIL_FROM`                 | Yes      | Verified Resend domain (sent as `Agent Dave <EMAIL_FROM>`)                                                 |
+| `EMAIL_FROM`                 | Yes      | Verified Resend domain (sent as `Cloud Agent <EMAIL_FROM>`)                                                 |
 | `EMAIL_TO`                   | No       | Defaults to `streethouse4@gmail.com`                                                                       |
 | `CRON_SECRET`                | Prod     | Random string; same value in Vercel env                                                                    |
 | `AI_GATEWAY_API_KEY`         | Local    | From the [AI Gateway](https://vercel.com/docs/ai-gateway) dashboard; on Vercel, OIDC can work without this |

@@ -11,6 +11,10 @@ import {
   TREND_REGIONS,
   type TrendRegionId,
 } from "@/lib/config";
+import {
+  collectEarningsCalendar,
+  type EarningsDates,
+} from "@/lib/earnings";
 
 export type NewsItem = {
   title: string;
@@ -29,16 +33,12 @@ export type TrendItem = {
   newsSource?: string;
 };
 
-/** Lookback for catalyst/earnings headlines (distinct from the daily news window). */
-export const CATALYST_WINDOW_HOURS = 24 * 14;
-
 export type ResearchBundle = {
   collectedAt: string;
   windowHours: number;
-  catalystWindowHours: number;
   tickers: Record<string, NewsItem[]>;
   people: Record<string, NewsItem[]>;
-  catalysts: Record<string, NewsItem[]>;
+  earnings: EarningsDates[];
   trends: Record<TrendRegionId, TrendItem[]>;
 };
 
@@ -181,46 +181,41 @@ async function fetchRecentNews(query: string, hours = 24): Promise<NewsItem[]> {
   return items.slice(0, 8);
 }
 
-function catalystQuery(tickerQuery: string) {
-  return `(${tickerQuery}) (earnings OR "earnings call" OR "investor day" OR "product launch" OR catalyst OR guidance OR "reports results" OR "reports earnings")`;
-}
-
 export async function collectResearch(hours = 24): Promise<ResearchBundle> {
   const tickers: Record<string, NewsItem[]> = {};
   const people: Record<string, NewsItem[]> = {};
-  const catalysts: Record<string, NewsItem[]> = {};
   const trends = {} as Record<TrendRegionId, TrendItem[]>;
 
-  await Promise.all([
-    ...TICKERS.map(async (ticker) => {
-      tickers[ticker.id] = await fetchRecentNews(ticker.query, hours);
-    }),
-    ...PEOPLE.map(async (person) => {
-      people[person.id] = await fetchRecentNews(person.query, hours);
-    }),
-    ...TICKERS.map(async (ticker) => {
-      catalysts[ticker.id] = await fetchRecentNews(
-        catalystQuery(ticker.query),
-        CATALYST_WINDOW_HOURS,
-      );
-    }),
-    ...TREND_REGIONS.map(async (region) => {
-      try {
-        trends[region.id] = await fetchCountryTrends(region.geo, region.limit);
-      } catch (error) {
-        console.warn(`trends fetch failed for ${region.id}`, error);
-        trends[region.id] = [];
-      }
-    }),
+  const [, , earnings] = await Promise.all([
+    Promise.all(
+      TICKERS.map(async (ticker) => {
+        tickers[ticker.id] = await fetchRecentNews(ticker.query, hours);
+      }),
+    ),
+    Promise.all(
+      PEOPLE.map(async (person) => {
+        people[person.id] = await fetchRecentNews(person.query, hours);
+      }),
+    ),
+    collectEarningsCalendar(),
+    Promise.all(
+      TREND_REGIONS.map(async (region) => {
+        try {
+          trends[region.id] = await fetchCountryTrends(region.geo, region.limit);
+        } catch (error) {
+          console.warn(`trends fetch failed for ${region.id}`, error);
+          trends[region.id] = [];
+        }
+      }),
+    ),
   ]);
 
   return {
     collectedAt: new Date().toISOString(),
     windowHours: hours,
-    catalystWindowHours: CATALYST_WINDOW_HOURS,
     tickers,
     people,
-    catalysts,
+    earnings,
     trends,
   };
 }
