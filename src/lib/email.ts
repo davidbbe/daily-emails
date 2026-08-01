@@ -2,7 +2,6 @@ import type {
   BulletFlag,
   DailyBrief,
   EarningsEvent,
-  TrendMovers,
 } from "@/lib/brief";
 import { getEmailFrom, getEmailTo, PEOPLE, TICKERS } from "@/lib/config";
 import { formatHumanDate } from "@/lib/dates";
@@ -326,53 +325,6 @@ function renderEarningsCalendar(
   </tr>`;
 }
 
-function renderTrendMovers(movers: TrendMovers, hasPrevious: boolean) {
-  if (!hasPrevious) {
-    return `<tr>
-      <td style="padding:0 0 14px 0;">
-        <div style="font-size:14px;line-height:1.5;color:#94a3b8;font-style:italic;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
-          Day-over-day trend movers appear after the second brief (store a prior snapshot with Vercel Blob or local .data/).
-        </div>
-      </td>
-    </tr>`;
-  }
-
-  const groups: Array<{ label: string; items: string[]; color: string }> = [
-    { label: "New today", items: movers.newToday, color: "#047857" },
-    { label: "Still rising", items: movers.stillRising, color: "#1d4ed8" },
-    { label: "Fell off", items: movers.fellOff, color: "#b45309" },
-  ];
-
-  const body = groups
-    .map((group) => {
-      const items =
-        group.items.length > 0
-          ? escapeHtml(group.items.join(" · "))
-          : `<span style="color:#94a3b8;font-style:italic;">None</span>`;
-      return `<div style="margin:0 0 10px 0;">
-        <div style="font-size:12px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:${group.color};margin:0 0 4px 0;">${group.label}</div>
-        <div style="font-size:14px;line-height:1.5;color:#334155;">${items}</div>
-      </div>`;
-    })
-    .join("");
-
-  return `<tr>
-    <td style="padding:0 0 14px 0;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
-        <tr>
-          <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
-            <span style="font-size:15px;font-weight:700;color:#0f172a;">Trend movers</span>
-            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">vs yesterday</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:12px 16px 4px 16px;">${body}</td>
-        </tr>
-      </table>
-    </td>
-  </tr>`;
-}
-
 function percentColor(percent: number, available: boolean) {
   if (!available) return "#94a3b8";
   if (percent >= 90) return "#b42318";
@@ -639,9 +591,6 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             ${trendSections}
             ${crossRegion}
 
-            ${sectionLabel("Trend movers")}
-            ${renderTrendMovers(brief.trendMovers, brief.hasPreviousBrief)}
-
             ${usage ? `${sectionLabel("Usage")}${renderUsageReport(usage)}` : ""}
 
             <tr>
@@ -746,17 +695,6 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
       "",
       `Also rising in 2+ regions: ${brief.trends.crossRegion.join(" · ")}`,
     );
-  }
-
-  lines.push("", "TREND MOVERS");
-  if (!brief.hasPreviousBrief) {
-    lines.push("No prior brief stored yet for day-over-day movers.");
-  } else {
-    lines.push(`New today: ${brief.trendMovers.newToday.join(" · ") || "None"}`);
-    lines.push(
-      `Still rising: ${brief.trendMovers.stillRising.join(" · ") || "None"}`,
-    );
-    lines.push(`Fell off: ${brief.trendMovers.fellOff.join(" · ") || "None"}`);
   }
 
   if (usage) {

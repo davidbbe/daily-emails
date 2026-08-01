@@ -14,7 +14,7 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
    - **Thailand** and **Bulgaria** — top 5 each (English labels + short descriptions, traffic badges, news links)
    - Fetches **2×** each region’s limit, drops **Sports**-category rows, then keeps the configured top N
 5. Flags topics rising in **2+ regions**
-6. Compares against yesterday’s snapshot for **trend movers** and **watchlist delta**
+6. Compares against yesterday’s snapshot for **watchlist delta**
 7. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
 8. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest
 9. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
@@ -37,7 +37,6 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 | **Web trends · United States** | Google Trends Trending Now (`geo=US`); Sports filtered | Optional translation when non-English |
 | **Web trends · Thailand / Bulgaria** | Google Trends Trending Now (`geo=TH`, `geo=BG`); Sports filtered | Localize + short description; email shows **traffic + news links** |
 | **Also rising in 2+ regions** | — | **No LLM** — string match on English titles |
-| **Trend movers** | Previous brief snapshot | **No LLM** — new today / still rising / fell off |
 | **Usage watch** | AI Gateway, Fast Origin Transfer, Blob size/ops, function invocations, Resend | **No LLM** — flags anything ≥50% of its Hobby/free limit |
 | **Delivery** | — | **Resend API** sends HTML + plain-text email |
 
@@ -48,7 +47,7 @@ In practice that means **up to four** Gateway model calls per daily run:
 3. One Thailand/Bulgaria localize-and-describe pass
 4. One synthesis pass (theme, regional pulse, watchlist delta)
 
-Trend fetches, day-over-day trend diffs, snapshot I/O, and email sending do not use AI credits.
+Trend fetches, snapshot I/O, and email sending do not use AI credits.
 
 ## Setup
 
@@ -100,7 +99,7 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://your-app.vercel.app/api/dai
 
 1. Push to GitHub and import the project in Vercel
 2. Set env vars: `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_TO`, `CRON_SECRET`
-3. (Recommended) Create a Blob store and set `BLOB_READ_WRITE_TOKEN` for day-over-day movers / watchlist delta
+3. (Recommended) Create a Blob store and set `BLOB_READ_WRITE_TOKEN` for day-over-day watchlist delta
 4. Deploy to **Production** (crons only run on production)
 5. Cron schedule is defined in `vercel.json`: `0 9 * * *` → `/api/daily-brief`
 

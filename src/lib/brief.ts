@@ -40,19 +40,12 @@ export type EarningsEvent = {
   sourceUrl?: string;
 };
 
-export type TrendMovers = {
-  newToday: string[];
-  stillRising: string[];
-  fellOff: string[];
-};
-
 export type DailyBrief = {
   tickers: TickerBrief[];
   people: PersonBrief[];
   earningsCalendar: EarningsEvent[];
   themeOfTheDay: string;
   regionalPulse: string;
-  trendMovers: TrendMovers;
   trends: BriefTrends;
   generatedAt: string;
   model: string;
@@ -152,54 +145,6 @@ function resolveSource(
   const item = items[sourceIndex];
   if (!item) return {};
   return { sourceUrl: item.link, sourceTitle: item.title };
-}
-
-function normalizeTitleKey(title: string) {
-  return title.toLowerCase().trim().replace(/\s+/g, " ");
-}
-
-export function computeTrendMovers(
-  today: BriefTrends,
-  previous: BriefSnapshot | null,
-): TrendMovers {
-  if (!previous?.trendTitles) {
-    return { newToday: [], stillRising: [], fellOff: [] };
-  }
-
-  const todayByKey = new Map<string, string>();
-  for (const region of today.regions) {
-    for (const item of region.items) {
-      const label = item.titleEn.trim() || item.title.trim();
-      const key = normalizeTitleKey(label);
-      if (key && !todayByKey.has(key)) todayByKey.set(key, label);
-    }
-  }
-
-  const prevByKey = new Map<string, string>();
-  for (const titles of Object.values(previous.trendTitles)) {
-    for (const title of titles ?? []) {
-      const key = normalizeTitleKey(title);
-      if (key && !prevByKey.has(key)) prevByKey.set(key, title);
-    }
-  }
-
-  const newToday: string[] = [];
-  const stillRising: string[] = [];
-  for (const [key, label] of todayByKey) {
-    if (prevByKey.has(key)) stillRising.push(label);
-    else newToday.push(label);
-  }
-
-  const fellOff: string[] = [];
-  for (const [key, label] of prevByKey) {
-    if (!todayByKey.has(key)) fellOff.push(label);
-  }
-
-  return {
-    newToday: newToday.slice(0, 8),
-    stillRising: stillRising.slice(0, 8),
-    fellOff: fellOff.slice(0, 8),
-  };
 }
 
 function formatPreviousForPrompt(previous: BriefSnapshot | null) {
@@ -455,7 +400,6 @@ export async function generateDailyBrief(
   ]);
 
   const core = normalizeCore(coreResult.object, bundle);
-  const trendMovers = computeTrendMovers(trends, previous);
 
   const synthesisResult = await generateSynthesis({
     model,
@@ -490,7 +434,6 @@ export async function generateDailyBrief(
     catalystWindowHours: bundle.catalystWindowHours,
     generatedAt: new Date().toISOString(),
     trends,
-    trendMovers,
     hasPreviousBrief: Boolean(previous),
     themeOfTheDay:
       synthesisResult.object.themeOfTheDay.trim() ||

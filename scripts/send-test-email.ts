@@ -80,7 +80,6 @@ const brief: DailyBrief = {
   themeOfTheDay:
     "TEST EMAIL — review the Usage watch + Vercel & delivery usage sections at the bottom.",
   regionalPulse: "Placeholder regional pulse for layout review.",
-  trendMovers: { newToday: ["Test topic"], stillRising: [], fellOff: [] },
   trends: {
     regions: [
       { id: "us", label: "United States", items: [] },

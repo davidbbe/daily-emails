@@ -59,11 +59,6 @@ export async function GET(request: Request) {
         Object.entries(research.trends).map(([id, items]) => [id, items.length]),
       ),
       crossRegionCount: brief.trends.crossRegion.length,
-      trendMovers: {
-        newToday: brief.trendMovers.newToday.length,
-        stillRising: brief.trendMovers.stillRising.length,
-        fellOff: brief.trendMovers.fellOff.length,
-      },
       usage: {
         thresholdPercent: usage.thresholdPercent,
         watch: usage.watch.map((m) => ({
