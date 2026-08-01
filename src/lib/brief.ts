@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getModel, PEOPLE, TICKERS, type TrendRegionId } from "@/lib/config";
 import type { BriefSnapshot } from "@/lib/history";
 import type { NewsItem, ResearchBundle } from "@/lib/research";
+import type { RedditSubFeed } from "@/lib/reddit";
 import { buildBriefTrends, type BriefTrends } from "@/lib/trends";
 
 export const BULLET_FLAGS = ["Watch", "Noise", "Actionable"] as const;
@@ -47,6 +48,8 @@ export type DailyBrief = {
   themeOfTheDay: string;
   regionalPulse: string;
   trends: BriefTrends;
+  /** Top Reddit posts — pass-through, no LLM */
+  reddit: RedditSubFeed[];
   generatedAt: string;
   model: string;
   windowHours: number;
@@ -408,6 +411,7 @@ export async function generateDailyBrief(
     windowHours: bundle.windowHours,
     generatedAt: new Date().toISOString(),
     trends,
+    reddit: bundle.reddit ?? [],
     hasPreviousBrief: Boolean(previous),
     themeOfTheDay:
       synthesisResult.object.themeOfTheDay.trim() ||

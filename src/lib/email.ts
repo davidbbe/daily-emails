@@ -5,6 +5,7 @@ import type {
 } from "@/lib/brief";
 import { getEmailFrom, getEmailTo, PEOPLE, TICKERS } from "@/lib/config";
 import { formatHumanDate } from "@/lib/dates";
+import type { RedditSubFeed, RedditWindow } from "@/lib/reddit";
 import type { BriefTrendItem } from "@/lib/trends";
 import {
   formatMetricLimit,
@@ -303,6 +304,87 @@ function percentColor(percent: number, available: boolean) {
   return "#047857";
 }
 
+function redditWindowLabel(window: RedditWindow) {
+  if (window === "day") return "Top · day";
+  if (window === "week") return "Top · week";
+  return "Hot";
+}
+
+function renderRedditPostRow(post: RedditSubFeed["posts"][number], rank: number) {
+  const thumb = post.thumbnail
+    ? `<img src="${escapeHtml(post.thumbnail)}" width="40" height="40" alt="" style="display:block;width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;" />`
+    : `<div style="width:40px;height:40px;border-radius:6px;background:#f1f5f9;border:1px solid #e2e8f0;"></div>`;
+
+  return `<tr>
+    <td style="padding:6px 0;vertical-align:top;width:18px;">
+      <div style="font-size:11px;font-weight:700;color:#94a3b8;padding-top:12px;">${rank}</div>
+    </td>
+    <td style="padding:6px 8px 6px 0;vertical-align:top;width:40px;">
+      <a href="${escapeHtml(post.permalink)}" style="text-decoration:none;">${thumb}</a>
+    </td>
+    <td style="padding:6px 0;vertical-align:top;">
+      <a href="${escapeHtml(post.permalink)}" style="font-size:12px;line-height:1.35;font-weight:650;color:#0f172a;text-decoration:none;">${escapeHtml(post.title)}</a>
+    </td>
+  </tr>`;
+}
+
+function renderRedditSubColumn(feed: RedditSubFeed) {
+  const rows =
+    feed.posts.length > 0
+      ? feed.posts.map((post, i) => renderRedditPostRow(post, i + 1)).join("")
+      : `<tr><td colspan="3" style="padding:8px 0;font-size:12px;color:#94a3b8;font-style:italic;">No posts available.</td></tr>`;
+
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+      <tr>
+        <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">
+          <span style="font-size:13px;font-weight:700;color:#0f172a;vertical-align:middle;">${escapeHtml(feed.label)}</span>
+          <span style="margin-left:6px;font-size:11px;color:#94a3b8;vertical-align:middle;">${escapeHtml(redditWindowLabel(feed.window))}</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:6px 12px 10px 12px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+        </td>
+      </tr>
+    </table>`;
+}
+
+/** Pair subreddit cards into a 2-column grid to keep the email shorter. */
+function renderRedditSection(feeds: RedditSubFeed[]) {
+  if (feeds.length === 0) {
+    return `<tr>
+      <td style="padding:0 0 14px 0;">
+        <div style="font-size:14px;line-height:1.5;color:#94a3b8;font-style:italic;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
+          No Reddit posts available.
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  const rows: string[] = [];
+  for (let i = 0; i < feeds.length; i += 2) {
+    const left = feeds[i];
+    const right = feeds[i + 1];
+    rows.push(`<tr>
+      <td style="padding:0 0 12px 0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td width="50%" style="width:50%;padding:0 6px 0 0;vertical-align:top;">
+              ${left ? renderRedditSubColumn(left) : ""}
+            </td>
+            <td width="50%" style="width:50%;padding:0 0 0 6px;vertical-align:top;">
+              ${right ? renderRedditSubColumn(right) : ""}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`);
+  }
+
+  return rows.join("");
+}
+
 function renderUsageWatch(usage: UsageReport) {
   if (usage.watch.length === 0) {
     return `<tr>
@@ -561,6 +643,9 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             ${trendSections}
             ${crossRegion}
 
+            ${sectionLabel("Reddit")}
+            ${renderRedditSection(brief.reddit ?? [])}
+
             ${usage ? `${sectionLabel("Usage")}${renderUsageReport(usage)}` : ""}
 
             <tr>
@@ -670,6 +755,26 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
       "",
       `Also rising in 2+ regions: ${brief.trends.crossRegion.join(" · ")}`,
     );
+  }
+
+  lines.push("", "REDDIT");
+  if (!brief.reddit?.length) {
+    lines.push("No Reddit posts available.");
+  } else {
+    for (const feed of brief.reddit) {
+      lines.push(
+        "",
+        `${feed.label} (${redditWindowLabel(feed.window)})`,
+      );
+      if (feed.posts.length === 0) {
+        lines.push("- No posts available.");
+        continue;
+      }
+      for (const [index, post] of feed.posts.entries()) {
+        lines.push(`${index + 1}. ${post.title}`);
+        lines.push(`   ${post.permalink}`);
+      }
+    }
   }
 
   if (usage) {

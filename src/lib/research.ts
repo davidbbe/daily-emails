@@ -15,6 +15,7 @@ import {
   collectEarningsCalendar,
   type EarningsDates,
 } from "@/lib/earnings";
+import { collectRedditTops, type RedditSubFeed } from "@/lib/reddit";
 
 export type NewsItem = {
   title: string;
@@ -40,6 +41,7 @@ export type ResearchBundle = {
   people: Record<string, NewsItem[]>;
   earnings: EarningsDates[];
   trends: Record<TrendRegionId, TrendItem[]>;
+  reddit: RedditSubFeed[];
 };
 
 const parser = new Parser({
@@ -186,7 +188,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
   const people: Record<string, NewsItem[]> = {};
   const trends = {} as Record<TrendRegionId, TrendItem[]>;
 
-  const [, , earnings] = await Promise.all([
+  const [, , earnings, reddit] = await Promise.all([
     Promise.all(
       TICKERS.map(async (ticker) => {
         tickers[ticker.id] = await fetchRecentNews(ticker.query, hours);
@@ -198,6 +200,10 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
       }),
     ),
     collectEarningsCalendar(),
+    collectRedditTops().catch((error) => {
+      console.warn("reddit fetch failed", error);
+      return [] as RedditSubFeed[];
+    }),
     Promise.all(
       TREND_REGIONS.map(async (region) => {
         try {
@@ -217,5 +223,6 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
     people,
     earnings,
     trends,
+    reddit,
   };
 }

@@ -59,6 +59,9 @@ export async function GET(request: Request) {
         Object.entries(research.trends).map(([id, items]) => [id, items.length]),
       ),
       crossRegionCount: brief.trends.crossRegion.length,
+      redditCounts: Object.fromEntries(
+        (brief.reddit ?? []).map((feed) => [feed.id, feed.posts.length]),
+      ),
       usage: {
         thresholdPercent: usage.thresholdPercent,
         watch: usage.watch.map((m) => ({

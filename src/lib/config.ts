@@ -25,6 +25,20 @@ export const TREND_REGIONS = [
 
 export type TrendRegionId = (typeof TREND_REGIONS)[number]["id"];
 
+/** Subreddits included in the daily brief (top posts, no LLM) */
+export const REDDIT_SUBREDDITS = [
+  { id: "worldnews", limit: 5 },
+  { id: "pics", limit: 5 },
+  { id: "funny", limit: 5 },
+  { id: "photoshop", limit: 5 },
+  { id: "Photoshop_creations", limit: 5 },
+  { id: "generativeAI", limit: 5 },
+  { id: "CursedAI", limit: 5 },
+  { id: "aiArt", limit: 5 },
+] as const;
+
+export type RedditSubredditId = (typeof REDDIT_SUBREDDITS)[number]["id"];
+
 /** Free-tier-friendly Gateway model with reliable structured output */
 export const DEFAULT_MODEL = "google/gemini-2.5-flash";
 

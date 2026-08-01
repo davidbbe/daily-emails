@@ -1,6 +1,6 @@
 # Agent Dave
 
-Daily 09:00-UTC email brief for markets, tech people, catalysts, and web trends.
+Daily 09:00-UTC email brief for markets, tech people, catalysts, web trends, and Reddit tops.
 
 ## What it does
 
@@ -14,13 +14,14 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
    - **Thailand** and **Bulgaria** — top 3 each, summarized in English (what’s rising and why; no local-language text)
    - Fetches **2×** each region’s limit, drops **Sports**-category rows, then keeps the configured top N
 5. Flags topics rising in **2+ regions**
-6. Compares against yesterday’s snapshot for **watchlist delta**
-7. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
-8. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest
-9. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
-10. Saves a slim snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
+6. Pulls top Reddit posts (title, link, thumbnail when available) for configured subreddits
+7. Compares against yesterday’s snapshot for **watchlist delta**
+8. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
+9. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest
+10. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
+11. Saves a slim snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
 
-Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGIONS`, `DEFAULT_MODEL`).
+Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGIONS`, `REDDIT_SUBREDDITS`, `DEFAULT_MODEL`).
 
 ## What’s in the email (data + AI)
 
@@ -37,6 +38,7 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 | **Web trends · United States** | Google Trends Trending Now (`geo=US`); Sports filtered | Optional translation when non-English |
 | **Web trends · Thailand / Bulgaria** | Google Trends Trending Now (`geo=TH`, `geo=BG`); Sports filtered | One English summary each of the **top 3** trends and why they are rising (no item list; no local-language text) |
 | **Also rising in 2+ regions** | — | **No LLM** — string match on English titles |
+| **Reddit** | Reddit Atom RSS — top 5 per sub (`worldnews`, `pics`, `funny`, `photoshop`, `Photoshop_creations`, `generativeAI`, `CursedAI`, `aiArt`); day → week → hot fallback | **No LLM** — 2-column HTML layout with title, link, thumbnail |
 | **Usage watch** | AI Gateway, Fast Origin Transfer, Blob size/ops, function invocations, Resend | **No LLM** — flags anything ≥50% of its Hobby/free limit |
 | **Delivery** | — | **Resend API** sends HTML + plain-text email |
 

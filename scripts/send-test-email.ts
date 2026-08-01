@@ -1,8 +1,28 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { DailyBrief } from "@/lib/brief";
+import { REDDIT_SUBREDDITS } from "@/lib/config";
 import { sendBriefEmail } from "@/lib/email";
+import type { RedditSubFeed } from "@/lib/reddit";
 import { collectUsageReport } from "@/lib/usage";
+
+const DEMO_THUMB =
+  "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png";
+
+/** Keep the test fixture in sync with config — one card per configured sub. */
+function demoRedditFeeds(): RedditSubFeed[] {
+  return REDDIT_SUBREDDITS.map((sub, index) => ({
+    id: sub.id,
+    label: `r/${sub.id}`,
+    window: index % 3 === 2 ? "week" : "day",
+    posts: Array.from({ length: Math.min(sub.limit, 3) }, (_, postIndex) => ({
+      title: `Placeholder ${sub.id} post ${postIndex + 1}`,
+      permalink: `https://www.reddit.com/r/${sub.id}/`,
+      thumbnail: postIndex % 2 === 0 ? DEMO_THUMB : undefined,
+      author: "test_user",
+    })),
+  }));
+}
 
 function loadEnvFile(filename: string) {
   try {
@@ -122,6 +142,7 @@ const brief: DailyBrief = {
     ],
     crossRegion: [],
   },
+  reddit: demoRedditFeeds(),
   generatedAt: new Date().toISOString(),
   model: "test-send (no LLM)",
   windowHours: 24,
