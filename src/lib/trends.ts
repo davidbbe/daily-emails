@@ -20,12 +20,14 @@ export type BriefTrends = {
     id: TrendRegionId;
     label: string;
     items: BriefTrendItem[];
+    /** English prose summary for Thailand / Bulgaria (no item list in email) */
+    summary?: string;
   }>;
   crossRegion: string[];
 };
 
-/** Regions that get short English descriptions (traffic + news links still shown) */
-const DESCRIBED_REGIONS = new Set<TrendRegionId>(["thailand", "bulgaria"]);
+/** Regions shown as an AI English summary of the top trends (not a list) */
+const SUMMARIZED_REGIONS = new Set<TrendRegionId>(["thailand", "bulgaria"]);
 
 const translationSchema = z.object({
   items: z.array(
@@ -37,12 +39,17 @@ const translationSchema = z.object({
   ),
 });
 
-const descriptionSchema = z.object({
-  items: z.array(
+const localSummarySchema = z.object({
+  regions: z.array(
     z.object({
       id: z.string(),
-      titleEn: z.string(),
-      descriptionEn: z.string(),
+      summary: z.string(),
+      items: z.array(
+        z.object({
+          id: z.string(),
+          titleEn: z.string(),
+        }),
+      ),
     }),
   ),
 });
@@ -121,65 +128,81 @@ ${jobs
   return map;
 }
 
-async function describeLocalTrends(
+type LocalSummaryResult = {
+  enrichments: Map<string, Enrichment>;
+  summaries: Map<TrendRegionId, string>;
+};
+
+async function summarizeLocalTrends(
   bundle: ResearchBundle,
-): Promise<Map<string, Enrichment>> {
-  const map = new Map<string, Enrichment>();
-  const jobs: Array<{
-    id: string;
-    title: string;
-    newsTitle?: string;
-  }> = [];
+): Promise<LocalSummaryResult> {
+  const enrichments = new Map<string, Enrichment>();
+  const summaries = new Map<TrendRegionId, string>();
 
-  for (const regionId of DESCRIBED_REGIONS) {
-    const items = bundle.trends[regionId] ?? [];
-    items.forEach((item, index) => {
-      jobs.push({
-        id: `${regionId}:${index}`,
-        title: item.title,
-        newsTitle: item.newsTitle,
-      });
-    });
-  }
+  const regionJobs = [...SUMMARIZED_REGIONS]
+    .map((regionId) => {
+      const items = (bundle.trends[regionId] ?? []).slice(0, 3);
+      return { regionId, items };
+    })
+    .filter((job) => job.items.length > 0);
 
-  if (jobs.length === 0) return map;
+  if (regionJobs.length === 0) return { enrichments, summaries };
 
   try {
     const { object } = await generateObject({
       model: getModel(),
-      schema: descriptionSchema,
+      schema: localSummarySchema,
       maxOutputTokens: 4096,
-      // Same as translateUsItems — keep thinking off so JSON completes.
       providerOptions: {
         google: { thinkingConfig: { thinkingBudget: 0 } },
       },
-      system: `You localize Google Trends items for an English email brief.
-For each item:
-- titleEn: English search-query label (translate if needed; keep proper nouns)
-- descriptionEn: one short English sentence (max 14 words) explaining why it is trending, based only on the provided news headline. Do not invent facts. If no news is given, write a brief neutral gloss of the query itself.`,
-      prompt: `Localize these trends:
-${jobs
+      system: `You write English-only trend summaries for a daily email brief.
+For each country region:
+- summary: 2–4 short English sentences covering the top trends and why each is rising. Ground claims only in the provided titles, traffic, and news headlines. Do not invent facts. If news is missing, say the topic is searching highly without detailing a cause.
+- items: one English titleEn per trend id (translate the search query; keep proper nouns). Needed for matching across regions.
+
+CRITICAL language rules:
+- Output MUST be entirely in English.
+- Never include Thai, Bulgarian, Cyrillic, or any non-English text — not even in parentheses.
+- Translate all local terms; keep globally known proper nouns in Latin script.`,
+      prompt: `Summarize the top trends for each region (English only):
+${regionJobs
   .map((job) => {
-    const news = job.newsTitle ? `\n  news: ${job.newsTitle}` : "\n  news: (none)";
-    return `- id=${job.id}\n  title: ${job.title}${news}`;
+    const lines = job.items
+      .map((item, index) => {
+        const news = item.newsTitle
+          ? `\n    news: ${item.newsTitle}`
+          : "\n    news: (none)";
+        const traffic = item.approxTraffic
+          ? `\n    traffic: ${item.approxTraffic}`
+          : "";
+        return `  - id=${job.regionId}:${index}\n    title: ${item.title}${traffic}${news}`;
+      })
+      .join("\n");
+    return `## ${job.regionId}\n${lines}`;
   })
-  .join("\n")}`,
+  .join("\n\n")}`,
     });
 
-    for (const item of object.items) {
-      map.set(item.id, {
-        titleEn: item.titleEn.trim() || item.id,
-        descriptionEn: item.descriptionEn.trim() || undefined,
-      });
+    for (const region of object.regions) {
+      const regionId = region.id as TrendRegionId;
+      if (!SUMMARIZED_REGIONS.has(regionId)) continue;
+      const summary = region.summary.trim();
+      if (summary) summaries.set(regionId, summary);
+      for (const item of region.items) {
+        enrichments.set(item.id, {
+          titleEn: item.titleEn.trim() || item.id,
+        });
+      }
     }
   } catch (error) {
     console.warn(
-      "trends: local description failed; using original titles",
+      "trends: local summary failed; using original titles",
       error,
     );
   }
 
-  return map;
+  return { enrichments, summaries };
 }
 
 function toBriefItem(
@@ -213,6 +236,8 @@ function computeCrossRegion(regions: BriefTrends["regions"]): string[] {
     for (const item of region.items) {
       const key = normalizeTitleKey(item.titleEn || item.title);
       if (!key) continue;
+      // Skip keys that still look non-English so the email never lists them
+      if (looksNonEnglish(key)) continue;
       const entry = counts.get(key) ?? {
         label: item.titleEn || item.title,
         regions: new Set<string>(),
@@ -225,26 +250,50 @@ function computeCrossRegion(regions: BriefTrends["regions"]): string[] {
   return [...counts.values()]
     .filter((entry) => entry.regions.size >= 2)
     .map((entry) => entry.label)
+    .filter((label) => !looksNonEnglish(label))
     .slice(0, 8);
+}
+
+function fallbackLocalSummary(items: BriefTrendItem[]): string {
+  if (items.length === 0) return "No trends available today.";
+  const topics = items
+    .slice(0, 3)
+    .map((item) => item.titleEn.trim() || item.title.trim())
+    .filter((t) => t && !looksNonEnglish(t));
+  if (topics.length === 0) {
+    return "Trend topics could not be translated to English today.";
+  }
+  return `Top searches today include ${topics.join(", ")}.`;
 }
 
 export async function buildBriefTrends(
   bundle: ResearchBundle,
 ): Promise<BriefTrends> {
-  const [usMap, localMap] = await Promise.all([
+  const [usMap, local] = await Promise.all([
     translateUsItems(bundle),
-    describeLocalTrends(bundle),
+    summarizeLocalTrends(bundle),
   ]);
 
   const regions = TREND_REGIONS.map((region) => {
-    const source = DESCRIBED_REGIONS.has(region.id) ? localMap : usMap;
-    const items = (bundle.trends[region.id] ?? []).map((item, index) =>
+    const isSummarized = SUMMARIZED_REGIONS.has(region.id);
+    const source = isSummarized ? local.enrichments : usMap;
+    const rawItems = (bundle.trends[region.id] ?? []).slice(
+      0,
+      isSummarized ? 3 : undefined,
+    );
+    const items = rawItems.map((item, index) =>
       toBriefItem(item, index + 1, source.get(`${region.id}:${index}`)),
     );
+
+    const summary = isSummarized
+      ? local.summaries.get(region.id)?.trim() || fallbackLocalSummary(items)
+      : undefined;
+
     return {
       id: region.id,
       label: region.label,
       items,
+      ...(summary ? { summary } : {}),
     };
   });
 

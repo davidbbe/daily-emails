@@ -11,7 +11,7 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
 3. Pulls catalyst/earnings headlines for the watchlist over the last **14 days**
 4. Pulls Google Trends top searches (Trending Now) for:
    - **United States** — top 10 (with traffic + related news; non-English titles translated)
-   - **Thailand** and **Bulgaria** — top 5 each (English labels + short descriptions, traffic badges, news links)
+   - **Thailand** and **Bulgaria** — top 3 each, summarized in English (what’s rising and why; no local-language text)
    - Fetches **2×** each region’s limit, drops **Sports**-category rows, then keeps the configured top N
 5. Flags topics rising in **2+ regions**
 6. Compares against yesterday’s snapshot for **watchlist delta**
@@ -35,7 +35,7 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 | **Speeches & announcements** | Google News RSS — last 24h per person | Core brief: one sentence each, optional **quote** + source link |
 | **Regional pulse** | Trends across US / TH / BG | Synthesis call — 2–3 sentences comparing regions |
 | **Web trends · United States** | Google Trends Trending Now (`geo=US`); Sports filtered | Optional translation when non-English |
-| **Web trends · Thailand / Bulgaria** | Google Trends Trending Now (`geo=TH`, `geo=BG`); Sports filtered | Localize + short description; email shows **traffic + news links** |
+| **Web trends · Thailand / Bulgaria** | Google Trends Trending Now (`geo=TH`, `geo=BG`); Sports filtered | One English summary each of the **top 3** trends and why they are rising (no item list; no local-language text) |
 | **Also rising in 2+ regions** | — | **No LLM** — string match on English titles |
 | **Usage watch** | AI Gateway, Fast Origin Transfer, Blob size/ops, function invocations, Resend | **No LLM** — flags anything ≥50% of its Hobby/free limit |
 | **Delivery** | — | **Resend API** sends HTML + plain-text email |
@@ -44,7 +44,7 @@ In practice that means **up to four** Gateway model calls per daily run:
 
 1. One structured core brief (markets, people, earnings, overnight, flags, quotes)
 2. One optional US translation pass if non-English strings appear
-3. One Thailand/Bulgaria localize-and-describe pass
+3. One Thailand/Bulgaria English summary pass (top 3 each)
 4. One synthesis pass (theme, regional pulse, watchlist delta)
 
 Trend fetches, snapshot I/O, and email sending do not use AI credits.

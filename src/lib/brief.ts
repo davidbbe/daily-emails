@@ -196,6 +196,9 @@ function formatTodayForSynthesis(args: {
 
   const trendLines = args.trends.regions
     .map((region) => {
+      if (region.summary?.trim()) {
+        return `${region.label}: ${region.summary.trim()}`;
+      }
       const items = region.items
         .map((item) => {
           const title = item.titleEn || item.title;

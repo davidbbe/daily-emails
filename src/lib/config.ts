@@ -19,8 +19,8 @@ export const PEOPLE = [
 /** Google Trends RSS regions shown in the daily brief */
 export const TREND_REGIONS = [
   { id: "us", label: "United States", geo: "US", limit: 10 },
-  { id: "thailand", label: "Thailand", geo: "TH", limit: 5 },
-  { id: "bulgaria", label: "Bulgaria", geo: "BG", limit: 5 },
+  { id: "thailand", label: "Thailand", geo: "TH", limit: 3 },
+  { id: "bulgaria", label: "Bulgaria", geo: "BG", limit: 3 },
 ] as const;
 
 export type TrendRegionId = (typeof TREND_REGIONS)[number]["id"];

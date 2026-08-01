@@ -83,8 +83,20 @@ const brief: DailyBrief = {
   trends: {
     regions: [
       { id: "us", label: "United States", items: [] },
-      { id: "thailand", label: "Thailand", items: [] },
-      { id: "bulgaria", label: "Bulgaria", items: [] },
+      {
+        id: "thailand",
+        label: "Thailand",
+        items: [],
+        summary:
+          "Placeholder Thailand summary — top searches and why they are rising, in English only.",
+      },
+      {
+        id: "bulgaria",
+        label: "Bulgaria",
+        items: [],
+        summary:
+          "Placeholder Bulgaria summary — top searches and why they are rising, in English only.",
+      },
     ],
     crossRegion: [],
   },

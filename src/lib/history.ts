@@ -23,9 +23,9 @@ export type BriefSnapshot = {
 export function toSnapshot(brief: DailyBrief): BriefSnapshot {
   const trendTitles: BriefSnapshot["trendTitles"] = {};
   for (const region of brief.trends.regions) {
-    trendTitles[region.id] = region.items.map(
-      (item) => item.titleEn.trim() || item.title.trim(),
-    );
+    trendTitles[region.id] = region.items
+      .map((item) => item.titleEn.trim() || item.title.trim())
+      .filter((title) => title.length > 0);
   }
 
   return {

@@ -153,42 +153,6 @@ function renderTrendRows(items: BriefTrendItem[]) {
     .join("");
 }
 
-/** Compact list for side-by-side Thailand / Bulgaria — includes traffic + news links */
-function renderCompactTrendRows(items: BriefTrendItem[]) {
-  if (items.length === 0) {
-    return `<tr><td style="padding:6px 0;font-size:12px;color:#94a3b8;font-style:italic;">No trends.</td></tr>`;
-  }
-
-  return items
-    .map((item) => {
-      const title = escapeHtml(item.titleEn.trim() || item.title.trim());
-      const description = (item.descriptionEn || item.newsTitleEn || "").trim();
-      const news = trendNewsLine(item);
-      return `<tr>
-        <td style="padding:7px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-              <td style="width:20px;vertical-align:top;font-size:11px;font-weight:700;color:#94a3b8;padding-top:1px;">#${item.rank}</td>
-              <td style="vertical-align:top;">
-                <div style="font-size:13px;line-height:1.35;font-weight:650;color:#0f172a;">
-                  ${title}
-                  ${trafficBadge(item.approxTraffic)}
-                </div>
-                ${
-                  description && !news
-                    ? `<div style="margin-top:2px;font-size:11px;line-height:1.4;color:#64748b;">${escapeHtml(description)}</div>`
-                    : ""
-                }
-                ${news ? `<div style="margin-top:2px;font-size:11px;line-height:1.4;color:#64748b;">${news}</div>` : ""}
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>`;
-    })
-    .join("");
-}
-
 function renderFullTrendSection(region: {
   id: string;
   label: string;
@@ -216,24 +180,31 @@ function renderFullTrendSection(region: {
       </tr>`;
 }
 
-function renderCompactTrendColumn(region: {
+/** Side-by-side Thailand / Bulgaria — English AI summary of top trends */
+function renderTrendSummaryColumn(region: {
   id: string;
   label: string;
   items: BriefTrendItem[];
+  summary?: string;
 }) {
   const accent = TREND_ACCENTS[region.id] ?? "#475569";
+  const summary = region.summary?.trim();
+  const body = summary
+    ? `<div style="font-size:13px;line-height:1.55;color:#334155;">${escapeHtml(summary)}</div>`
+    : `<div style="font-size:12px;color:#94a3b8;font-style:italic;">No trends available.</div>`;
+
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
       <tr>
         <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">
           <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${accent};margin-right:6px;vertical-align:middle;"></span>
           <span style="font-size:13px;font-weight:700;color:#0f172a;vertical-align:middle;">${escapeHtml(region.label)}</span>
-          <span style="margin-left:6px;font-size:11px;color:#94a3b8;vertical-align:middle;">Top ${region.items.length || 5}</span>
+          <span style="margin-left:6px;font-size:11px;color:#94a3b8;vertical-align:middle;">Top ${region.items.length || 3} · summary</span>
         </td>
       </tr>
       <tr>
-        <td style="padding:2px 10px 6px 10px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${renderCompactTrendRows(region.items)}</table>
+        <td style="padding:12px;">
+          ${body}
         </td>
       </tr>
     </table>`;
@@ -519,10 +490,10 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             <tr>
               <td width="50%" style="width:50%;padding:0 6px 0 0;vertical-align:top;">
-                ${thailandRegion ? renderCompactTrendColumn(thailandRegion) : ""}
+                ${thailandRegion ? renderTrendSummaryColumn(thailandRegion) : ""}
               </td>
               <td width="50%" style="width:50%;padding:0 0 0 6px;vertical-align:top;">
-                ${bulgariaRegion ? renderCompactTrendColumn(bulgariaRegion) : ""}
+                ${bulgariaRegion ? renderTrendSummaryColumn(bulgariaRegion) : ""}
               </td>
             </tr>
           </table>
@@ -665,6 +636,10 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
   lines.push("", "WEB TRENDS");
   for (const region of brief.trends?.regions ?? []) {
     lines.push("", region.label);
+    if (region.summary?.trim()) {
+      lines.push(region.summary.trim());
+      continue;
+    }
     if (region.items.length === 0) {
       lines.push("- No trends available.");
       continue;
