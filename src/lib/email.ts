@@ -310,10 +310,31 @@ function redditWindowLabel(window: RedditWindow) {
   return "Hot";
 }
 
+function siteOrigin() {
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (production) return `https://${production.replace(/^https?:\/\//, "")}`;
+  const deployment = process.env.VERCEL_URL?.trim();
+  if (deployment) return `https://${deployment.replace(/^https?:\/\//, "")}`;
+  return undefined;
+}
+
+/** Crossed-out picture icon when a post has no thumbnail. */
+function redditNoImageThumbHtml() {
+  const origin = siteOrigin();
+  if (origin) {
+    return `<img src="${escapeHtml(`${origin}/reddit-no-image.svg`)}" width="40" height="40" alt="No image" style="display:block;width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;background:#f1f5f9;" />`;
+  }
+
+  // Fallback when no public origin is available (local sends).
+  return `<table role="presentation" width="40" height="40" cellpadding="0" cellspacing="0" style="width:40px;height:40px;border-radius:6px;border:1px solid #e2e8f0;background:#f1f5f9;"><tr><td align="center" valign="middle" width="40" height="40" style="width:40px;height:40px;font-size:16px;line-height:16px;color:#64748b;font-family:Arial,Helvetica,sans-serif;" title="No image">∅</td></tr></table>`;
+}
+
 function renderRedditPostRow(post: RedditSubFeed["posts"][number], rank: number) {
   const thumb = post.thumbnail
     ? `<img src="${escapeHtml(post.thumbnail)}" width="40" height="40" alt="" style="display:block;width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;" />`
-    : `<div style="width:40px;height:40px;border-radius:6px;background:#f1f5f9;border:1px solid #e2e8f0;"></div>`;
+    : redditNoImageThumbHtml();
 
   return `<tr>
     <td style="padding:6px 0;vertical-align:top;width:18px;">
