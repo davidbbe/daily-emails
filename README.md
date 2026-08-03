@@ -15,7 +15,7 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
    - Fetches **2×** each region’s limit, drops **Sports**-category rows, then keeps the configured top N
 5. Flags topics rising in **2+ regions**
 6. Pulls top Reddit posts (title, link, thumbnail when available) for configured subreddits
-7. Pulls **GA4** yesterday + month-to-date overviews for configured sites (when a service account is set)
+7. Pulls **GA4** yesterday + 7-day trend + month-to-date overviews for configured sites (when a service account is set)
 8. Compares against yesterday’s snapshot for **watchlist delta**
 9. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
 10. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest
@@ -28,21 +28,21 @@ Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGI
 
 All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk.dev) `generateObject` helper. Default model: **`google/gemini-2.5-flash`** (override with `AI_MODEL`). No provider SDKs are wired directly — the Gateway routes the request.
 
-| Email section | Data source (no AI) | LLM / API used |
-| --- | --- | --- |
-| **Theme of the day** | Markets + people + trends context | AI Gateway — one cross-cutting sentence |
-| **Overnight openers** | Google News RSS — last 24h per ticker | Same core brief call — one session-context line each |
-| **Markets** (TSLA, MU, META, BTC, AVGO, CRCL, SPCX, MSFT) | Google News RSS — last 24h | Core brief: 3–5 bullets with **Watch / Noise / Actionable** flags, **source links**, **why it matters**, **vs yesterday** delta |
-| **Earnings & catalysts** | Stock Analysis earnings calendar (prev + next report dates) | **No LLM** — skips BTC / SPCX |
-| **Speeches & announcements** | Google News RSS — last 24h per person | Core brief: one sentence each, optional **quote** + source link |
-| **Regional pulse** | Trends across US / TH / BG | Synthesis call — 2–3 sentences comparing regions |
-| **Web trends · United States** | Google Trends Trending Now (`geo=US`); Sports filtered | Optional translation when non-English |
-| **Web trends · Thailand / Bulgaria** | Google Trends Trending Now (`geo=TH`, `geo=BG`); Sports filtered | One English summary each of the **top 3** trends and why they are rising (no item list; no local-language text) |
-| **Also rising in 2+ regions** | — | **No LLM** — string match on English titles |
-| **Reddit** | Reddit Atom RSS — top 5 per sub (`worldnews`, `pics`, `funny`, `photoshop`, `Photoshop_creations`, `generativeAI`, `CursedAI`, `aiArt`); day → week → hot fallback | **No LLM** — 2-column HTML layout with title, link, thumbnail |
-| **Google Analytics website data** | GA4 Data API — yesterday + month-to-date users, sessions, pageviews, bounce rate, avg duration (yesterday vs day before) for `uwhmap.com`, `Greetingcardfun.com`, `tvroulette.app` | **No LLM** — skipped when `GOOGLE_CLIENT_EMAIL` / `GOOGLE_PRIVATE_KEY` are unset |
-| **Usage watch** | AI Gateway, Fast Origin Transfer, Blob size/ops, function invocations, Resend | **No LLM** — flags anything ≥50% of its Hobby/free limit |
-| **Delivery** | — | **Resend API** sends HTML + plain-text email |
+| Email section                                             | Data source (no AI)                                                                                                                                                | LLM / API used                                                                                                                  |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| **Theme of the day**                                      | Markets + people + trends context                                                                                                                                  | AI Gateway — one cross-cutting sentence                                                                                         |
+| **Overnight openers**                                     | Google News RSS — last 24h per ticker                                                                                                                              | Same core brief call — one session-context line each                                                                            |
+| **Markets** (TSLA, MU, META, BTC, AVGO, CRCL, SPCX, MSFT) | Google News RSS — last 24h                                                                                                                                         | Core brief: 3–5 bullets with **Watch / Noise / Actionable** flags, **source links**, **why it matters**, **vs yesterday** delta |
+| **Earnings & catalysts**                                  | Stock Analysis earnings calendar (prev + next report dates)                                                                                                        | **No LLM** — skips BTC / SPCX                                                                                                   |
+| **Speeches & announcements**                              | Google News RSS — last 24h per person                                                                                                                              | Core brief: one sentence each, optional **quote** + source link                                                                 |
+| **Regional pulse**                                        | Trends across US / TH / BG                                                                                                                                         | Synthesis call — 2–3 sentences comparing regions                                                                                |
+| **Web trends · United States**                            | Google Trends Trending Now (`geo=US`); Sports filtered                                                                                                             | Optional translation when non-English                                                                                           |
+| **Web trends · Thailand / Bulgaria**                      | Google Trends Trending Now (`geo=TH`, `geo=BG`); Sports filtered                                                                                                   | One English summary each of the **top 3** trends and why they are rising (no item list; no local-language text)                 |
+| **Also rising in 2+ regions**                             | —                                                                                                                                                                  | **No LLM** — string match on English titles                                                                                     |
+| **Reddit**                                                | Reddit Atom RSS — top 5 per sub (`worldnews`, `pics`, `funny`, `photoshop`, `Photoshop_creations`, `generativeAI`, `CursedAI`, `aiArt`); day → week → hot fallback | **No LLM** — 2-column HTML layout with title, link, thumbnail                                                                   |
+| **Google Analytics**                                      | GA4 Data API — yesterday KPIs (vs prior day), 7-day users bar chart, and month-to-date totals for `uwhmap.com`, `greetingcardfun.com`, `tvroulette.app`            | **No LLM** — skipped when `GOOGLE_CLIENT_EMAIL` / `GOOGLE_PRIVATE_KEY` are unset                                                |
+| **Usage watch**                                           | AI Gateway, Fast Origin Transfer, Blob size/ops, function invocations, Resend                                                                                      | **No LLM** — flags anything ≥50% of its Hobby/free limit                                                                        |
+| **Delivery**                                              | —                                                                                                                                                                  | **Resend API** sends HTML + plain-text email                                                                                    |
 
 In practice that means **up to four** Gateway model calls per daily run:
 
@@ -63,26 +63,26 @@ cp .env.example .env
 
 2. Fill in:
 
-| Variable                     | Required | Notes                                                                                                      |
-| ---------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
-| `RESEND_API_KEY`             | Yes      | From [Resend](https://resend.com)                                                                          |
-| `EMAIL_FROM`                 | Yes      | Verified Resend domain (sent as `Cloud Agent <EMAIL_FROM>`)                                                 |
-| `EMAIL_TO`                   | No       | Defaults to `streethouse4@gmail.com`                                                                       |
-| `CRON_SECRET`                | Prod     | Random string; same value in Vercel env                                                                    |
-| `AI_GATEWAY_API_KEY`         | Local    | From the [AI Gateway](https://vercel.com/docs/ai-gateway) dashboard; on Vercel, OIDC can work without this |
-| `AI_MODEL`                   | No       | Defaults to `google/gemini-2.5-flash`                                                                      |
-| `AI_GATEWAY_MONTHLY_BUDGET`  | No       | USD free-credit budget for usage watch (default `5`)                                                       |
-| `RESEND_DAILY_LIMIT`         | No       | Daily email quota for usage watch (default `100`)                                                          |
-| `RESEND_MONTHLY_LIMIT`       | No       | Monthly email quota for usage watch (default `3000`)                                                       |
-| `BLOB_READ_WRITE_TOKEN`      | Prod*    | From a [Vercel Blob](https://vercel.com/docs/vercel-blob) store — enables durable day-over-day history     |
-| `VERCEL_TOKEN`               | Prod*    | [Account token](https://vercel.com/account/tokens) for Fast Origin Transfer / platform usage via `/v2/usage` |
-| `VERCEL_TEAM_ID`             | No       | Team id (defaults to `orgId` in `.vercel/project.json` when linked)                                      |
-| `GOOGLE_CLIENT_EMAIL`        | No       | GCP service account email for the **Google Analytics website data** section                                |
-| `GOOGLE_PRIVATE_KEY`         | No       | Service account private key (PEM; literal `\n` newlines are fine)                                          |
+| Variable                    | Required | Notes                                                                                                        |
+| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `RESEND_API_KEY`            | Yes      | From [Resend](https://resend.com)                                                                            |
+| `EMAIL_FROM`                | Yes      | Verified Resend domain (sent as `Cloud Agent <EMAIL_FROM>`)                                                  |
+| `EMAIL_TO`                  | No       | Defaults to `streethouse4@gmail.com`                                                                         |
+| `CRON_SECRET`               | Prod     | Random string; same value in Vercel env                                                                      |
+| `AI_GATEWAY_API_KEY`        | Local    | From the [AI Gateway](https://vercel.com/docs/ai-gateway) dashboard; on Vercel, OIDC can work without this   |
+| `AI_MODEL`                  | No       | Defaults to `google/gemini-2.5-flash`                                                                        |
+| `AI_GATEWAY_MONTHLY_BUDGET` | No       | USD free-credit budget for usage watch (default `5`)                                                         |
+| `RESEND_DAILY_LIMIT`        | No       | Daily email quota for usage watch (default `100`)                                                            |
+| `RESEND_MONTHLY_LIMIT`      | No       | Monthly email quota for usage watch (default `3000`)                                                         |
+| `BLOB_READ_WRITE_TOKEN`     | Prod\*   | From a [Vercel Blob](https://vercel.com/docs/vercel-blob) store — enables durable day-over-day history       |
+| `VERCEL_TOKEN`              | Prod\*   | [Account token](https://vercel.com/account/tokens) for Fast Origin Transfer / platform usage via `/v2/usage` |
+| `VERCEL_TEAM_ID`            | No       | Team id (defaults to `orgId` in `.vercel/project.json` when linked)                                          |
+| `GOOGLE_CLIENT_EMAIL`       | No       | GCP service account email for the **Google Analytics** section                                               |
+| `GOOGLE_PRIVATE_KEY`        | No       | Service account private key (PEM; literal `\n` newlines are fine)                                            |
 
 \*Without Blob, local runs still persist to `.data/previous-brief.json`. On Vercel without Blob, day-over-day sections stay empty until a store is connected.
 
-### Google Analytics website data
+### Google Analytics
 
 Optional. Without these env vars the brief still sends — the analytics block is omitted.
 
@@ -135,14 +135,14 @@ Optional: set `AI_MODEL` to a free-tier Gateway model slug (see below).
 
 Default: **`google/gemini-2.5-flash`** (also Google’s strongest free-tier chat model — Gemini 3.x is paid-only). Override with `AI_MODEL`. One strong free-tier option per maker:
 
-| Maker | Model slug | Approx. price (in / out per 1M tokens) | Why consider it |
-| --- | --- | --- | --- |
-| **Google** *(default)* | `google/gemini-2.5-flash` | $0.30 / $2.50 | Best free Google option; reliable structured JSON for this brief |
-| **OpenAI** | `openai/gpt-5.2` | $1.75 / $14.00 | Strongest free OpenAI general model; pricier — still fine for 1 run/day |
-| **xAI** | `xai/grok-4.1-fast-reasoning` | $0.20 / $0.50 | Strongest free Grok; cheap with reasoning |
-| **Anthropic** | `anthropic/claude-3-haiku` | $0.25 / $1.25 | Only Claude on free credits (newer Haiku/Sonnet/Opus are paid-only) |
-| **Meta** | `meta/llama-4-maverick` | $0.24 / $0.97 | Strongest free Llama 4 instruct model |
-| **DeepSeek** | `deepseek/deepseek-r1` | $1.35 / $5.40 | Strongest free DeepSeek for harder synthesis / reasoning |
+| Maker                  | Model slug                    | Approx. price (in / out per 1M tokens) | Why consider it                                                         |
+| ---------------------- | ----------------------------- | -------------------------------------- | ----------------------------------------------------------------------- |
+| **Google** _(default)_ | `google/gemini-2.5-flash`     | $0.30 / $2.50                          | Best free Google option; reliable structured JSON for this brief        |
+| **OpenAI**             | `openai/gpt-5.2`              | $1.75 / $14.00                         | Strongest free OpenAI general model; pricier — still fine for 1 run/day |
+| **xAI**                | `xai/grok-4.1-fast-reasoning` | $0.20 / $0.50                          | Strongest free Grok; cheap with reasoning                               |
+| **Anthropic**          | `anthropic/claude-3-haiku`    | $0.25 / $1.25                          | Only Claude on free credits (newer Haiku/Sonnet/Opus are paid-only)     |
+| **Meta**               | `meta/llama-4-maverick`       | $0.24 / $0.97                          | Strongest free Llama 4 instruct model                                   |
+| **DeepSeek**           | `deepseek/deepseek-r1`        | $1.35 / $5.40                          | Strongest free DeepSeek for harder synthesis / reasoning                |
 
 Example:
 

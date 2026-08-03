@@ -418,48 +418,137 @@ function deltaColor(delta: number | null) {
   return delta > 0 ? "#047857" : "#b42318";
 }
 
+function deltaBadgeBg(delta: number | null) {
+  if (delta === null || delta === 0) return "#f1f5f9";
+  return delta > 0 ? "#ecfdf5" : "#fef2f2";
+}
+
 function formatCount(n: number) {
   return Math.round(n).toLocaleString("en-US");
 }
 
-function renderSiteMetricCell(
+function shortWeekday(isoDate: string) {
+  const d = new Date(`${isoDate}T12:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+}
+
+function siteAccent(label: string) {
+  const accents = [
+    { strong: "#0d9488", soft: "#99f6e4", chip: "#f0fdfa" },
+    { strong: "#2563eb", soft: "#bfdbfe", chip: "#eff6ff" },
+    { strong: "#7c3aed", soft: "#ddd6fe", chip: "#f5f3ff" },
+    { strong: "#c2410c", soft: "#fdba74", chip: "#fff7ed" },
+    { strong: "#0891b2", soft: "#a5f3fc", chip: "#ecfeff" },
+  ] as const;
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) {
+    hash = (hash + label.charCodeAt(i) * (i + 1)) % accents.length;
+  }
+  return accents[hash] ?? accents[0];
+}
+
+function renderDeltaBadge(delta: number | null) {
+  const label = formatDeltaPercent(delta);
+  return `<span style="display:inline-block;font-size:11px;font-weight:700;letter-spacing:0.02em;color:${deltaColor(delta)};background:${deltaBadgeBg(delta)};border-radius:999px;padding:3px 8px;vertical-align:middle;">${escapeHtml(label)} vs prior day</span>`;
+}
+
+function renderHeroKpi(
   label: string,
   value: string,
   delta?: number | null,
+  opts?: { emphasize?: boolean },
 ) {
+  const valueSize = opts?.emphasize ? "26px" : "20px";
   const deltaHtml =
     delta === undefined
       ? ""
-      : `<div style="margin-top:3px;font-size:11px;font-weight:600;color:${deltaColor(delta)};">${escapeHtml(formatDeltaPercent(delta))}</div>`;
-  return `<td style="padding:8px 6px;vertical-align:top;text-align:center;width:20%;">
-    <div style="font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;">${escapeHtml(label)}</div>
-    <div style="margin-top:4px;font-size:16px;font-weight:750;color:#0f172a;">${escapeHtml(value)}</div>
-    ${deltaHtml}
+      : `<div style="margin-top:6px;">${renderDeltaBadge(delta)}</div>`;
+  return `<td style="padding:0 6px;vertical-align:top;width:33.33%;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;">
+      <tr>
+        <td style="padding:12px 12px 14px 12px;">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;">${escapeHtml(label)}</div>
+          <div style="margin-top:6px;font-size:${valueSize};line-height:1.15;font-weight:750;color:#0f172a;">${escapeHtml(value)}</div>
+          ${deltaHtml}
+        </td>
+      </tr>
+    </table>
   </td>`;
 }
 
-function renderSiteMetricRow(metrics: SiteAnalytics["metrics"], opts?: {
-  usersDelta?: number | null;
-  viewsDelta?: number | null;
-}) {
-  return `<tr>
-    ${renderSiteMetricCell("Users", formatCount(metrics.activeUsers), opts?.usersDelta)}
-    ${renderSiteMetricCell("Sessions", formatCount(metrics.sessions))}
-    ${renderSiteMetricCell("Pageviews", formatCount(metrics.screenPageViews), opts?.viewsDelta)}
-    ${renderSiteMetricCell("Bounce", formatBounceRate(metrics.bounceRate))}
-    ${renderSiteMetricCell("Avg duration", formatSessionDuration(metrics.averageSessionDuration))}
-  </tr>`;
+function renderSecondaryMetric(label: string, value: string) {
+  return `<td style="padding:0 4px;vertical-align:top;width:50%;">
+    <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;">
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;">${escapeHtml(label)}</div>
+      <div style="margin-top:4px;font-size:15px;font-weight:700;color:#334155;">${escapeHtml(value)}</div>
+    </div>
+  </td>`;
+}
+
+/** Email-safe 7-day users bar chart (HTML tables, no images). */
+function renderUsersBarChart(
+  series: SiteAnalytics["dailySeries"],
+  accent: ReturnType<typeof siteAccent>,
+) {
+  const points = series.length > 0 ? series : [];
+  if (points.length === 0) {
+    return `<div style="font-size:12px;color:#94a3b8;font-style:italic;">No trend data.</div>`;
+  }
+
+  const maxUsers = Math.max(...points.map((p) => p.activeUsers), 1);
+  const barMaxHeight = 56;
+
+  const bars = points
+    .map((point, index) => {
+      const height = Math.max(
+        4,
+        Math.round((point.activeUsers / maxUsers) * barMaxHeight),
+      );
+      const isLast = index === points.length - 1;
+      const barColor = isLast ? accent.strong : accent.soft;
+      const labelColor = isLast ? "#0f172a" : "#94a3b8";
+      const weight = isLast ? "700" : "600";
+      return `<td style="padding:0 3px;vertical-align:bottom;text-align:center;width:${Math.floor(100 / points.length)}%;">
+        <div style="font-size:10px;font-weight:700;color:#64748b;margin:0 0 4px 0;line-height:1;">${formatCount(point.activeUsers)}</div>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="height:${barMaxHeight}px;">
+          <tr>
+            <td style="vertical-align:bottom;height:${barMaxHeight}px;">
+              <div style="height:${height}px;background:${barColor};border-radius:6px 6px 2px 2px;line-height:1px;font-size:1px;">&nbsp;</div>
+            </td>
+          </tr>
+        </table>
+        <div style="margin-top:6px;font-size:10px;font-weight:${weight};color:${labelColor};">${escapeHtml(shortWeekday(point.date))}</div>
+      </td>`;
+    })
+    .join("");
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>${bars}</tr>
+  </table>`;
+}
+
+function renderMtdStat(label: string, value: string) {
+  return `<td style="padding:0 4px;vertical-align:top;width:25%;text-align:center;">
+    <div style="font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;">${escapeHtml(label)}</div>
+    <div style="margin-top:4px;font-size:14px;font-weight:750;color:#0f172a;">${escapeHtml(value)}</div>
+  </td>`;
 }
 
 function renderSiteCard(site: SiteAnalytics) {
+  const accent = siteAccent(site.label);
+
   if (site.error) {
     return `<tr>
-      <td style="padding:0 0 12px 0;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+      <td style="padding:0 0 14px 0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
           <tr>
-            <td style="padding:12px 16px;">
-              <div style="font-size:15px;font-weight:700;color:#0f172a;">${escapeHtml(site.label)}</div>
-              <div style="margin-top:6px;font-size:13px;line-height:1.45;color:#b45309;">${escapeHtml(site.error)}</div>
+            <td style="height:4px;background:${accent.strong};line-height:1px;font-size:1px;">&nbsp;</td>
+          </tr>
+          <tr>
+            <td style="padding:16px 18px;">
+              <div style="font-size:16px;font-weight:750;color:#0f172a;">${escapeHtml(site.label)}</div>
+              <div style="margin-top:8px;font-size:13px;line-height:1.45;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;">${escapeHtml(site.error)}</div>
             </td>
           </tr>
         </table>
@@ -471,36 +560,95 @@ function renderSiteCard(site: SiteAnalytics) {
     site.metrics.activeUsers,
     site.previous.activeUsers,
   );
+  const sessionsDelta = percentChange(
+    site.metrics.sessions,
+    site.previous.sessions,
+  );
   const viewsDelta = percentChange(
     site.metrics.screenPageViews,
     site.previous.screenPageViews,
   );
+  const mtd = site.monthToDate;
+  const dateLabel = formatHumanDate(site.date, { withTime: false });
+  const mtdRange = `${formatHumanDate(site.monthStart, { withTime: false })} – ${dateLabel}`;
+
   return `<tr>
-    <td style="padding:0 0 12px 0;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+    <td style="padding:0 0 14px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
         <tr>
-          <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
-            <span style="font-size:15px;font-weight:700;color:#0f172a;vertical-align:middle;">${escapeHtml(site.label)}</span>
-          </td>
+          <td style="height:4px;background:${accent.strong};line-height:1px;font-size:1px;">&nbsp;</td>
         </tr>
         <tr>
-          <td style="padding:10px 10px 2px 10px;">
-            <div style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;padding:0 6px 2px 6px;">
-              Yesterday · ${escapeHtml(formatHumanDate(site.date, { withTime: false }))}
-            </div>
+          <td style="padding:16px 18px 8px 18px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-              ${renderSiteMetricRow(site.metrics, { usersDelta, viewsDelta })}
+              <tr>
+                <td style="vertical-align:middle;">
+                  <div style="font-size:17px;font-weight:750;color:#0f172a;">${escapeHtml(site.label)}</div>
+                  <div style="margin-top:3px;font-size:12px;color:#64748b;">Yesterday · ${escapeHtml(dateLabel)}</div>
+                </td>
+                <td style="vertical-align:middle;text-align:right;">
+                  <span style="display:inline-block;font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${accent.strong};background:${accent.chip};border-radius:999px;padding:4px 9px;">GA4</span>
+                </td>
+              </tr>
             </table>
           </td>
         </tr>
         <tr>
-          <td style="padding:4px 10px 12px 10px;">
-            <div style="height:1px;background:#f1f5f9;margin:4px 6px 8px 6px;line-height:1px;font-size:1px;">&nbsp;</div>
-            <div style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;padding:0 6px 2px 6px;">
-              Month to date · ${escapeHtml(formatHumanDate(site.monthStart, { withTime: false }))} – ${escapeHtml(formatHumanDate(site.date, { withTime: false }))}
-            </div>
+          <td style="padding:8px 12px 4px 12px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-              ${renderSiteMetricRow(site.monthToDate)}
+              <tr>
+                ${renderHeroKpi("Users", formatCount(site.metrics.activeUsers), usersDelta, { emphasize: true })}
+                ${renderHeroKpi("Sessions", formatCount(site.metrics.sessions), sessionsDelta)}
+                ${renderHeroKpi("Pageviews", formatCount(site.metrics.screenPageViews), viewsDelta)}
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 14px 4px 14px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                ${renderSecondaryMetric("Bounce rate", formatBounceRate(site.metrics.bounceRate))}
+                ${renderSecondaryMetric("Avg duration", formatSessionDuration(site.metrics.averageSessionDuration))}
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:14px 18px 8px 18px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <div style="font-size:12px;font-weight:700;color:#0f172a;">Users · last 7 days</div>
+                </td>
+                <td style="vertical-align:middle;text-align:right;">
+                  <div style="font-size:11px;color:#94a3b8;">UTC days through yesterday</div>
+                </td>
+              </tr>
+            </table>
+            <div style="margin-top:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:12px 8px 10px 8px;">
+              ${renderUsersBarChart(site.dailySeries ?? [], accent)}
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 18px 16px 18px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;">
+              <tr>
+                <td style="padding:12px 12px 10px 12px;">
+                  <div style="font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#64748b;margin:0 0 10px 0;">
+                    Month to date · ${escapeHtml(mtdRange)}
+                  </div>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      ${renderMtdStat("Users", formatCount(mtd.activeUsers))}
+                      ${renderMtdStat("Sessions", formatCount(mtd.sessions))}
+                      ${renderMtdStat("Pageviews", formatCount(mtd.screenPageViews))}
+                      ${renderMtdStat("Bounce", formatBounceRate(mtd.bounceRate))}
+                    </tr>
+                  </table>
+                </td>
+              </tr>
             </table>
           </td>
         </tr>
@@ -511,7 +659,14 @@ function renderSiteCard(site: SiteAnalytics) {
 
 function renderSitesSection(sites: SiteAnalytics[]) {
   if (sites.length === 0) return "";
-  return `${sectionLabel("Google Analytics website data")}
+  return `${sectionLabel("Google Analytics")}
+    <tr>
+      <td style="padding:0 4px 12px 4px;">
+        <div style="font-size:13px;line-height:1.5;color:#64748b;">
+          Yesterday vs prior day, plus a 7-day users trend and month-to-date totals.
+        </div>
+      </td>
+    </tr>
     ${sites.map(renderSiteCard).join("")}`;
 }
 
@@ -910,7 +1065,7 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
   }
 
   if (brief.sites?.length) {
-    lines.push("", "GOOGLE ANALYTICS WEBSITE DATA");
+    lines.push("", "GOOGLE ANALYTICS");
     for (const site of brief.sites) {
       lines.push("", site.label);
       if (site.error) {
@@ -919,6 +1074,9 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
       }
       const usersDelta = formatDeltaPercent(
         percentChange(site.metrics.activeUsers, site.previous.activeUsers),
+      );
+      const sessionsDelta = formatDeltaPercent(
+        percentChange(site.metrics.sessions, site.previous.sessions),
       );
       const viewsDelta = formatDeltaPercent(
         percentChange(
@@ -932,7 +1090,9 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
       lines.push(
         `  Users: ${Math.round(site.metrics.activeUsers)} (${usersDelta})`,
       );
-      lines.push(`  Sessions: ${Math.round(site.metrics.sessions)}`);
+      lines.push(
+        `  Sessions: ${Math.round(site.metrics.sessions)} (${sessionsDelta})`,
+      );
       lines.push(
         `  Pageviews: ${Math.round(site.metrics.screenPageViews)} (${viewsDelta})`,
       );
@@ -940,6 +1100,12 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
       lines.push(
         `  Avg duration: ${formatSessionDuration(site.metrics.averageSessionDuration)}`,
       );
+      if (site.dailySeries?.length) {
+        const trend = site.dailySeries
+          .map((p) => `${shortWeekday(p.date)} ${Math.round(p.activeUsers)}`)
+          .join(" · ");
+        lines.push(`  Users last 7 days: ${trend}`);
+      }
       const mtd = site.monthToDate;
       if (mtd) {
         lines.push(

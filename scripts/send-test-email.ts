@@ -28,6 +28,19 @@ function demoRedditFeeds(): RedditSubFeed[] {
   }));
 }
 
+function demoDailySeries(baseUsers: number): SiteAnalytics["dailySeries"] {
+  const pattern = [0.72, 0.8, 0.68, 0.95, 1.05, 0.88, 1];
+  return pattern.map((factor, i) => {
+    const users = Math.round(baseUsers * factor);
+    return {
+      date: new Date(Date.UTC(2026, 6, 26 + i)).toISOString().slice(0, 10),
+      activeUsers: users,
+      sessions: users + 15,
+      screenPageViews: users * 3,
+    };
+  });
+}
+
 function demoSites(): SiteAnalytics[] {
   return GA_ACCOUNTS.map((account, index) => {
     const users = 120 + index * 40;
@@ -60,6 +73,7 @@ function demoSites(): SiteAnalytics[] {
         bounceRate: 0.4,
         averageSessionDuration: 100,
       },
+      dailySeries: demoDailySeries(users),
     };
   });
 }

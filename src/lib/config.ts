@@ -42,7 +42,7 @@ export type RedditSubredditId = (typeof REDDIT_SUBREDDITS)[number]["id"];
 /** GA4 accounts in the Google Analytics email section (display order) */
 export const GA_ACCOUNTS = [
   { accountId: "292152311", label: "uwhmap.com" },
-  { accountId: "390992554", label: "Greetingcardfun.com" },
+  { accountId: "390992554", label: "greetingcardfun.com" },
   { accountId: "220211668", label: "tvroulette.app" },
 ] as const;
 

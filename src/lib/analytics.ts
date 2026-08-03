@@ -21,6 +21,14 @@ export type SiteDayMetrics = {
   averageSessionDuration: number;
 };
 
+/** One calendar day in a site trend series (YYYY-MM-DD). */
+export type SiteDayPoint = {
+  date: string;
+  activeUsers: number;
+  sessions: number;
+  screenPageViews: number;
+};
+
 export type SiteAnalytics = {
   accountId: string;
   propertyId: string;
@@ -33,6 +41,8 @@ export type SiteAnalytics = {
   previous: SiteDayMetrics;
   /** Month-to-date through yesterday (UTC) */
   monthToDate: SiteDayMetrics;
+  /** Daily users/sessions/views for the last 7 complete UTC days */
+  dailySeries: SiteDayPoint[];
   /** Present when the property resolved but the report failed */
   error?: string;
 };
@@ -252,61 +262,139 @@ async function fetchOverviewReport(
   };
 }
 
+/** GA4 date dimension is YYYYMMDD → YYYY-MM-DD. */
+function gaDateToIso(value: string | undefined): string | null {
+  if (!value || !/^\d{8}$/.test(value)) return null;
+  return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+}
+
+function emptyDailySeries(days = 7): SiteDayPoint[] {
+  return Array.from({ length: days }, (_, i) => ({
+    date: utcDateDaysAgo(days - i),
+    activeUsers: 0,
+    sessions: 0,
+    screenPageViews: 0,
+  }));
+}
+
+async function fetchDailySeries(
+  accessToken: string,
+  propertyId: string,
+  days = 7,
+): Promise<SiteDayPoint[]> {
+  const startDate = `${days}daysAgo`;
+  const response = await fetch(
+    `${DATA_API}/properties/${propertyId}:runReport`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        dateRanges: [{ startDate, endDate: "yesterday" }],
+        dimensions: [{ name: "date" }],
+        metrics: [
+          { name: "activeUsers" },
+          { name: "sessions" },
+          { name: "screenPageViews" },
+        ],
+        orderBys: [{ dimension: { dimensionName: "date" } }],
+        keepEmptyRows: true,
+      }),
+    },
+  );
+
+  const payload = (await response.json().catch(() => null)) as
+    | (RunReportResponse & { error?: { message?: string } })
+    | null;
+
+  if (!response.ok) {
+    throw new Error(
+      payload?.error?.message ||
+        `Daily series ${response.status} for property ${propertyId}`,
+    );
+  }
+
+  const byDate = new Map<string, SiteDayPoint>();
+  for (const row of payload?.rows ?? []) {
+    const iso = gaDateToIso(row.dimensionValues?.[0]?.value);
+    if (!iso) continue;
+    const values = row.metricValues;
+    byDate.set(iso, {
+      date: iso,
+      activeUsers: parseMetricNumber(values?.[0]?.value),
+      sessions: parseMetricNumber(values?.[1]?.value),
+      screenPageViews: parseMetricNumber(values?.[2]?.value),
+    });
+  }
+
+  // Always return a complete last-N-days spine so charts stay aligned.
+  return emptyDailySeries(days).map(
+    (point) => byDate.get(point.date) ?? point,
+  );
+}
+
+function siteShell(
+  accountId: string,
+  label: string,
+  propertyId: string,
+  error?: string,
+): SiteAnalytics {
+  const date = utcDateDaysAgo(1);
+  const previousDate = utcDateDaysAgo(2);
+  const monthStart = utcMonthStart();
+  return {
+    accountId,
+    propertyId,
+    label,
+    date,
+    previousDate,
+    monthStart,
+    metrics: emptyMetrics(),
+    previous: emptyMetrics(),
+    monthToDate: emptyMetrics(),
+    dailySeries: emptyDailySeries(7),
+    error,
+  };
+}
+
 async function collectOneSite(
   accessToken: string,
   accountId: string,
   label: string,
 ): Promise<SiteAnalytics> {
-  const date = utcDateDaysAgo(1);
-  const previousDate = utcDateDaysAgo(2);
-  const monthStart = utcMonthStart();
-
   try {
     const propertyId = await resolvePropertyId(accessToken, accountId);
     try {
-      const { yesterday, previous, monthToDate } = await fetchOverviewReport(
-        accessToken,
-        propertyId,
-        monthStart,
-      );
+      const monthStart = utcMonthStart();
+      const [{ yesterday, previous, monthToDate }, dailySeries] =
+        await Promise.all([
+          fetchOverviewReport(accessToken, propertyId, monthStart),
+          fetchDailySeries(accessToken, propertyId, 7),
+        ]);
       return {
-        accountId,
-        propertyId,
-        label,
-        date,
-        previousDate,
-        monthStart,
+        ...siteShell(accountId, label, propertyId),
         metrics: yesterday,
         previous,
         monthToDate,
+        dailySeries,
       };
     } catch (error) {
-      return {
+      return siteShell(
         accountId,
-        propertyId,
         label,
-        date,
-        previousDate,
-        monthStart,
-        metrics: emptyMetrics(),
-        previous: emptyMetrics(),
-        monthToDate: emptyMetrics(),
-        error: error instanceof Error ? error.message : "Report failed",
-      };
+        propertyId,
+        error instanceof Error ? error.message : "Report failed",
+      );
     }
   } catch (error) {
-    return {
+    return siteShell(
       accountId,
-      propertyId: "",
       label,
-      date,
-      previousDate,
-      monthStart,
-      metrics: emptyMetrics(),
-      previous: emptyMetrics(),
-      monthToDate: emptyMetrics(),
-      error: error instanceof Error ? error.message : "Property resolve failed",
-    };
+      "",
+      error instanceof Error ? error.message : "Property resolve failed",
+    );
   }
 }
 
