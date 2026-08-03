@@ -62,6 +62,12 @@ export async function GET(request: Request) {
       redditCounts: Object.fromEntries(
         (brief.reddit ?? []).map((feed) => [feed.id, feed.posts.length]),
       ),
+      siteCounts: Object.fromEntries(
+        (brief.sites ?? []).map((site) => [
+          site.propertyId || site.accountId,
+          site.error ? "error" : site.metrics.activeUsers,
+        ]),
+      ),
       usage: {
         thresholdPercent: usage.thresholdPercent,
         watch: usage.watch.map((m) => ({

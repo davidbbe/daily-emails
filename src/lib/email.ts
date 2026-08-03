@@ -1,3 +1,10 @@
+import {
+  formatBounceRate,
+  formatDeltaPercent,
+  formatSessionDuration,
+  percentChange,
+  type SiteAnalytics,
+} from "@/lib/analytics";
 import type {
   BulletFlag,
   DailyBrief,
@@ -406,6 +413,108 @@ function renderRedditSection(feeds: RedditSubFeed[]) {
   return rows.join("");
 }
 
+function deltaColor(delta: number | null) {
+  if (delta === null || delta === 0) return "#94a3b8";
+  return delta > 0 ? "#047857" : "#b42318";
+}
+
+function formatCount(n: number) {
+  return Math.round(n).toLocaleString("en-US");
+}
+
+function renderSiteMetricCell(
+  label: string,
+  value: string,
+  delta?: number | null,
+) {
+  const deltaHtml =
+    delta === undefined
+      ? ""
+      : `<div style="margin-top:3px;font-size:11px;font-weight:600;color:${deltaColor(delta)};">${escapeHtml(formatDeltaPercent(delta))}</div>`;
+  return `<td style="padding:8px 6px;vertical-align:top;text-align:center;width:20%;">
+    <div style="font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;">${escapeHtml(label)}</div>
+    <div style="margin-top:4px;font-size:16px;font-weight:750;color:#0f172a;">${escapeHtml(value)}</div>
+    ${deltaHtml}
+  </td>`;
+}
+
+function renderSiteMetricRow(metrics: SiteAnalytics["metrics"], opts?: {
+  usersDelta?: number | null;
+  viewsDelta?: number | null;
+}) {
+  return `<tr>
+    ${renderSiteMetricCell("Users", formatCount(metrics.activeUsers), opts?.usersDelta)}
+    ${renderSiteMetricCell("Sessions", formatCount(metrics.sessions))}
+    ${renderSiteMetricCell("Pageviews", formatCount(metrics.screenPageViews), opts?.viewsDelta)}
+    ${renderSiteMetricCell("Bounce", formatBounceRate(metrics.bounceRate))}
+    ${renderSiteMetricCell("Avg duration", formatSessionDuration(metrics.averageSessionDuration))}
+  </tr>`;
+}
+
+function renderSiteCard(site: SiteAnalytics) {
+  if (site.error) {
+    return `<tr>
+      <td style="padding:0 0 12px 0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+          <tr>
+            <td style="padding:12px 16px;">
+              <div style="font-size:15px;font-weight:700;color:#0f172a;">${escapeHtml(site.label)}</div>
+              <div style="margin-top:6px;font-size:13px;line-height:1.45;color:#b45309;">${escapeHtml(site.error)}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`;
+  }
+
+  const usersDelta = percentChange(
+    site.metrics.activeUsers,
+    site.previous.activeUsers,
+  );
+  const viewsDelta = percentChange(
+    site.metrics.screenPageViews,
+    site.previous.screenPageViews,
+  );
+  return `<tr>
+    <td style="padding:0 0 12px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+        <tr>
+          <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
+            <span style="font-size:15px;font-weight:700;color:#0f172a;vertical-align:middle;">${escapeHtml(site.label)}</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:10px 10px 2px 10px;">
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;padding:0 6px 2px 6px;">
+              Yesterday · ${escapeHtml(formatHumanDate(site.date, { withTime: false }))}
+            </div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              ${renderSiteMetricRow(site.metrics, { usersDelta, viewsDelta })}
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 10px 12px 10px;">
+            <div style="height:1px;background:#f1f5f9;margin:4px 6px 8px 6px;line-height:1px;font-size:1px;">&nbsp;</div>
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;padding:0 6px 2px 6px;">
+              Month to date · ${escapeHtml(formatHumanDate(site.monthStart, { withTime: false }))} – ${escapeHtml(formatHumanDate(site.date, { withTime: false }))}
+            </div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              ${renderSiteMetricRow(site.monthToDate)}
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>`;
+}
+
+function renderSitesSection(sites: SiteAnalytics[]) {
+  if (sites.length === 0) return "";
+  return `${sectionLabel("Google Analytics website data")}
+    ${sites.map(renderSiteCard).join("")}`;
+}
+
 function renderUsageWatch(usage: UsageReport) {
   if (usage.watch.length === 0) {
     return `<tr>
@@ -667,6 +776,8 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             ${sectionLabel("Reddit")}
             ${renderRedditSection(brief.reddit ?? [])}
 
+            ${renderSitesSection(brief.sites ?? [])}
+
             ${usage ? `${sectionLabel("Usage")}${renderUsageReport(usage)}` : ""}
 
             <tr>
@@ -794,6 +905,53 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
       for (const [index, post] of feed.posts.entries()) {
         lines.push(`${index + 1}. ${post.title}`);
         lines.push(`   ${post.permalink}`);
+      }
+    }
+  }
+
+  if (brief.sites?.length) {
+    lines.push("", "GOOGLE ANALYTICS WEBSITE DATA");
+    for (const site of brief.sites) {
+      lines.push("", site.label);
+      if (site.error) {
+        lines.push(`  Error: ${site.error}`);
+        continue;
+      }
+      const usersDelta = formatDeltaPercent(
+        percentChange(site.metrics.activeUsers, site.previous.activeUsers),
+      );
+      const viewsDelta = formatDeltaPercent(
+        percentChange(
+          site.metrics.screenPageViews,
+          site.previous.screenPageViews,
+        ),
+      );
+      lines.push(
+        `  Yesterday (${formatHumanDate(site.date, { withTime: false })})`,
+      );
+      lines.push(
+        `  Users: ${Math.round(site.metrics.activeUsers)} (${usersDelta})`,
+      );
+      lines.push(`  Sessions: ${Math.round(site.metrics.sessions)}`);
+      lines.push(
+        `  Pageviews: ${Math.round(site.metrics.screenPageViews)} (${viewsDelta})`,
+      );
+      lines.push(`  Bounce: ${formatBounceRate(site.metrics.bounceRate)}`);
+      lines.push(
+        `  Avg duration: ${formatSessionDuration(site.metrics.averageSessionDuration)}`,
+      );
+      const mtd = site.monthToDate;
+      if (mtd) {
+        lines.push(
+          `  Month to date (${formatHumanDate(site.monthStart, { withTime: false })} – ${formatHumanDate(site.date, { withTime: false })})`,
+        );
+        lines.push(`  Users: ${Math.round(mtd.activeUsers)}`);
+        lines.push(`  Sessions: ${Math.round(mtd.sessions)}`);
+        lines.push(`  Pageviews: ${Math.round(mtd.screenPageViews)}`);
+        lines.push(`  Bounce: ${formatBounceRate(mtd.bounceRate)}`);
+        lines.push(
+          `  Avg duration: ${formatSessionDuration(mtd.averageSessionDuration)}`,
+        );
       }
     }
   }

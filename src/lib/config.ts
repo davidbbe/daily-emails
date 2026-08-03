@@ -39,6 +39,15 @@ export const REDDIT_SUBREDDITS = [
 
 export type RedditSubredditId = (typeof REDDIT_SUBREDDITS)[number]["id"];
 
+/** GA4 accounts in the Google Analytics email section (display order) */
+export const GA_ACCOUNTS = [
+  { accountId: "292152311", label: "uwhmap.com" },
+  { accountId: "390992554", label: "Greetingcardfun.com" },
+  { accountId: "220211668", label: "tvroulette.app" },
+] as const;
+
+export type GaAccountId = (typeof GA_ACCOUNTS)[number]["accountId"];
+
 /** Free-tier-friendly Gateway model with reliable structured output */
 export const DEFAULT_MODEL = "google/gemini-2.5-flash";
 

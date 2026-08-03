@@ -2,6 +2,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { getModel, PEOPLE, TICKERS, type TrendRegionId } from "@/lib/config";
 import type { BriefSnapshot } from "@/lib/history";
+import type { SiteAnalytics } from "@/lib/analytics";
 import type { NewsItem, ResearchBundle } from "@/lib/research";
 import type { RedditSubFeed } from "@/lib/reddit";
 import { buildBriefTrends, type BriefTrends } from "@/lib/trends";
@@ -50,6 +51,8 @@ export type DailyBrief = {
   trends: BriefTrends;
   /** Top Reddit posts — pass-through, no LLM */
   reddit: RedditSubFeed[];
+  /** GA4 site overviews — pass-through, no LLM */
+  sites: SiteAnalytics[];
   generatedAt: string;
   model: string;
   windowHours: number;
@@ -412,6 +415,7 @@ export async function generateDailyBrief(
     generatedAt: new Date().toISOString(),
     trends,
     reddit: bundle.reddit ?? [],
+    sites: bundle.sites ?? [],
     hasPreviousBrief: Boolean(previous),
     themeOfTheDay:
       synthesisResult.object.themeOfTheDay.trim() ||

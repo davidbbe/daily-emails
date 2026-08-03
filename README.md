@@ -1,6 +1,6 @@
 # Agent Dave
 
-Daily 09:00-UTC email brief for markets, tech people, catalysts, web trends, and Reddit tops.
+Daily 09:00-UTC email brief for markets, tech people, catalysts, web trends, Reddit tops, and GA4 site overviews.
 
 ## What it does
 
@@ -15,13 +15,14 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
    - Fetches **2×** each region’s limit, drops **Sports**-category rows, then keeps the configured top N
 5. Flags topics rising in **2+ regions**
 6. Pulls top Reddit posts (title, link, thumbnail when available) for configured subreddits
-7. Compares against yesterday’s snapshot for **watchlist delta**
-8. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
-9. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest
-10. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
-11. Saves a slim snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
+7. Pulls **GA4** yesterday + month-to-date overviews for configured sites (when a service account is set)
+8. Compares against yesterday’s snapshot for **watchlist delta**
+9. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
+10. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest
+11. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
+12. Saves a slim snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
 
-Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGIONS`, `REDDIT_SUBREDDITS`, `DEFAULT_MODEL`).
+Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGIONS`, `REDDIT_SUBREDDITS`, `GA_ACCOUNTS`, `DEFAULT_MODEL`).
 
 ## What’s in the email (data + AI)
 
@@ -39,6 +40,7 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 | **Web trends · Thailand / Bulgaria** | Google Trends Trending Now (`geo=TH`, `geo=BG`); Sports filtered | One English summary each of the **top 3** trends and why they are rising (no item list; no local-language text) |
 | **Also rising in 2+ regions** | — | **No LLM** — string match on English titles |
 | **Reddit** | Reddit Atom RSS — top 5 per sub (`worldnews`, `pics`, `funny`, `photoshop`, `Photoshop_creations`, `generativeAI`, `CursedAI`, `aiArt`); day → week → hot fallback | **No LLM** — 2-column HTML layout with title, link, thumbnail |
+| **Google Analytics website data** | GA4 Data API — yesterday + month-to-date users, sessions, pageviews, bounce rate, avg duration (yesterday vs day before) for `uwhmap.com`, `Greetingcardfun.com`, `tvroulette.app` | **No LLM** — skipped when `GOOGLE_CLIENT_EMAIL` / `GOOGLE_PRIVATE_KEY` are unset |
 | **Usage watch** | AI Gateway, Fast Origin Transfer, Blob size/ops, function invocations, Resend | **No LLM** — flags anything ≥50% of its Hobby/free limit |
 | **Delivery** | — | **Resend API** sends HTML + plain-text email |
 
@@ -75,8 +77,22 @@ cp .env.example .env
 | `BLOB_READ_WRITE_TOKEN`      | Prod*    | From a [Vercel Blob](https://vercel.com/docs/vercel-blob) store — enables durable day-over-day history     |
 | `VERCEL_TOKEN`               | Prod*    | [Account token](https://vercel.com/account/tokens) for Fast Origin Transfer / platform usage via `/v2/usage` |
 | `VERCEL_TEAM_ID`             | No       | Team id (defaults to `orgId` in `.vercel/project.json` when linked)                                      |
+| `GOOGLE_CLIENT_EMAIL`        | No       | GCP service account email for the **Google Analytics website data** section                                |
+| `GOOGLE_PRIVATE_KEY`         | No       | Service account private key (PEM; literal `\n` newlines are fine)                                          |
 
 \*Without Blob, local runs still persist to `.data/previous-brief.json`. On Vercel without Blob, day-over-day sections stay empty until a store is connected.
+
+### Google Analytics website data
+
+Optional. Without these env vars the brief still sends — the analytics block is omitted.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create (or pick) a project
+2. Enable **Google Analytics Data API** and **Google Analytics Admin API**
+3. Create a **service account**, download a JSON key, and copy `client_email` + `private_key` into `GOOGLE_CLIENT_EMAIL` / `GOOGLE_PRIVATE_KEY`
+4. In Google Analytics (as the property owner), open each account under `GA_ACCOUNTS` → **Admin → Account access management** → add the service account email as **Viewer**
+5. Redeploy / restart so the env vars are available
+
+Account IDs and email labels live in `src/lib/config.ts` (`GA_ACCOUNTS`). Each account is expected to have a single GA4 property; the Admin API resolves the property id at runtime.
 
 3. Install and run locally:
 

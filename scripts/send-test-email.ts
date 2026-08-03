@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  collectSiteAnalytics,
+  type SiteAnalytics,
+} from "@/lib/analytics";
 import type { DailyBrief } from "@/lib/brief";
-import { REDDIT_SUBREDDITS } from "@/lib/config";
+import { GA_ACCOUNTS, REDDIT_SUBREDDITS } from "@/lib/config";
 import { sendBriefEmail } from "@/lib/email";
 import type { RedditSubFeed } from "@/lib/reddit";
 import { collectUsageReport } from "@/lib/usage";
@@ -22,6 +26,42 @@ function demoRedditFeeds(): RedditSubFeed[] {
       author: "test_user",
     })),
   }));
+}
+
+function demoSites(): SiteAnalytics[] {
+  return GA_ACCOUNTS.map((account, index) => {
+    const users = 120 + index * 40;
+    const prevUsers = 100 + index * 35;
+    return {
+      accountId: account.accountId,
+      propertyId: `100000${index}`,
+      label: account.label,
+      date: "2026-08-01",
+      previousDate: "2026-07-31",
+      monthStart: "2026-08-01",
+      metrics: {
+        activeUsers: users,
+        sessions: users + 20,
+        screenPageViews: users * 3,
+        bounceRate: 0.42 + index * 0.05,
+        averageSessionDuration: 95 + index * 25,
+      },
+      previous: {
+        activeUsers: prevUsers,
+        sessions: prevUsers + 15,
+        screenPageViews: prevUsers * 3,
+        bounceRate: 0.4,
+        averageSessionDuration: 90,
+      },
+      monthToDate: {
+        activeUsers: users * 8,
+        sessions: (users + 20) * 8,
+        screenPageViews: users * 3 * 8,
+        bounceRate: 0.4,
+        averageSessionDuration: 100,
+      },
+    };
+  });
 }
 
 function loadEnvFile(filename: string) {
@@ -120,7 +160,7 @@ const brief: DailyBrief = {
     },
   ],
   themeOfTheDay:
-    "TEST EMAIL — review the Usage watch + Vercel & delivery usage sections at the bottom.",
+    "TEST EMAIL — Sites section uses live GA4 data when credentials are set.",
   regionalPulse: "Placeholder regional pulse for layout review.",
   trends: {
     regions: [
@@ -143,6 +183,7 @@ const brief: DailyBrief = {
     crossRegion: [],
   },
   reddit: demoRedditFeeds(),
+  sites: [],
   generatedAt: new Date().toISOString(),
   model: "test-send (no LLM)",
   windowHours: 24,
@@ -150,7 +191,16 @@ const brief: DailyBrief = {
 };
 
 async function main() {
-  const usage = await collectUsageReport();
+  const [usage, sites] = await Promise.all([
+    collectUsageReport(),
+    collectSiteAnalytics().catch((error) => {
+      console.warn("live GA fetch failed; using demo sites", error);
+      return demoSites();
+    }),
+  ]);
+  brief.sites = sites.length > 0 ? sites : demoSites();
+  brief.generatedAt = new Date().toISOString();
+
   const email = await sendBriefEmail(brief, usage);
   console.log(
     JSON.stringify(
@@ -158,6 +208,12 @@ async function main() {
         ok: true,
         emailId: email?.id ?? null,
         to: process.env.EMAIL_TO,
+        sites: brief.sites.map((s) => ({
+          label: s.label,
+          propertyId: s.propertyId,
+          users: s.metrics.activeUsers,
+          error: s.error ?? null,
+        })),
         watch: usage.watch.map((m) => ({
           id: m.id,
           percent: m.percent,

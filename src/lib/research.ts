@@ -6,6 +6,10 @@ import {
 } from "google-trends-now";
 import Parser from "rss-parser";
 import {
+  collectSiteAnalytics,
+  type SiteAnalytics,
+} from "@/lib/analytics";
+import {
   PEOPLE,
   TICKERS,
   TREND_REGIONS,
@@ -42,6 +46,8 @@ export type ResearchBundle = {
   earnings: EarningsDates[];
   trends: Record<TrendRegionId, TrendItem[]>;
   reddit: RedditSubFeed[];
+  /** GA4 site overviews — pass-through, no LLM; empty when creds missing */
+  sites: SiteAnalytics[];
 };
 
 const parser = new Parser({
@@ -188,7 +194,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
   const people: Record<string, NewsItem[]> = {};
   const trends = {} as Record<TrendRegionId, TrendItem[]>;
 
-  const [, , earnings, reddit] = await Promise.all([
+  const [, , earnings, reddit, , sites] = await Promise.all([
     Promise.all(
       TICKERS.map(async (ticker) => {
         tickers[ticker.id] = await fetchRecentNews(ticker.query, hours);
@@ -214,6 +220,10 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
         }
       }),
     ),
+    collectSiteAnalytics().catch((error) => {
+      console.warn("analytics fetch failed", error);
+      return [] as SiteAnalytics[];
+    }),
   ]);
 
   return {
@@ -224,5 +234,6 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
     earnings,
     trends,
     reddit,
+    sites,
   };
 }
