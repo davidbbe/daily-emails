@@ -5,7 +5,7 @@ import { collectResearch } from "@/lib/research";
 import { collectUsageReport } from "@/lib/usage";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 function isAuthorized(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
