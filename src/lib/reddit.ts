@@ -51,10 +51,7 @@ const parser = new Parser<Record<string, unknown>, RedditRssItem>({
  * Unauthenticated Reddit RSS is roughly 1 request per rate-limit window (~15–20s).
  */
 const FETCH_BATCHES: string[][] = [
-  ["worldnews"],
-  ["pics", "funny"],
-  ["photoshop"],
-  ["Photoshop_creations"],
+  ["pics"],
   ["generativeAI", "CursedAI", "aiArt"],
 ];
 
