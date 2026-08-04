@@ -4,7 +4,7 @@ export const TICKERS = [
   { id: "META", label: "Meta (META)", query: "META OR Meta Platforms stock", earningsSymbol: "META" },
   { id: "BTC", label: "Bitcoin (BTC)", query: "Bitcoin OR BTC crypto", earningsSymbol: null },
   { id: "AVGO", label: "Broadcom (AVGO)", query: "AVGO OR Broadcom stock", earningsSymbol: "AVGO" },
-  { id: "CRCL", label: "Circle (CRCL)", query: "CRCL OR Circle Internet stock OR Circle IPO", earningsSymbol: "CRCL" },
+  { id: "CRCL", label: "Circle (CRCL)", query: "CRCL OR Circle Internet Group stock", earningsSymbol: "CRCL" },
   { id: "SPCX", label: "SpaceX (SPCX)", query: "SPCX OR SpaceX stock OR Space Exploration Technologies", earningsSymbol: null },
   { id: "MSFT", label: "Microsoft (MSFT)", query: "MSFT OR Microsoft stock", earningsSymbol: "MSFT" },
 ] as const;
