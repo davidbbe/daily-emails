@@ -89,5 +89,5 @@ export function getEmailFrom() {
     return from;
   }
 
-  return `Cloud Agent <${from}>`;
+  return `Daily Emails <${from}>`;
 }

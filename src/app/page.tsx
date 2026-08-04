@@ -14,7 +14,7 @@ export default function Home() {
     >
       <div style={{ maxWidth: 560 }}>
         <p style={{ letterSpacing: "0.08em", textTransform: "uppercase", fontSize: 12, margin: 0 }}>
-          Agent Dave
+          Daily Emails
         </p>
         <h1 style={{ fontSize: "2.4rem", lineHeight: 1.15, margin: "0.4rem 0 1rem" }}>
           Daily market &amp; tech brief

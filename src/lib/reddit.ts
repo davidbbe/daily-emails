@@ -34,7 +34,7 @@ type RedditRssItem = {
 };
 
 const USER_AGENT =
-  "Mozilla/5.0 (compatible; agent-dave-daily-brief/1.0; +https://github.com/)";
+  "Mozilla/5.0 (compatible; daily-emails-brief/1.0; +https://github.com/)";
 
 const parser = new Parser<Record<string, unknown>, RedditRssItem>({
   customFields: {

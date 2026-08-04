@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agent Dave",
+  title: "Daily Emails",
   description: "Daily market and tech brief emailed via Vercel Cron + Resend",
 };
 

@@ -46,7 +46,7 @@ async function fetchSymbolEarnings(
     const response = await fetch(url, {
       headers: {
         Accept: "application/json",
-        "User-Agent": "agent-dave-daily-brief/1.0",
+        "User-Agent": "daily-emails-brief/1.0",
       },
       signal: AbortSignal.timeout(15000),
     });

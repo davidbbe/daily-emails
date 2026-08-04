@@ -1,4 +1,4 @@
-# Agent Dave
+# Daily Emails
 
 Daily 09:00-UTC email brief for markets, tech people, catalysts, web trends, Reddit tops, and GA4 site overviews.
 
@@ -66,7 +66,7 @@ cp .env.example .env
 | Variable                    | Required | Notes                                                                                                        |
 | --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
 | `RESEND_API_KEY`            | Yes      | From [Resend](https://resend.com)                                                                            |
-| `EMAIL_FROM`                | Yes      | Verified Resend domain (sent as `Cloud Agent <EMAIL_FROM>`)                                                  |
+| `EMAIL_FROM`                | Yes      | Verified Resend domain (sent as `Daily Emails <EMAIL_FROM>`)                                                 |
 | `EMAIL_TO`                  | No       | Defaults to `streethouse4@gmail.com`                                                                         |
 | `CRON_SECRET`               | Prod     | Random string; same value in Vercel env                                                                      |
 | `AI_GATEWAY_API_KEY`        | Local    | From the [AI Gateway](https://vercel.com/docs/ai-gateway) dashboard; on Vercel, OIDC can work without this   |

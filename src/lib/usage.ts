@@ -222,7 +222,9 @@ const RESEND_CACHE_PATH = path.join(
   ".data",
   "resend-usage.json",
 );
-const RESEND_BLOB_PATHNAME = "agent-dave/resend-usage.json";
+const RESEND_BLOB_PATHNAME = "daily-emails/resend-usage.json";
+/** Pre-rename path — read fallback until the next successful save. */
+const LEGACY_RESEND_BLOB_PATHNAME = "agent-dave/resend-usage.json";
 
 function isVercelRuntime() {
   return Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
@@ -308,18 +310,26 @@ function parseResendCache(text: string): ResendQuotaCache | null {
   }
 }
 
+async function getBlobText(pathname: string): Promise<string | null> {
+  const token = blobToken();
+  // Store is public (private access is rejected by the Blob API).
+  const result = await get(pathname, {
+    access: "public",
+    useCache: false,
+    ...(token ? { token } : {}),
+  });
+  if (!result || result.statusCode !== 200 || !result.stream) return null;
+  return streamToText(result.stream);
+}
+
 async function loadResendCacheFromBlob(): Promise<ResendQuotaCache | null> {
   if (!canUseBlob()) return null;
   try {
-    const token = blobToken();
-    // Store is public (private access is rejected by the Blob API).
-    const result = await get(RESEND_BLOB_PATHNAME, {
-      access: "public",
-      useCache: false,
-      ...(token ? { token } : {}),
-    });
-    if (!result || result.statusCode !== 200 || !result.stream) return null;
-    return parseResendCache(await streamToText(result.stream));
+    const text =
+      (await getBlobText(RESEND_BLOB_PATHNAME)) ??
+      (await getBlobText(LEGACY_RESEND_BLOB_PATHNAME));
+    if (!text) return null;
+    return parseResendCache(text);
   } catch (error) {
     console.warn("usage: Resend Blob cache load failed", error);
     return null;
@@ -637,7 +647,9 @@ function sumField(days: UsageApiDay[], field: keyof UsageApiDay) {
   return total;
 }
 
-const PLATFORM_BLOB_PATHNAME = "agent-dave/platform-usage.json";
+const PLATFORM_BLOB_PATHNAME = "daily-emails/platform-usage.json";
+/** Pre-rename path — read fallback until the next successful save. */
+const LEGACY_PLATFORM_BLOB_PATHNAME = "agent-dave/platform-usage.json";
 
 type PlatformUsageCache = {
   updatedAt: string;
@@ -687,16 +699,11 @@ function platformUnavailable(reason: string): UsageMetric[] {
 async function loadPlatformUsageCache(): Promise<UsageMetric[] | null> {
   if (!canUseBlob()) return null;
   try {
-    const token = blobToken();
-    const result = await get(PLATFORM_BLOB_PATHNAME, {
-      access: "public",
-      useCache: false,
-      ...(token ? { token } : {}),
-    });
-    if (!result || result.statusCode !== 200 || !result.stream) return null;
-    const cached = JSON.parse(
-      await streamToText(result.stream),
-    ) as PlatformUsageCache;
+    const text =
+      (await getBlobText(PLATFORM_BLOB_PATHNAME)) ??
+      (await getBlobText(LEGACY_PLATFORM_BLOB_PATHNAME));
+    if (!text) return null;
+    const cached = JSON.parse(text) as PlatformUsageCache;
     if (!Array.isArray(cached.metrics) || cached.metrics.length === 0) {
       return null;
     }

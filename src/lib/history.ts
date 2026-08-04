@@ -4,7 +4,9 @@ import { get, put } from "@vercel/blob";
 import type { DailyBrief } from "@/lib/brief";
 import type { TrendRegionId } from "@/lib/config";
 
-const BLOB_PATHNAME = "agent-dave/previous-brief.json";
+const BLOB_PATHNAME = "daily-emails/previous-brief.json";
+/** Pre-rename path — read fallback until the next successful save. */
+const LEGACY_BLOB_PATHNAME = "agent-dave/previous-brief.json";
 const LOCAL_PATH = path.join(process.cwd(), ".data", "previous-brief.json");
 
 /** Slim snapshot used for day-over-day comparisons */
@@ -63,17 +65,24 @@ function blobToken() {
   return process.env.BLOB_READ_WRITE_TOKEN?.trim() || undefined;
 }
 
+async function getBlobText(pathname: string): Promise<string | null> {
+  const token = blobToken();
+  // Store is public (private access is rejected by the Blob API).
+  const result = await get(pathname, {
+    access: "public",
+    useCache: false,
+    ...(token ? { token } : {}),
+  });
+  if (!result || result.statusCode !== 200 || !result.stream) return null;
+  return streamToText(result.stream);
+}
+
 async function loadFromBlob(): Promise<BriefSnapshot | null> {
   try {
-    const token = blobToken();
-    // Store is public (private access is rejected by the Blob API).
-    const result = await get(BLOB_PATHNAME, {
-      access: "public",
-      useCache: false,
-      ...(token ? { token } : {}),
-    });
-    if (!result || result.statusCode !== 200 || !result.stream) return null;
-    const text = await streamToText(result.stream);
+    const text =
+      (await getBlobText(BLOB_PATHNAME)) ??
+      (await getBlobText(LEGACY_BLOB_PATHNAME));
+    if (!text) return null;
     return JSON.parse(text) as BriefSnapshot;
   } catch (error) {
     console.warn("history: blob load failed", error);

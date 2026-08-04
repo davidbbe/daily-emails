@@ -53,7 +53,7 @@ export type ResearchBundle = {
 const parser = new Parser({
   timeout: 15000,
   headers: {
-    "User-Agent": "agent-dave-daily-brief/1.0",
+    "User-Agent": "daily-emails-brief/1.0",
   },
 });
 
