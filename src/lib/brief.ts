@@ -5,6 +5,7 @@ import type { BriefSnapshot } from "@/lib/history";
 import type { SiteAnalytics } from "@/lib/analytics";
 import type { NewsItem, ResearchBundle } from "@/lib/research";
 import type { RedditSubFeed } from "@/lib/reddit";
+import type { SentimentReport } from "@/lib/sentiment";
 import { buildBriefTrends, type BriefTrends } from "@/lib/trends";
 
 export const BULLET_FLAGS = ["Watch", "Noise", "Actionable"] as const;
@@ -25,7 +26,6 @@ export type TickerBrief = {
   bullets: BriefBullet[];
   whyItMatters: string;
   overnightOpener: string;
-  watchlistDelta: string;
 };
 
 export type PersonBrief = {
@@ -55,6 +55,8 @@ export type DailyBrief = {
   reddit: RedditSubFeed[];
   /** GA4 site overviews — pass-through, no LLM */
   sites: SiteAnalytics[];
+  /** Fear & greed meters + per-ticker proxies — pass-through, no LLM */
+  sentiment: SentimentReport;
   generatedAt: string;
   model: string;
   windowHours: number;
@@ -93,12 +95,6 @@ const coreBriefSchema = z.object({
 const synthesisSchema = z.object({
   themeOfTheDay: z.string(),
   regionalPulse: z.string(),
-  watchlistDelta: z.array(
-    z.object({
-      id: z.string(),
-      delta: z.string(),
-    }),
-  ),
 });
 
 function formatIndexedNews(items: NewsItem[], limit = 5) {
@@ -172,6 +168,7 @@ function formatTodayForSynthesis(args: {
   tickers: TickerBrief[];
   people: PersonBrief[];
   trends: BriefTrends;
+  sentiment: SentimentReport;
 }) {
   const tickerLines = args.tickers
     .map((t) => {
@@ -205,6 +202,21 @@ function formatTodayForSynthesis(args: {
     })
     .join("\n");
 
+  const meterLines = args.sentiment.meters
+    .map((m) => {
+      if (m.value == null) return `${m.label}: unavailable`;
+      const band = m.band ? ` (${m.band})` : "";
+      return `${m.label}: ${m.value}${band}`;
+    })
+    .join("; ");
+
+  const proxyLines = args.sentiment.tickers
+    .map((t) => {
+      if (t.score == null) return `${t.tickerId}: n/a`;
+      return `${t.tickerId}: score ${t.score}${t.band ? ` ${t.band}` : ""}${t.stance ? ` → ${t.stance}` : ""}`;
+    })
+    .join("; ");
+
   return `Today's tickers:
 ${tickerLines}
 
@@ -213,7 +225,12 @@ ${peopleLines}
 
 Trends:
 ${trendLines}
-Cross-region: ${args.trends.crossRegion.join(" · ") || "(none)"}`;
+Cross-region: ${args.trends.crossRegion.join(" · ") || "(none)"}
+
+Sentiment:
+Value dial: ${args.sentiment.valueDial}
+Meters: ${meterLines || "(none)"}
+Ticker greed proxies: ${proxyLines || "(none)"}`;
 }
 
 async function generateCoreBrief(bundle: ResearchBundle, model: string) {
@@ -261,6 +278,7 @@ async function generateSynthesis(args: {
   tickers: TickerBrief[];
   people: PersonBrief[];
   trends: BriefTrends;
+  sentiment: SentimentReport;
 }) {
   return generateObject({
     model: args.model,
@@ -272,13 +290,9 @@ async function generateSynthesis(args: {
     system: `You write the cross-cutting synthesis for a daily market/tech email.
 Only use the provided today/previous brief material. Do not invent facts.
 
-themeOfTheDay: one sharp sentence (≤30 words) capturing the cross-cutting story across markets, people, and trends.
+themeOfTheDay: one sharp sentence (≤30 words) capturing the cross-cutting story across markets, people, and trends. You may nod to fear/greed or VIX when it is a material backdrop.
 
-regionalPulse: 2-3 short sentences comparing what is hot in the United States vs Thailand vs Bulgaria today. Mention concrete trend topics when available.
-
-watchlistDelta: one short sentence per ticker id about what changed vs yesterday's brief.
-If no previous brief exists, use exactly: "First brief — no prior day to compare."
-If little changed, say so. Do not invent moves.`,
+regionalPulse: 2-3 short sentences comparing what is hot in the United States vs Thailand vs Bulgaria today. Mention concrete trend topics when available.`,
     prompt: `${formatPreviousForPrompt(args.previous)}
 
 ---
@@ -287,9 +301,8 @@ ${formatTodayForSynthesis({
   tickers: args.tickers,
   people: args.people,
   trends: args.trends,
-})}
-
-Return watchlistDelta ids exactly: ${TICKERS.map((t) => t.id).join(", ")}.`,
+  sentiment: args.sentiment,
+})}`,
   });
 }
 
@@ -297,7 +310,7 @@ function normalizeCore(
   object: z.infer<typeof coreBriefSchema>,
   bundle: ResearchBundle,
 ): {
-  tickers: Omit<TickerBrief, "watchlistDelta">[];
+  tickers: TickerBrief[];
   people: PersonBrief[];
 } {
   const tickers = TICKERS.map((ticker) => {
@@ -388,32 +401,22 @@ export async function generateDailyBrief(
 
   const core = normalizeCore(coreResult.object, bundle);
 
+  const sentiment = bundle.sentiment ?? {
+    collectedAt: bundle.collectedAt,
+    meters: [],
+    tickers: [],
+    valueDial:
+      "Sentiment meters unavailable today — rely on valuation and catalysts.",
+  };
+
   const synthesisResult = await generateSynthesis({
     model,
     previous,
-    tickers: core.tickers.map((t) => ({
-      ...t,
-      watchlistDelta: "",
-    })),
+    tickers: core.tickers,
     people: core.people,
     trends,
+    sentiment,
   });
-
-  const deltaById = new Map(
-    synthesisResult.object.watchlistDelta.map((d) => [
-      d.id,
-      d.delta.trim(),
-    ]),
-  );
-
-  const defaultDelta = previous
-    ? "Little change vs prior brief."
-    : "First brief — no prior day to compare.";
-
-  const tickers: TickerBrief[] = core.tickers.map((t) => ({
-    ...t,
-    watchlistDelta: deltaById.get(t.id) || defaultDelta,
-  }));
 
   return {
     model,
@@ -422,6 +425,7 @@ export async function generateDailyBrief(
     trends,
     reddit: bundle.reddit ?? [],
     sites: bundle.sites ?? [],
+    sentiment,
     hasPreviousBrief: Boolean(previous),
     themeOfTheDay:
       synthesisResult.object.themeOfTheDay.trim() ||
@@ -429,7 +433,7 @@ export async function generateDailyBrief(
     regionalPulse:
       synthesisResult.object.regionalPulse.trim() ||
       "Regional trend coverage was thin today.",
-    tickers,
+    tickers: core.tickers,
     people: core.people,
     earningsCalendar: mapEarningsCalendar(bundle),
   };

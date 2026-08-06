@@ -9,18 +9,19 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
 1. Pulls the last 24 hours of Google News headlines for **TSLA, MU, META, BTC, AVGO, CRCL, SPCX, MSFT**
 2. Checks for speeches/announcements by **Andrej Karpathy, Jensen Huang, Alex Karp, Sam Altman**
 3. Pulls previous + next earnings report dates for public tickers on the watchlist
-4. Pulls Google Trends top searches (Trending Now) for:
+4. Pulls **Fear & greed** meters (CNN equities, Crypto Alternative.me, VIX) plus a per-ticker greed proxy (52-week range + RSI)
+5. Pulls Google Trends top searches (Trending Now) for:
    - **United States** — top 10 (with traffic + related news; non-English titles translated)
    - **Thailand** and **Bulgaria** — top 3 each, summarized in English (what’s rising and why; no local-language text)
    - Fetches **2×** each region’s limit, drops **Sports**-category rows, then keeps the configured top N
-5. Flags topics rising in **2+ regions**
-6. Pulls top Reddit posts (title, link, thumbnail when available) for configured subreddits
-7. Pulls **GA4** yesterday + 7-day trend + month-to-date overviews for configured sites (when a service account is set)
-8. Compares against yesterday’s snapshot for **watchlist delta**
-9. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
-10. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest
-11. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
-12. Saves a slim snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
+6. Flags topics rising in **2+ regions**
+7. Pulls top Reddit posts (title, link, thumbnail when available) for configured subreddits
+8. Pulls **GA4** yesterday + 7-day trend + month-to-date overviews for configured sites (when a service account is set)
+9. Loads yesterday’s slim snapshot (when available) as synthesis context
+10. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
+11. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest
+12. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
+13. Saves a slim snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
 
 Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGIONS`, `REDDIT_SUBREDDITS`, `GA_ACCOUNTS`, `DEFAULT_MODEL`).
 
@@ -30,9 +31,10 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 
 | Email section                                             | Data source (no AI)                                                                                                                                                | LLM / API used                                                                                                                  |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Theme of the day**                                      | Markets + people + trends context                                                                                                                                  | AI Gateway — one cross-cutting sentence                                                                                         |
+| **Theme of the day**                                      | Markets + people + trends + sentiment context                                                                                                                      | AI Gateway — one cross-cutting sentence                                                                                         |
+| **Fear & greed**                                          | CNN F&G, Alternative.me Crypto F&G, VIX via feargreedchart; equities via Stock Analysis (52w + RSI14); BTC via CoinGecko                                           | **No LLM** — value dial + Lean buy / Neutral / Patience stance per ticker (SPCX skipped — private)                              |
 | **Overnight openers**                                     | Google News RSS — last 24h per ticker                                                                                                                              | Same core brief call — one session-context line each                                                                            |
-| **Markets** (TSLA, MU, META, BTC, AVGO, CRCL, SPCX, MSFT) | Google News RSS — last 24h                                                                                                                                         | Core brief: 3–5 bullets with **Watch / Noise / Actionable** flags, **source links**, **why it matters**, **vs yesterday** delta |
+| **Markets** (TSLA, MU, META, BTC, AVGO, CRCL, SPCX, MSFT) | Google News RSS — last 24h                                                                                                                                         | Core brief: 3–5 bullets with **Watch / Noise / Actionable** flags, **source links**, **why it matters**                         |
 | **Earnings & catalysts**                                  | Stock Analysis earnings calendar (prev + next report dates)                                                                                                        | **No LLM** — skips BTC / SPCX                                                                                                   |
 | **Speeches & announcements**                              | Google News RSS — last 24h per person                                                                                                                              | Core brief: one sentence each, optional **quote** + source link                                                                 |
 | **Regional pulse**                                        | Trends across US / TH / BG                                                                                                                                         | Synthesis call — 2–3 sentences comparing regions                                                                                |
@@ -49,7 +51,7 @@ In practice that means **up to four** Gateway model calls per daily run:
 1. One structured core brief (markets, people, overnight, flags, quotes)
 2. One optional US translation pass if non-English strings appear
 3. One Thailand/Bulgaria English summary pass (top 3 each)
-4. One synthesis pass (theme, regional pulse, watchlist delta)
+4. One synthesis pass (theme, regional pulse)
 
 Trend fetches, snapshot I/O, and email sending do not use AI credits.
 
@@ -117,7 +119,7 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://your-app.vercel.app/api/dai
 
 1. Push to GitHub and import the project in Vercel
 2. Set env vars: `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_TO`, `CRON_SECRET`
-3. (Recommended) Create a Blob store and set `BLOB_READ_WRITE_TOKEN` for day-over-day watchlist delta
+3. (Recommended) Create a Blob store and set `BLOB_READ_WRITE_TOKEN` for durable day-over-day snapshot history
 4. Deploy to **Production** (crons only run on production)
 5. Cron schedule is defined in `vercel.json`: `0 9 * * *` → `/api/daily-brief`
 

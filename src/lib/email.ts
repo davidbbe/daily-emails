@@ -13,6 +13,13 @@ import type {
 import { getEmailFrom, getEmailTo, PEOPLE, TICKERS } from "@/lib/config";
 import { formatHumanDate } from "@/lib/dates";
 import type { RedditSubFeed, RedditWindow } from "@/lib/reddit";
+import type {
+  FearGreedMeter,
+  SentimentBand,
+  SentimentReport,
+  TickerGreedProxy,
+  ValueStance,
+} from "@/lib/sentiment";
 import type { BriefTrendItem } from "@/lib/trends";
 import {
   formatMetricLimit,
@@ -50,6 +57,20 @@ const FLAG_STYLES: Record<BulletFlag, { bg: string; text: string }> = {
   Actionable: { bg: "#ecfdf5", text: "#047857" },
   Watch: { bg: "#fffbeb", text: "#b45309" },
   Noise: { bg: "#f1f5f9", text: "#64748b" },
+};
+
+const BAND_STYLES: Record<SentimentBand, { bg: string; text: string; accent: string }> = {
+  "Extreme Fear": { bg: "#fef2f2", text: "#b91c1c", accent: "#dc2626" },
+  Fear: { bg: "#fff7ed", text: "#c2410c", accent: "#ea580c" },
+  Neutral: { bg: "#f8fafc", text: "#475569", accent: "#64748b" },
+  Greed: { bg: "#ecfdf5", text: "#047857", accent: "#10b981" },
+  "Extreme Greed": { bg: "#ecfdf5", text: "#065f46", accent: "#059669" },
+};
+
+const STANCE_STYLES: Record<ValueStance, { bg: string; text: string }> = {
+  "Lean buy": { bg: "#ecfdf5", text: "#047857" },
+  Neutral: { bg: "#f1f5f9", text: "#64748b" },
+  Patience: { bg: "#fffbeb", text: "#b45309" },
 };
 
 function escapeHtml(value: string) {
@@ -259,6 +280,258 @@ function formatEarningsDate(value?: string, opts?: { est?: boolean }) {
   return formatted;
 }
 
+function formatSigned(n: number | undefined, digits = 1) {
+  if (n === undefined || !Number.isFinite(n)) return "";
+  const fixed = n.toFixed(digits);
+  if (n > 0) return `+${fixed}`;
+  return fixed;
+}
+
+function formatPct(n: number | undefined) {
+  if (n === undefined || !Number.isFinite(n)) return "—";
+  return `${formatSigned(n, 1)}%`;
+}
+
+function bandBadge(band: SentimentBand | null | undefined) {
+  if (!band) return "";
+  const style = BAND_STYLES[band];
+  return `<span style="display:inline-block;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:${style.text};background:${style.bg};border-radius:999px;padding:2px 7px;">${escapeHtml(band)}</span>`;
+}
+
+function stanceBadge(stance: ValueStance | undefined) {
+  if (!stance) return "";
+  const style = STANCE_STYLES[stance];
+  return `<span style="display:inline-block;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:${style.text};background:${style.bg};border-radius:999px;padding:2px 7px;">${escapeHtml(stance)}</span>`;
+}
+
+function renderMeterCard(meter: FearGreedMeter) {
+  const style = meter.band
+    ? BAND_STYLES[meter.band]
+    : { bg: "#f8fafc", text: "#64748b", accent: "#94a3b8" };
+  const valueLabel =
+    meter.value == null
+      ? "—"
+      : meter.id === "vix"
+        ? meter.value.toFixed(2)
+        : String(Math.round(meter.value));
+  const deltaBits = [
+    meter.changeDay !== undefined
+      ? `1d ${formatSigned(meter.changeDay, meter.id === "vix" ? 2 : 1)}`
+      : "",
+    meter.changeWeek !== undefined
+      ? `1w ${formatSigned(meter.changeWeek, 1)}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;height:100%;">
+      <tr>
+        <td style="width:5px;background:${style.accent};"></td>
+        <td style="padding:12px 12px 14px 12px;vertical-align:top;">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;margin:0 0 8px 0;">
+            <a href="${escapeHtml(meter.sourceUrl)}" style="color:#64748b;text-decoration:none;">${escapeHtml(meter.label)}</a>
+          </div>
+          <div style="font-size:28px;line-height:1;font-weight:750;color:#0f172a;margin:0 0 8px 0;">${escapeHtml(valueLabel)}</div>
+          <div style="margin:0 0 6px 0;">${bandBadge(meter.band)}</div>
+          ${
+            meter.error
+              ? `<div style="font-size:12px;color:#b45309;">${escapeHtml(meter.error)}</div>`
+              : deltaBits
+                ? `<div style="font-size:12px;color:#64748b;">${escapeHtml(deltaBits)}</div>`
+                : ""
+          }
+        </td>
+      </tr>
+    </table>`;
+}
+
+function renderTickerProxyRow(proxy: TickerGreedProxy) {
+  const colors = TICKER_COLORS[proxy.tickerId] ?? {
+    bg: "#f8fafc",
+    text: "#334155",
+    accent: "#64748b",
+  };
+
+  if (proxy.error || proxy.score == null) {
+    return `<tr>
+      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
+        <span style="display:inline-block;font-size:11px;font-weight:700;color:${colors.text};background:${colors.bg};border-radius:999px;padding:2px 8px;margin-right:8px;">${escapeHtml(proxy.tickerId)}</span>
+        <span style="font-size:13px;color:#94a3b8;font-style:italic;">${escapeHtml(proxy.error || "Unavailable")}</span>
+      </td>
+    </tr>`;
+  }
+
+  const detail = [
+    proxy.price != null ? `$${proxy.price.toLocaleString("en-US")}` : "",
+    proxy.drawdownFromHighPct != null
+      ? `${formatPct(proxy.drawdownFromHighPct)} vs 52w high`
+      : "",
+    proxy.rsi14 != null ? `RSI ${proxy.rsi14}` : "",
+    proxy.rangePositionPct != null
+      ? `Range ${Math.round(proxy.rangePositionPct)}%`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return `<tr>
+    <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="vertical-align:middle;padding:0 8px 0 0;">
+            <span style="display:inline-block;font-size:11px;font-weight:700;color:${colors.text};background:${colors.bg};border-radius:999px;padding:2px 8px;">${escapeHtml(proxy.tickerId)}</span>
+          </td>
+          <td style="vertical-align:middle;white-space:nowrap;padding:0 8px 0 0;">
+            <span style="font-size:18px;font-weight:750;color:#0f172a;">${proxy.score}</span>
+          </td>
+          <td style="vertical-align:middle;padding:0 8px 0 0;">
+            ${bandBadge(proxy.band)}
+          </td>
+          <td style="vertical-align:middle;text-align:right;">
+            ${stanceBadge(proxy.stance)}
+          </td>
+        </tr>
+        <tr>
+          <td colspan="4" style="padding:4px 0 0 0;font-size:12px;line-height:1.4;color:#64748b;">
+            ${escapeHtml(detail)}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>`;
+}
+
+function renderSentimentSection(sentiment: SentimentReport | undefined) {
+  if (!sentiment) return "";
+
+  const meters = sentiment.meters ?? [];
+  const meterRow =
+    meters.length === 0
+      ? `<tr><td style="padding:8px 0;font-size:14px;color:#94a3b8;font-style:italic;">No market meters available.</td></tr>`
+      : `<tr>
+        <td style="padding:0 0 12px 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              ${meters
+                .map(
+                  (meter, index) => `
+                <td width="33.33%" style="width:33.33%;padding:${
+                  index === 0
+                    ? "0 4px 0 0"
+                    : index === meters.length - 1
+                      ? "0 0 0 4px"
+                      : "0 4px"
+                };vertical-align:top;">
+                  ${renderMeterCard(meter)}
+                </td>`,
+                )
+                .join("")}
+            </tr>
+          </table>
+        </td>
+      </tr>`;
+
+  const proxyRows = (sentiment.tickers ?? [])
+    .map((proxy) => renderTickerProxyRow(proxy))
+    .join("");
+
+  return `${sectionLabel("Fear &amp; greed", { first: true })}
+  <tr>
+    <td style="padding:0 0 14px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+        <tr>
+          <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
+            <span style="font-size:15px;font-weight:700;color:#0f172a;">Market meters</span>
+            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">CNN · Crypto · VIX</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 16px 4px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              ${meterRow}
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 16px 14px 16px;">
+            <div style="font-size:13px;line-height:1.5;color:#334155;background:#f8fafc;border-radius:10px;padding:10px 12px;">
+              <span style="font-weight:700;color:#0f172a;">Value dial:</span> ${escapeHtml(sentiment.valueDial)}
+            </div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 0 14px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+        <tr>
+          <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
+            <span style="font-size:15px;font-weight:700;color:#0f172a;">Per-ticker greed proxy</span>
+            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">52w range + RSI(14)</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 16px 8px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              ${
+                proxyRows ||
+                `<tr><td style="padding:8px 0;font-size:14px;color:#94a3b8;font-style:italic;">No ticker proxies available.</td></tr>`
+              }
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 16px 14px 16px;">
+            <div style="font-size:11px;line-height:1.45;color:#94a3b8;">
+              Score blends 52-week range position and RSI(14). Lower = more fearful / better for value adds; not a valuation model.
+            </div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>`;
+}
+
+function renderEarningsCard(event: EarningsEvent) {
+  const colors = TICKER_COLORS[event.tickerId] ?? {
+    bg: "#f8fafc",
+    text: "#334155",
+    accent: "#64748b",
+  };
+  const previous = formatEarningsDate(event.previousDate);
+  const next = formatEarningsDate(event.nextDate, {
+    est: Boolean(event.nextDate) && event.nextConfirmed === false,
+  });
+
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+      <tr>
+        <td style="padding:10px 12px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="vertical-align:middle;padding:0 0 8px 0;">
+                <span style="display:inline-block;font-size:11px;font-weight:700;color:${colors.text};background:${colors.bg};border-radius:999px;padding:2px 8px;">${escapeHtml(event.tickerId)}</span>
+              </td>
+            </tr>
+            <tr>
+              <td width="50%" style="width:50%;padding:0 4px 0 0;vertical-align:top;">
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;">Prev</div>
+                <div style="margin-top:2px;font-size:13px;line-height:1.3;font-weight:650;color:#334155;">${escapeHtml(previous)}</div>
+              </td>
+              <td width="50%" style="width:50%;padding:0 0 0 4px;vertical-align:top;">
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;">Next</div>
+                <div style="margin-top:2px;font-size:13px;line-height:1.3;font-weight:650;color:#0f172a;">${escapeHtml(next)}</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>`;
+}
+
 function renderEarningsCalendar(events: EarningsEvent[]) {
   if (events.length === 0) {
     return `<tr>
@@ -270,41 +543,27 @@ function renderEarningsCalendar(events: EarningsEvent[]) {
     </tr>`;
   }
 
-  const rows = events
-    .map((event) => {
-      const previous = formatEarningsDate(event.previousDate);
-      const next = formatEarningsDate(event.nextDate, {
-        est: Boolean(event.nextDate) && event.nextConfirmed === false,
-      });
-      return `<tr>
-        <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;width:72px;">
-          <span style="display:inline-block;font-size:11px;font-weight:700;color:#334155;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:2px 8px;">${escapeHtml(event.tickerId)}</span>
-        </td>
-        <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
-          <div style="font-size:14px;line-height:1.45;color:#0f172a;">
-            <span style="color:#64748b;font-weight:600;">Previous</span>
-            <span style="margin-left:6px;font-weight:650;">${escapeHtml(previous)}</span>
-          </div>
-          <div style="margin-top:3px;font-size:14px;line-height:1.45;color:#0f172a;">
-            <span style="color:#64748b;font-weight:600;">Next</span>
-            <span style="margin-left:6px;font-weight:650;">${escapeHtml(next)}</span>
-          </div>
-        </td>
-      </tr>`;
-    })
-    .join("");
+  const rows: string[] = [];
+  for (let i = 0; i < events.length; i += 2) {
+    const left = events[i];
+    const right = events[i + 1];
+    rows.push(`<tr>
+      <td style="padding:0 0 10px 0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td width="50%" style="width:50%;padding:0 5px 0 0;vertical-align:top;">
+              ${left ? renderEarningsCard(left) : ""}
+            </td>
+            <td width="50%" style="width:50%;padding:0 0 0 5px;vertical-align:top;">
+              ${right ? renderEarningsCard(right) : ""}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`);
+  }
 
-  return `<tr>
-    <td style="padding:0 0 14px 0;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
-        <tr>
-          <td style="padding:4px 16px 8px 16px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>`;
+  return rows.join("");
 }
 
 function percentColor(percent: number, available: boolean) {
@@ -910,7 +1169,9 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             </tr>
 
             ${calloutBox("Theme of the day", brief.themeOfTheDay, "#7c3aed")}
-            ${sectionLabel("Overnight", { first: true })}
+            ${renderSentimentSection(brief.sentiment)}
+
+            ${sectionLabel("Overnight")}
             ${renderOvernightOpeners(brief)}
 
             ${sectionLabel("Markets")}
@@ -922,15 +1183,26 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             ${sectionLabel("Speeches &amp; announcements")}
             ${peopleSections}
 
-            ${sectionDivider()}
-            ${calloutBox("Regional pulse", brief.regionalPulse, "#c2410c", "22px")}
+            ${
+              brief.regionalPulse?.trim()
+                ? `${sectionDivider()}${calloutBox("Regional pulse", brief.regionalPulse, "#c2410c", "22px")}`
+                : ""
+            }
 
-            ${sectionLabel("Web trends")}
-            ${trendSections}
-            ${crossRegion}
+            ${
+              (brief.trends?.regions ?? []).some(
+                (region) =>
+                  region.items.length > 0 || Boolean(region.summary?.trim()),
+              ) || (brief.trends?.crossRegion?.length ?? 0) > 0
+                ? `${sectionLabel("Web trends")}${trendSections}${crossRegion}`
+                : ""
+            }
 
-            ${sectionLabel("Reddit")}
-            ${renderRedditSection(brief.reddit ?? [])}
+            ${
+              (brief.reddit ?? []).some((feed) => feed.posts.length > 0)
+                ? `${sectionLabel("Reddit")}${renderRedditSection(brief.reddit ?? [])}`
+                : ""
+            }
 
             ${renderSitesSection(brief.sites ?? [])}
 
@@ -958,9 +1230,57 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     "",
     "THEME OF THE DAY",
     brief.themeOfTheDay,
-    "",
-    "OVERNIGHT OPENERS",
   ];
+
+  if (brief.sentiment) {
+    lines.push("", "FEAR & GREED", "Market meters");
+    for (const meter of brief.sentiment.meters) {
+      if (meter.value == null) {
+        lines.push(
+          `- ${meter.label}: unavailable${meter.error ? ` (${meter.error})` : ""}`,
+        );
+        continue;
+      }
+      const band = meter.band ? ` · ${meter.band}` : "";
+      const deltas = [
+        meter.changeDay !== undefined
+          ? `1d ${formatSigned(meter.changeDay, meter.id === "vix" ? 2 : 1)}`
+          : "",
+        meter.changeWeek !== undefined
+          ? `1w ${formatSigned(meter.changeWeek, 1)}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      lines.push(
+        `- ${meter.label}: ${meter.id === "vix" ? meter.value.toFixed(2) : Math.round(meter.value)}${band}${deltas ? ` (${deltas})` : ""}`,
+      );
+    }
+    lines.push(`Value dial: ${brief.sentiment.valueDial}`);
+    lines.push("", "Per-ticker greed proxy");
+    for (const proxy of brief.sentiment.tickers) {
+      if (proxy.score == null) {
+        lines.push(
+          `- ${proxy.tickerId}: ${proxy.error || "unavailable"}`,
+        );
+        continue;
+      }
+      const bits = [
+        `score ${proxy.score}`,
+        proxy.band,
+        proxy.stance,
+        proxy.drawdownFromHighPct != null
+          ? `${formatPct(proxy.drawdownFromHighPct)} vs 52w high`
+          : "",
+        proxy.rsi14 != null ? `RSI ${proxy.rsi14}` : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      lines.push(`- ${proxy.tickerId}: ${bits}`);
+    }
+  }
+
+  lines.push("", "OVERNIGHT OPENERS");
 
   for (const ticker of TICKERS) {
     const section = brief.tickers.find((t) => t.id === ticker.id);
@@ -1008,60 +1328,61 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     if (section?.sourceUrl) lines.push(`  ${section.sourceUrl}`);
   }
 
-  lines.push("", "REGIONAL PULSE", brief.regionalPulse);
-
-  lines.push("", "WEB TRENDS");
-  for (const region of brief.trends?.regions ?? []) {
-    lines.push("", region.label);
-    if (region.summary?.trim()) {
-      lines.push(region.summary.trim());
-      continue;
-    }
-    if (region.items.length === 0) {
-      lines.push("- No trends available.");
-      continue;
-    }
-    for (const item of region.items) {
-      const en = item.titleEn.trim();
-      const original = item.title.trim();
-      const title =
-        en && original && en.toLowerCase() !== original.toLowerCase()
-          ? `${en} (${original})`
-          : en || original;
-      lines.push(`#${item.rank} ${title} · ${item.approxTraffic}`);
-      const headline = (
-        item.descriptionEn ||
-        item.newsTitleEn ||
-        item.newsTitle ||
-        ""
-      ).trim();
-      if (headline) {
-        const source = item.newsSource ? `${item.newsSource} — ` : "";
-        const url = item.newsUrl ? ` (${item.newsUrl})` : "";
-        lines.push(`  ${source}${headline}${url}`);
-      }
-    }
-  }
-  if (brief.trends?.crossRegion?.length) {
-    lines.push(
-      "",
-      `Also rising in 2+ regions: ${brief.trends.crossRegion.join(" · ")}`,
-    );
+  if (brief.regionalPulse?.trim()) {
+    lines.push("", "REGIONAL PULSE", brief.regionalPulse);
   }
 
-  lines.push("", "REDDIT");
-  if (!brief.reddit?.length) {
-    lines.push("No Reddit posts available.");
-  } else {
-    for (const feed of brief.reddit) {
-      lines.push(
-        "",
-        `${feed.label} (${redditWindowLabel(feed.window)})`,
-      );
-      if (feed.posts.length === 0) {
-        lines.push("- No posts available.");
+  const trendRegions = brief.trends?.regions ?? [];
+  const hasTrendContent =
+    trendRegions.some(
+      (region) => region.items.length > 0 || Boolean(region.summary?.trim()),
+    ) || (brief.trends?.crossRegion?.length ?? 0) > 0;
+  if (hasTrendContent) {
+    lines.push("", "WEB TRENDS");
+    for (const region of trendRegions) {
+      lines.push("", region.label);
+      if (region.summary?.trim()) {
+        lines.push(region.summary.trim());
         continue;
       }
+      if (region.items.length === 0) {
+        lines.push("- No trends available.");
+        continue;
+      }
+      for (const item of region.items) {
+        const en = item.titleEn.trim();
+        const original = item.title.trim();
+        const title =
+          en && original && en.toLowerCase() !== original.toLowerCase()
+            ? `${en} (${original})`
+            : en || original;
+        lines.push(`#${item.rank} ${title} · ${item.approxTraffic}`);
+        const headline = (
+          item.descriptionEn ||
+          item.newsTitleEn ||
+          item.newsTitle ||
+          ""
+        ).trim();
+        if (headline) {
+          const source = item.newsSource ? `${item.newsSource} — ` : "";
+          const url = item.newsUrl ? ` (${item.newsUrl})` : "";
+          lines.push(`  ${source}${headline}${url}`);
+        }
+      }
+    }
+    if (brief.trends?.crossRegion?.length) {
+      lines.push(
+        "",
+        `Also rising in 2+ regions: ${brief.trends.crossRegion.join(" · ")}`,
+      );
+    }
+  }
+
+  const redditFeeds = (brief.reddit ?? []).filter((feed) => feed.posts.length > 0);
+  if (redditFeeds.length > 0) {
+    lines.push("", "REDDIT");
+    for (const feed of redditFeeds) {
+      lines.push("", `${feed.label} (${redditWindowLabel(feed.window)})`);
       for (const [index, post] of feed.posts.entries()) {
         lines.push(`${index + 1}. ${post.title}`);
         lines.push(`   ${post.permalink}`);

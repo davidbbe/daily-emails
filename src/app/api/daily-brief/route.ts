@@ -68,6 +68,22 @@ export async function GET(request: Request) {
           site.error ? "error" : site.metrics.activeUsers,
         ]),
       ),
+      sentiment: {
+        valueDial: brief.sentiment?.valueDial ?? null,
+        meters: (brief.sentiment?.meters ?? []).map((m) => ({
+          id: m.id,
+          value: m.value,
+          band: m.band,
+          error: m.error ?? null,
+        })),
+        tickerProxies: (brief.sentiment?.tickers ?? []).map((t) => ({
+          tickerId: t.tickerId,
+          score: t.score ?? null,
+          band: t.band ?? null,
+          stance: t.stance ?? null,
+          error: t.error ?? null,
+        })),
+      },
       usage: {
         thresholdPercent: usage.thresholdPercent,
         watch: usage.watch.map((m) => ({

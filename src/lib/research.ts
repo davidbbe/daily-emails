@@ -20,6 +20,10 @@ import {
   type EarningsDates,
 } from "@/lib/earnings";
 import { collectRedditTops, type RedditSubFeed } from "@/lib/reddit";
+import {
+  collectSentiment,
+  type SentimentReport,
+} from "@/lib/sentiment";
 
 export type NewsItem = {
   title: string;
@@ -48,6 +52,8 @@ export type ResearchBundle = {
   reddit: RedditSubFeed[];
   /** GA4 site overviews — pass-through, no LLM; empty when creds missing */
   sites: SiteAnalytics[];
+  /** Fear & greed meters + per-ticker proxies — pass-through, no LLM */
+  sentiment: SentimentReport;
 };
 
 const parser = new Parser({
@@ -194,7 +200,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
   const people: Record<string, NewsItem[]> = {};
   const trends = {} as Record<TrendRegionId, TrendItem[]>;
 
-  const [, , earnings, reddit, , sites] = await Promise.all([
+  const [, , earnings, reddit, , sites, sentiment] = await Promise.all([
     Promise.all(
       TICKERS.map(async (ticker) => {
         tickers[ticker.id] = await fetchRecentNews(ticker.query, hours);
@@ -224,6 +230,16 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
       console.warn("analytics fetch failed", error);
       return [] as SiteAnalytics[];
     }),
+    collectSentiment().catch((error) => {
+      console.warn("sentiment fetch failed", error);
+      return {
+        collectedAt: new Date().toISOString(),
+        meters: [],
+        tickers: [],
+        valueDial:
+          "Sentiment meters unavailable today — rely on valuation and catalysts.",
+      } satisfies SentimentReport;
+    }),
   ]);
 
   return {
@@ -235,5 +251,6 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
     trends,
     reddit,
     sites,
+    sentiment,
   };
 }

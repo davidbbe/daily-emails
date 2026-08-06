@@ -117,7 +117,6 @@ const brief: DailyBrief = {
       whyItMatters:
         "Placeholder — full AI brief skipped due to Gateway rate limit.",
       overnightOpener: "Quiet overnight (test send).",
-      watchlistDelta: "Test send — no prior comparison.",
     },
     {
       id: "MU",
@@ -125,7 +124,6 @@ const brief: DailyBrief = {
       bullets: [{ text: "Placeholder Micron note.", flag: "Noise" }],
       whyItMatters: "Layout check only.",
       overnightOpener: "Quiet overnight (test send).",
-      watchlistDelta: "Test send — no prior comparison.",
     },
     {
       id: "META",
@@ -133,7 +131,6 @@ const brief: DailyBrief = {
       bullets: [{ text: "Placeholder Meta note.", flag: "Actionable" }],
       whyItMatters: "Layout check only.",
       overnightOpener: "Quiet overnight (test send).",
-      watchlistDelta: "Test send — no prior comparison.",
     },
     {
       id: "BTC",
@@ -141,7 +138,6 @@ const brief: DailyBrief = {
       bullets: [{ text: "Placeholder BTC note.", flag: "Watch" }],
       whyItMatters: "Layout check only.",
       overnightOpener: "Quiet overnight (test send).",
-      watchlistDelta: "Test send — no prior comparison.",
     },
   ],
   people: [
@@ -198,6 +194,68 @@ const brief: DailyBrief = {
   },
   reddit: demoRedditFeeds(),
   sites: [],
+  sentiment: {
+    collectedAt: new Date().toISOString(),
+    valueDial:
+      "Neutral dial — CNN 52 (Neutral) · Crypto 28 (Fear) · VIX 18.4 (Greed). Size adds from valuation, not mood.",
+    meters: [
+      {
+        id: "cnn",
+        label: "CNN Fear & Greed",
+        value: 52,
+        band: "Neutral",
+        changeDay: 1.2,
+        changeWeek: -4.5,
+        sourceUrl: "https://www.cnn.com/markets/fear-and-greed",
+      },
+      {
+        id: "crypto",
+        label: "Crypto Fear & Greed",
+        value: 28,
+        band: "Fear",
+        changeDay: -2,
+        changeWeek: -8,
+        sourceUrl: "https://alternative.me/crypto/fear-and-greed-index/",
+      },
+      {
+        id: "vix",
+        label: "VIX",
+        value: 18.4,
+        band: "Greed",
+        changeDay: -0.35,
+        sourceUrl: "https://www.cboe.com/tradable_products/vix/",
+      },
+    ],
+    tickers: [
+      {
+        tickerId: "TSLA",
+        label: "Tesla (TSLA)",
+        price: 321.55,
+        drawdownFromHighPct: -35.5,
+        rangePositionPct: 12,
+        rsi14: 26.2,
+        score: 19,
+        band: "Extreme Fear",
+        stance: "Lean buy",
+      },
+      {
+        tickerId: "MU",
+        label: "Micron (MU)",
+        price: 120,
+        drawdownFromHighPct: -8.2,
+        rangePositionPct: 72,
+        rsi14: 58,
+        score: 65,
+        band: "Greed",
+        stance: "Patience",
+      },
+      {
+        tickerId: "SPCX",
+        label: "SpaceX (SPCX)",
+        error: "No public quote (private / unlisted)",
+      },
+    ],
+  },
   generatedAt: new Date().toISOString(),
   model: "test-send (no LLM)",
   windowHours: 24,
