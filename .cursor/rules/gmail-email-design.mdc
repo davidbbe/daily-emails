@@ -1,0 +1,52 @@
+---
+description: Gmail-only HTML email design — use modern Gmail-safe styles; skip Outlook workarounds
+globs: src/lib/email.ts,src/lib/fear-greed-gauge.ts,src/lib/ticker-proxy-chart.ts,scripts/**/*email*.ts
+alwaysApply: false
+---
+
+# Gmail-only email design
+
+This project’s emails are opened **only in Gmail** (web + mobile). Optimize for Gmail — do **not** add Outlook/Word, Yahoo, or “lowest common denominator” email hacks (no VML, no `<!--[if mso]>`, no spacer GIFs for layout, no dual-font Outlook stacks).
+
+## Architecture (keep)
+
+- Build HTML as strings in `src/lib/email.ts` with nested `<table role="presentation">` for structure.
+- Critical styles must be **inline** on elements (Gmail may strip or limit `<style>`).
+- Escape all dynamic text with `escapeHtml`.
+- Charts/gauges: render SVG → PNG via Sharp and attach as CID images (`cid:...`). Prefer crisp PNGs over trying to draw charts in HTML/CSS.
+- Always ship a plain-text part (`renderBriefText`) alongside HTML.
+
+## Prefer (Gmail-supported polish)
+
+- `border-radius`, soft borders, light card backgrounds, accent bar columns
+- `linear-gradient` on hero/header cells (inline `background` / `background-image`)
+- Fluid shell: outer `width="100%"` + inner `max-width` (e.g. 640–760px)
+- System UI stack already used: `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`
+- `rgba()` / hex colors; strong contrast for body text (`#0f172a` / `#334155` on white)
+- Explicit `width`/`height` on `<img>`, plus `style="display:block;max-width:100%;height:auto;border:0"`
+- Optional `<style>` in `<head>` only for **enhancements** (e.g. `@media` to stack 2-column rows on narrow viewports). Never put layout-critical rules only in `<style>`.
+- Optional dark-mode hint: `<meta name="color-scheme" content="light">` (or light/dark overrides tested in Gmail) — avoid relying on Gmail’s auto-invert for brand colors
+
+## Avoid (unreliable or pointless here)
+
+- Flexbox / Grid as primary layout (`align-items` / `justify-content` often stripped)
+- `box-shadow`, `filter`, `backdrop-filter`, `transform`, `animation`, `transition`
+- `@font-face` / Google Fonts / external CSS or JS
+- Positioning (`position`, `top`/`left`, `z-index`), `float` for structure
+- Background images for essential information (CID or remote `<img>` instead)
+- Div-only “modern web” layouts without table fallbacks for multi-column rows
+- Huge base64 images in the HTML body — use Resend CID attachments
+
+## Visual / UX bar
+
+- One clear visual hierarchy: hero → theme callout → dense sections as cards
+- Section labels: small uppercase tracking; cards: white + `#e2e8f0` border + 12–16px radius
+- Multi-column rows (meters, earnings, Reddit, TH/BG trends): table cells with `%` widths; if adding mobile stacking, duplicate the stack rule in a head `<style>` `@media` and keep desktop table layout as default
+- Links: visible, not underline-only grey; keep tap targets readable on mobile
+- Do not sacrifice scannability for decoration — this is a daily brief, not a marketing landing page
+
+## When changing templates
+
+1. Edit helpers in `email.ts` rather than one-off HTML in scripts.
+2. Send a test via the existing send-test script and open in Gmail (web + phone if layout changed).
+3. If a “modern CSS” idea needs Flex/Grid/shadow to work, redesign with tables + borders/gradients/CID art instead.
