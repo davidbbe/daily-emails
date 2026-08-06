@@ -76,10 +76,10 @@ export type TrendRegionId = (typeof TREND_REGIONS)[number]["id"];
 
 /** Subreddits included in the daily brief (top posts, no LLM) */
 export const REDDIT_SUBREDDITS = [
-  { id: "pics", limit: 5 },
-  { id: "generativeAI", limit: 5 },
-  { id: "CursedAI", limit: 5 },
-  { id: "aiArt", limit: 5 },
+  { id: "pics", limit: 6 },
+  { id: "generativeAI", limit: 6 },
+  { id: "CursedAI", limit: 6 },
+  { id: "aiArt", limit: 6 },
 ] as const;
 
 export type RedditSubredditId = (typeof REDDIT_SUBREDDITS)[number]["id"];

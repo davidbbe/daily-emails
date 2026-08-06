@@ -20,7 +20,7 @@ This project’s emails are opened **only in Gmail** (web + mobile). Optimize fo
 
 - `border-radius`, soft borders, light card backgrounds, accent bar columns
 - `linear-gradient` on hero/header cells (inline `background` / `background-image`)
-- Fluid shell: outer `width="100%"` + inner `max-width` (e.g. 640–760px)
+- Fluid shell: outer `width="100%"` + inner `max-width` (e.g. 640–820px)
 - System UI stack already used: `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`
 - `rgba()` / hex colors; strong contrast for body text (`#0f172a` / `#334155` on white)
 - Explicit `width`/`height` on `<img>`, plus `style="display:block;max-width:100%;height:auto;border:0"`

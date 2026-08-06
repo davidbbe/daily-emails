@@ -7,6 +7,7 @@ import {
 import type { DailyBrief } from "@/lib/brief";
 import { GA_ACCOUNTS } from "@/lib/config";
 import { sendBriefEmail } from "@/lib/email";
+import { collectRedditTops } from "@/lib/reddit";
 import { collectUsageReport } from "@/lib/usage";
 
 function demoDailySeries(baseUsers: number): SiteAnalytics["dailySeries"] {
@@ -179,7 +180,7 @@ const brief: DailyBrief = {
     },
   ],
   themeOfTheDay:
-    "TEST EMAIL — Greed proxy inside Markets ticker cards (no Reddit / Trends).",
+    "TEST EMAIL — Reddit 3-column layout review (placeholder markets / no Trends).",
   regionalPulse: "",
   trends: {
     regions: [],
@@ -310,14 +311,19 @@ const brief: DailyBrief = {
 };
 
 async function main() {
-  const [usage, sites] = await Promise.all([
+  const [usage, sites, reddit] = await Promise.all([
     collectUsageReport(),
     collectSiteAnalytics().catch((error) => {
       console.warn("live GA fetch failed; using demo sites", error);
       return demoSites();
     }),
+    collectRedditTops().catch((error) => {
+      console.warn("live Reddit fetch failed", error);
+      return [];
+    }),
   ]);
   brief.sites = sites.length > 0 ? sites : demoSites();
+  brief.reddit = reddit;
   brief.generatedAt = new Date().toISOString();
 
   const email = await sendBriefEmail(brief, usage);
@@ -327,6 +333,11 @@ async function main() {
         ok: true,
         emailId: email?.id ?? null,
         to: process.env.EMAIL_TO,
+        reddit: brief.reddit.map((feed) => ({
+          id: feed.id,
+          window: feed.window,
+          posts: feed.posts.length,
+        })),
         sites: brief.sites.map((s) => ({
           label: s.label,
           propertyId: s.propertyId,

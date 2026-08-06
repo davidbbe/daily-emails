@@ -573,41 +573,53 @@ function siteOrigin() {
   return undefined;
 }
 
+const REDDIT_THUMB_SIZE = 110;
+const REDDIT_POSTS_PER_ROW = 3;
+
 /** Crossed-out picture icon when a post has no thumbnail. */
 function redditNoImageThumbHtml() {
+  const size = REDDIT_THUMB_SIZE;
   const origin = siteOrigin();
   if (origin) {
-    return `<img src="${escapeHtml(`${origin}/reddit-no-image.svg`)}" width="40" height="40" alt="No image" style="display:block;width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;background:#f1f5f9;" />`;
+    return `<img src="${escapeHtml(`${origin}/reddit-no-image.svg`)}" width="${size}" height="${size}" alt="No image" style="display:block;width:100%;max-width:${size}px;height:auto;aspect-ratio:1/1;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;background:#f1f5f9;" />`;
   }
 
   // Fallback when no public origin is available (local sends).
-  return `<table role="presentation" width="40" height="40" cellpadding="0" cellspacing="0" style="width:40px;height:40px;border-radius:6px;border:1px solid #e2e8f0;background:#f1f5f9;"><tr><td align="center" valign="middle" width="40" height="40" style="width:40px;height:40px;font-size:16px;line-height:16px;color:#64748b;font-family:${FONT};" title="No image">∅</td></tr></table>`;
+  return `<table role="presentation" width="${size}" height="${size}" cellpadding="0" cellspacing="0" style="width:100%;max-width:${size}px;height:${size}px;border-radius:8px;border:1px solid #e2e8f0;background:#f1f5f9;"><tr><td align="center" valign="middle" width="${size}" height="${size}" style="width:${size}px;height:${size}px;font-size:22px;line-height:22px;color:#64748b;font-family:${FONT};" title="No image">∅</td></tr></table>`;
 }
 
-function renderRedditPostRow(post: RedditSubFeed["posts"][number], rank: number) {
+function renderRedditPostCell(post: RedditSubFeed["posts"][number], rank: number) {
   const thumb = post.thumbnail
-    ? `<img src="${escapeHtml(post.thumbnail)}" width="40" height="40" alt="" style="display:block;width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;" />`
+    ? `<img src="${escapeHtml(post.thumbnail)}" width="${REDDIT_THUMB_SIZE}" height="${REDDIT_THUMB_SIZE}" alt="" style="display:block;width:100%;max-width:${REDDIT_THUMB_SIZE}px;height:auto;aspect-ratio:1/1;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;" />`
     : redditNoImageThumbHtml();
 
-  return `<tr>
-    <td style="padding:6px 0;vertical-align:top;width:18px;">
-      <div style="font-size:11px;font-weight:700;color:#94a3b8;padding-top:12px;">${rank}</div>
-    </td>
-    <td style="padding:6px 8px 6px 0;vertical-align:top;width:40px;">
+  return `<td width="33.33%" style="width:33.33%;padding:2px;vertical-align:top;">
       <a href="${escapeHtml(post.permalink)}" style="text-decoration:none;">${thumb}</a>
-    </td>
-    <td style="padding:6px 0;vertical-align:top;">
-      <a href="${escapeHtml(post.permalink)}" style="font-size:12px;line-height:1.35;font-weight:600;color:#0f172a;text-decoration:none;">${escapeHtml(post.title)}</a>
-    </td>
-  </tr>`;
+      <div style="padding:4px 0 1px 0;">
+        <div style="font-size:9px;font-weight:700;color:#94a3b8;line-height:1.2;margin:0 0 2px 0;">${rank}</div>
+        <a href="${escapeHtml(post.permalink)}" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-height:2.6em;font-size:10px;line-height:1.3;font-weight:600;color:#0f172a;text-decoration:none;">${escapeHtml(post.title)}</a>
+      </div>
+    </td>`;
+}
+
+function renderRedditPostGrid(posts: RedditSubFeed["posts"]) {
+  if (posts.length === 0) {
+    return `<tr><td style="padding:8px 0;font-size:12px;color:#94a3b8;font-style:italic;">No posts available.</td></tr>`;
+  }
+
+  const rows: string[] = [];
+  for (let i = 0; i < posts.length; i += REDDIT_POSTS_PER_ROW) {
+    const slice = posts.slice(i, i + REDDIT_POSTS_PER_ROW);
+    const cells = slice.map((post, j) => renderRedditPostCell(post, i + j + 1));
+    while (cells.length < REDDIT_POSTS_PER_ROW) {
+      cells.push(`<td width="33.33%" style="width:33.33%;padding:2px;"></td>`);
+    }
+    rows.push(`<tr>${cells.join("")}</tr>`);
+  }
+  return rows.join("");
 }
 
 function renderRedditSubColumn(feed: RedditSubFeed) {
-  const rows =
-    feed.posts.length > 0
-      ? feed.posts.map((post, i) => renderRedditPostRow(post, i + 1)).join("")
-      : `<tr><td colspan="3" style="padding:8px 0;font-size:12px;color:#94a3b8;font-style:italic;">No posts available.</td></tr>`;
-
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
       <tr>
@@ -617,8 +629,8 @@ function renderRedditSubColumn(feed: RedditSubFeed) {
         </td>
       </tr>
       <tr>
-        <td style="padding:6px 12px 10px 12px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+        <td style="padding:4px 4px 8px 4px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${renderRedditPostGrid(feed.posts)}</table>
         </td>
       </tr>
     </table>`;
@@ -644,10 +656,10 @@ function renderRedditSection(feeds: RedditSubFeed[]) {
       <td style="padding:0 0 12px 0;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
           <tr>
-            <td class="stack-col" width="50%" style="width:50%;padding:0 6px 0 0;vertical-align:top;">
+            <td class="stack-col" width="50%" style="width:50%;padding:0 4px 0 0;vertical-align:top;">
               ${left ? renderRedditSubColumn(left) : ""}
             </td>
-            <td class="stack-col" width="50%" style="width:50%;padding:0 0 0 6px;vertical-align:top;">
+            <td class="stack-col" width="50%" style="width:50%;padding:0 0 0 4px;vertical-align:top;">
               ${right ? renderRedditSubColumn(right) : ""}
             </td>
           </tr>
@@ -1175,7 +1187,7 @@ export function renderBriefHtml(
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(180deg,#dbeafe 0%,#eef2ff 180px,#f8fafc 180px);padding:28px 12px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:760px;margin:0 auto;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:820px;margin:0 auto;">
             <tr>
               <td style="padding:0 0 18px 0;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#0f766e 0%,#1d4ed8 55%,#7c3aed 100%);border-radius:18px;overflow:hidden;">

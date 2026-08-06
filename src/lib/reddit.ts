@@ -298,7 +298,7 @@ export async function collectRedditTops(): Promise<RedditSubFeed[]> {
         for (const subId of batch) {
           const key = subId.toLowerCase();
           if (results.has(key)) continue;
-          const limit = limits.get(key) ?? 5;
+          const limit = limits.get(key) ?? 6;
           const posts = (grouped.get(key) ?? []).slice(0, limit);
           if (posts.length === 0) continue;
           results.set(key, { window, posts });
