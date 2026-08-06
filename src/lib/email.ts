@@ -152,7 +152,7 @@ function trendNewsLine(item: BriefTrendItem) {
   const source = item.newsSource ? `${escapeHtml(item.newsSource)} — ` : "";
   const text = `${source}${escapeHtml(headline)}`;
   if (item.newsUrl) {
-    return `<a href="${escapeHtml(item.newsUrl)}" style="color:#64748b;text-decoration:none;">${text}</a>`;
+    return `<a href="${escapeHtml(item.newsUrl)}" style="color:#2563eb;text-decoration:none;">${text}</a>`;
   }
   return text;
 }
@@ -175,7 +175,7 @@ function renderTrendRows(items: BriefTrendItem[]) {
             <tr>
               <td style="width:28px;vertical-align:top;font-size:13px;font-weight:700;color:#94a3b8;padding-top:2px;">#${item.rank}</td>
               <td style="vertical-align:top;">
-                <div style="font-size:15px;line-height:1.4;font-weight:650;color:#0f172a;">
+                <div style="font-size:15px;line-height:1.4;font-weight:600;color:#0f172a;">
                   ${trendDisplayTitle(item)}
                   ${trafficBadge(item.approxTraffic)}
                 </div>
@@ -333,11 +333,11 @@ function renderMeterColumn(
   const deltaBits = formatMeterDeltas(meter);
 
   const shortLabel =
-    meter.id === "cnn" ? "CNN" : meter.id === "crypto" ? "Crypto" : "VIX";
+    meter.id === "cnn" ? "Stocks" : meter.id === "crypto" ? "Crypto" : "VIX";
 
   const gaugeImg = gaugeCid
     ? `<img src="cid:${escapeHtml(gaugeCid)}" width="220" height="140" alt="${escapeHtml(meter.label)}" style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;width:100%;max-width:220px;height:auto;" />`
-    : `<div style="padding:28px 8px;font-size:22px;font-weight:750;color:#0f172a;">${
+    : `<div style="padding:28px 8px;font-size:22px;font-weight:700;color:#0f172a;">${
         meter.value == null
           ? "—"
           : meter.id === "vix"
@@ -404,7 +404,7 @@ function renderTickerProxyStrip(
   const chartImg = chartCid
     ? `<img src="cid:${escapeHtml(chartCid)}" width="560" height="148" alt="Greed proxy ${proxy.score}" style="display:block;border:0;outline:none;text-decoration:none;width:100%;max-width:560px;height:auto;" />`
     : `<div style="padding:4px 0 2px 0;">
-        <span style="font-size:22px;font-weight:750;color:#0f172a;vertical-align:middle;margin-right:8px;">${proxy.score}</span>
+        <span style="font-size:22px;font-weight:700;color:#0f172a;vertical-align:middle;margin-right:8px;">${proxy.score}</span>
         <div style="margin-top:6px;font-size:12px;line-height:1.4;color:#64748b;">
           ${escapeHtml(tickerProxyDetail(proxy))}
         </div>
@@ -464,7 +464,7 @@ function renderSentimentSection(
                   : index === meters.length - 1
                     ? "0 0 0 4px"
                     : "0 4px";
-              return `<td width="33.33%" style="width:33.33%;padding:${pad};vertical-align:top;">
+              return `<td class="stack-col" width="33.33%" style="width:33.33%;padding:${pad};vertical-align:top;">
               ${renderMeterColumn(meter, cidByMeter.get(meter.id))}
             </td>`;
             })
@@ -502,11 +502,11 @@ function renderEarningsCard(event: EarningsEvent) {
             <tr>
               <td width="50%" style="width:50%;padding:0 4px 0 0;vertical-align:top;">
                 <div style="font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;">Prev</div>
-                <div style="margin-top:2px;font-size:13px;line-height:1.3;font-weight:650;color:#334155;">${escapeHtml(previous)}</div>
+                <div style="margin-top:2px;font-size:13px;line-height:1.3;font-weight:600;color:#334155;">${escapeHtml(previous)}</div>
               </td>
               <td width="50%" style="width:50%;padding:0 0 0 4px;vertical-align:top;">
                 <div style="font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;">Next</div>
-                <div style="margin-top:2px;font-size:13px;line-height:1.3;font-weight:650;color:#0f172a;">${escapeHtml(next)}</div>
+                <div style="margin-top:2px;font-size:13px;line-height:1.3;font-weight:600;color:#0f172a;">${escapeHtml(next)}</div>
               </td>
             </tr>
           </table>
@@ -534,10 +534,10 @@ function renderEarningsCalendar(events: EarningsEvent[]) {
       <td style="padding:0 0 10px 0;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
           <tr>
-            <td width="50%" style="width:50%;padding:0 5px 0 0;vertical-align:top;">
+            <td class="stack-col" width="50%" style="width:50%;padding:0 5px 0 0;vertical-align:top;">
               ${left ? renderEarningsCard(left) : ""}
             </td>
-            <td width="50%" style="width:50%;padding:0 0 0 5px;vertical-align:top;">
+            <td class="stack-col" width="50%" style="width:50%;padding:0 0 0 5px;vertical-align:top;">
               ${right ? renderEarningsCard(right) : ""}
             </td>
           </tr>
@@ -581,7 +581,7 @@ function redditNoImageThumbHtml() {
   }
 
   // Fallback when no public origin is available (local sends).
-  return `<table role="presentation" width="40" height="40" cellpadding="0" cellspacing="0" style="width:40px;height:40px;border-radius:6px;border:1px solid #e2e8f0;background:#f1f5f9;"><tr><td align="center" valign="middle" width="40" height="40" style="width:40px;height:40px;font-size:16px;line-height:16px;color:#64748b;font-family:Arial,Helvetica,sans-serif;" title="No image">∅</td></tr></table>`;
+  return `<table role="presentation" width="40" height="40" cellpadding="0" cellspacing="0" style="width:40px;height:40px;border-radius:6px;border:1px solid #e2e8f0;background:#f1f5f9;"><tr><td align="center" valign="middle" width="40" height="40" style="width:40px;height:40px;font-size:16px;line-height:16px;color:#64748b;font-family:${FONT};" title="No image">∅</td></tr></table>`;
 }
 
 function renderRedditPostRow(post: RedditSubFeed["posts"][number], rank: number) {
@@ -597,7 +597,7 @@ function renderRedditPostRow(post: RedditSubFeed["posts"][number], rank: number)
       <a href="${escapeHtml(post.permalink)}" style="text-decoration:none;">${thumb}</a>
     </td>
     <td style="padding:6px 0;vertical-align:top;">
-      <a href="${escapeHtml(post.permalink)}" style="font-size:12px;line-height:1.35;font-weight:650;color:#0f172a;text-decoration:none;">${escapeHtml(post.title)}</a>
+      <a href="${escapeHtml(post.permalink)}" style="font-size:12px;line-height:1.35;font-weight:600;color:#0f172a;text-decoration:none;">${escapeHtml(post.title)}</a>
     </td>
   </tr>`;
 }
@@ -644,10 +644,10 @@ function renderRedditSection(feeds: RedditSubFeed[]) {
       <td style="padding:0 0 12px 0;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
           <tr>
-            <td width="50%" style="width:50%;padding:0 6px 0 0;vertical-align:top;">
+            <td class="stack-col" width="50%" style="width:50%;padding:0 6px 0 0;vertical-align:top;">
               ${left ? renderRedditSubColumn(left) : ""}
             </td>
-            <td width="50%" style="width:50%;padding:0 0 0 6px;vertical-align:top;">
+            <td class="stack-col" width="50%" style="width:50%;padding:0 0 0 6px;vertical-align:top;">
               ${right ? renderRedditSubColumn(right) : ""}
             </td>
           </tr>
@@ -710,12 +710,12 @@ function renderHeroKpi(
     delta === undefined
       ? ""
       : `<div style="margin-top:6px;">${renderDeltaBadge(delta)}</div>`;
-  return `<td style="padding:0 6px;vertical-align:top;width:33.33%;">
+  return `<td class="stack-col" style="padding:0 6px;vertical-align:top;width:33.33%;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;">
       <tr>
         <td style="padding:12px 12px 14px 12px;">
           <div style="font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;">${escapeHtml(label)}</div>
-          <div style="margin-top:6px;font-size:${valueSize};line-height:1.15;font-weight:750;color:#0f172a;">${escapeHtml(value)}</div>
+          <div style="margin-top:6px;font-size:${valueSize};line-height:1.15;font-weight:700;color:#0f172a;">${escapeHtml(value)}</div>
           ${deltaHtml}
         </td>
       </tr>
@@ -724,7 +724,7 @@ function renderHeroKpi(
 }
 
 function renderSecondaryMetric(label: string, value: string) {
-  return `<td style="padding:0 4px;vertical-align:top;width:50%;">
+  return `<td class="stack-col" style="padding:0 4px;vertical-align:top;width:50%;">
     <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;">
       <div style="font-size:10px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;">${escapeHtml(label)}</div>
       <div style="margin-top:4px;font-size:15px;font-weight:700;color:#334155;">${escapeHtml(value)}</div>
@@ -775,9 +775,9 @@ function renderUsersBarChart(
 }
 
 function renderMtdStat(label: string, value: string) {
-  return `<td style="padding:0 4px;vertical-align:top;width:25%;text-align:center;">
+  return `<td class="stack-col" style="padding:0 4px;vertical-align:top;width:25%;text-align:center;">
     <div style="font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;">${escapeHtml(label)}</div>
-    <div style="margin-top:4px;font-size:14px;font-weight:750;color:#0f172a;">${escapeHtml(value)}</div>
+    <div style="margin-top:4px;font-size:14px;font-weight:700;color:#0f172a;">${escapeHtml(value)}</div>
   </td>`;
 }
 
@@ -793,7 +793,7 @@ function renderSiteCard(site: SiteAnalytics) {
           </tr>
           <tr>
             <td style="padding:16px 18px;">
-              <div style="font-size:16px;font-weight:750;color:#0f172a;">${escapeHtml(site.label)}</div>
+              <div style="font-size:16px;font-weight:700;color:#0f172a;">${escapeHtml(site.label)}</div>
               <div style="margin-top:8px;font-size:13px;line-height:1.45;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;">${escapeHtml(site.error)}</div>
             </td>
           </tr>
@@ -829,7 +829,7 @@ function renderSiteCard(site: SiteAnalytics) {
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
               <tr>
                 <td style="vertical-align:middle;">
-                  <div style="font-size:17px;font-weight:750;color:#0f172a;">${escapeHtml(site.label)}</div>
+                  <div style="font-size:17px;font-weight:700;color:#0f172a;">${escapeHtml(site.label)}</div>
                   <div style="margin-top:3px;font-size:12px;color:#64748b;">Yesterday · ${escapeHtml(dateLabel)}</div>
                 </td>
                 <td style="vertical-align:middle;text-align:right;">
@@ -932,11 +932,11 @@ function renderUsageWatch(usage: UsageReport) {
       const color = percentColor(m.percent, true);
       return `<tr>
         <td style="padding:8px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
-          <div style="font-size:14px;font-weight:650;color:#0f172a;">${escapeHtml(m.label)}</div>
+          <div style="font-size:14px;font-weight:600;color:#0f172a;">${escapeHtml(m.label)}</div>
           <div style="margin-top:2px;font-size:13px;color:#475569;">${escapeHtml(m.detail)}</div>
         </td>
         <td style="padding:8px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;text-align:right;white-space:nowrap;">
-          <span style="font-size:16px;font-weight:750;color:${color};">${m.percent}%</span>
+          <span style="font-size:16px;font-weight:700;color:${color};">${m.percent}%</span>
         </td>
       </tr>`;
     })
@@ -969,12 +969,12 @@ function renderUsageRow(m: UsageMetric) {
     : "n/a";
   return `<tr>
     <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
-      <div style="font-size:14px;font-weight:650;color:#0f172a;">${escapeHtml(m.label)}</div>
+      <div style="font-size:14px;font-weight:600;color:#0f172a;">${escapeHtml(m.label)}</div>
       <div style="margin-top:2px;font-size:12px;line-height:1.45;color:#64748b;">${escapeHtml(m.detail)}</div>
     </td>
     <td style="padding:10px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top;text-align:right;white-space:nowrap;">
       <div style="font-size:13px;font-weight:600;color:#334155;">${escapeHtml(usedLimit)}</div>
-      <div style="margin-top:2px;font-size:15px;font-weight:750;color:${color};">${pct}</div>
+      <div style="margin-top:2px;font-size:15px;font-weight:700;color:${color};">${pct}</div>
     </td>
   </tr>`;
 }
@@ -1051,7 +1051,7 @@ export function renderBriefHtml(
             <tr>
               <td style="padding:14px 18px;background:${colors.bg};border-bottom:1px solid #e2e8f0;">
                 <span style="display:inline-block;font-size:12px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:${colors.text};background:#fff;border:1px solid ${colors.accent}33;border-radius:999px;padding:4px 10px;">${escapeHtml(ticker.id)}</span>
-                <span style="display:inline-block;margin-left:8px;font-size:16px;font-weight:650;color:#0f172a;">${escapeHtml(ticker.label)}</span>
+                <span style="display:inline-block;margin-left:8px;font-size:16px;font-weight:600;color:#0f172a;">${escapeHtml(ticker.label)}</span>
               </td>
             </tr>
             ${renderTickerProxyStrip(proxy, proxyChartCidByTicker.get(ticker.id))}
@@ -1116,10 +1116,10 @@ export function renderBriefHtml(
         <td style="padding:0 0 14px 0;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             <tr>
-              <td width="50%" style="width:50%;padding:0 6px 0 0;vertical-align:top;">
+              <td class="stack-col" width="50%" style="width:50%;padding:0 6px 0 0;vertical-align:top;">
                 ${thailandRegion ? renderTrendSummaryColumn(thailandRegion) : ""}
               </td>
-              <td width="50%" style="width:50%;padding:0 0 0 6px;vertical-align:top;">
+              <td class="stack-col" width="50%" style="width:50%;padding:0 0 0 6px;vertical-align:top;">
                 ${bulgariaRegion ? renderTrendSummaryColumn(bulgariaRegion) : ""}
               </td>
             </tr>
@@ -1141,14 +1141,37 @@ export function renderBriefHtml(
       </tr>`
       : "";
 
+  const preheader = `${brief.themeOfTheDay} · ${dateShort}`;
+
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
     <title>Daily Brief ${escapeHtml(dateShort)}</title>
+    <style type="text/css">
+      :root { color-scheme: light; supported-color-schemes: light; }
+      @media only screen and (max-width: 620px) {
+        .stack-col {
+          display: block !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+          padding-left: 0 !important;
+          padding-right: 0 !important;
+        }
+        .stack-col + .stack-col {
+          padding-top: 10px !important;
+        }
+      }
+    </style>
   </head>
   <body style="margin:0;padding:0;background:#eef2ff;font-family:${FONT};">
+    <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
+      ${escapeHtml(preheader)}
+    </div>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(180deg,#dbeafe 0%,#eef2ff 180px,#f8fafc 180px);padding:28px 12px;">
       <tr>
         <td align="center">
@@ -1159,7 +1182,7 @@ export function renderBriefHtml(
                   <tr>
                     <td style="padding:28px 28px 24px 28px;">
                       <div style="font-size:12px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#ccfbf1;margin:0 0 8px 0;">Daily Emails</div>
-                      <div style="font-size:28px;line-height:1.2;font-weight:750;color:#ffffff;margin:0 0 10px 0;">Daily Market &amp; Tech Brief</div>
+                      <div style="font-size:28px;line-height:1.2;font-weight:700;color:#ffffff;margin:0 0 10px 0;">Daily Market &amp; Tech Brief</div>
                       <div style="font-size:13px;line-height:1.5;color:#e0e7ff;">
                         ${briefWindowLabel(brief)} · ${escapeHtml(date)}
                       </div>

@@ -193,7 +193,7 @@ const brief: DailyBrief = {
     meters: [
       {
         id: "cnn",
-        label: "CNN Fear & Greed",
+        label: "Stocks Fear & Greed",
         value: 60,
         band: "Greed",
         changeDay: 0.7,

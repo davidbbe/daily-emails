@@ -198,7 +198,7 @@ export async function renderTickerProxyChartPng(
   const svg = buildTickerProxyChartSvg(proxy);
   return sharp(Buffer.from(svg))
     .png()
-    .resize(560, 148, { fit: "contain", background: "#f8fafc" })
+    .resize(1120, 296, { fit: "contain", background: "#f8fafc" })
     .toBuffer();
 }
 

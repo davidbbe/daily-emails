@@ -129,7 +129,7 @@ export async function renderFearGreedGaugePng(args: {
   const svg = buildFearGreedGaugeSvg(args);
   return sharp(Buffer.from(svg))
     .png()
-    .resize(220, 140, { fit: "contain", background: "#ffffff" })
+    .resize(440, 280, { fit: "contain", background: "#ffffff" })
     .toBuffer();
 }
 

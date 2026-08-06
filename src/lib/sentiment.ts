@@ -194,7 +194,7 @@ async function fetchCnnFearGreed(): Promise<FearGreedMeter> {
   const sourceUrl = "https://www.cnn.com/markets/fear-and-greed";
   const base: FearGreedMeter = {
     id: "cnn",
-    label: "CNN Fear & Greed",
+    label: "Stocks Fear & Greed",
     value: null,
     band: null,
     sourceUrl,
@@ -592,8 +592,8 @@ function buildValueDial(meters: FearGreedMeter[]): string {
   const greedSignals: string[] = [];
 
   if (cnn?.value != null && cnn.band) {
-    if (cnn.value <= 25) fearSignals.push(`CNN ${cnn.value} (${cnn.band})`);
-    else if (cnn.value >= 75) greedSignals.push(`CNN ${cnn.value} (${cnn.band})`);
+    if (cnn.value <= 25) fearSignals.push(`Stocks ${cnn.value} (${cnn.band})`);
+    else if (cnn.value >= 75) greedSignals.push(`Stocks ${cnn.value} (${cnn.band})`);
   }
   if (crypto?.value != null && crypto.band) {
     if (crypto.value <= 25)
@@ -625,7 +625,7 @@ function buildValueDial(meters: FearGreedMeter[]): string {
     .map((m) =>
       m.id === "vix"
         ? `VIX ${m.value} (${m.band})`
-        : `${m.id === "cnn" ? "CNN" : "Crypto"} ${m.value} (${m.band})`,
+        : `${m.id === "cnn" ? "Stocks" : "Crypto"} ${m.value} (${m.band})`,
     );
 
   if (parts.length === 0) {
