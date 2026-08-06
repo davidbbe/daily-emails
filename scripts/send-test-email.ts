@@ -5,28 +5,9 @@ import {
   type SiteAnalytics,
 } from "@/lib/analytics";
 import type { DailyBrief } from "@/lib/brief";
-import { GA_ACCOUNTS, REDDIT_SUBREDDITS } from "@/lib/config";
+import { GA_ACCOUNTS } from "@/lib/config";
 import { sendBriefEmail } from "@/lib/email";
-import type { RedditSubFeed } from "@/lib/reddit";
 import { collectUsageReport } from "@/lib/usage";
-
-const DEMO_THUMB =
-  "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png";
-
-/** Keep the test fixture in sync with config — one card per configured sub. */
-function demoRedditFeeds(): RedditSubFeed[] {
-  return REDDIT_SUBREDDITS.map((sub, index) => ({
-    id: sub.id,
-    label: `r/${sub.id}`,
-    window: index % 3 === 2 ? "week" : "day",
-    posts: Array.from({ length: Math.min(sub.limit, 3) }, (_, postIndex) => ({
-      title: `Placeholder ${sub.id} post ${postIndex + 1}`,
-      permalink: `https://www.reddit.com/r/${sub.id}/`,
-      thumbnail: postIndex % 2 === 0 ? DEMO_THUMB : undefined,
-      author: "test_user",
-    })),
-  }));
-}
 
 function demoDailySeries(baseUsers: number): SiteAnalytics["dailySeries"] {
   const pattern = [0.72, 0.8, 0.68, 0.95, 1.05, 0.88, 1];
@@ -170,59 +151,42 @@ const brief: DailyBrief = {
     },
   ],
   themeOfTheDay:
-    "TEST EMAIL — Sites section uses live GA4 data when credentials are set.",
-  regionalPulse: "Placeholder regional pulse for layout review.",
+    "TEST EMAIL — Fear & greed gauges layout check (no Reddit / Trends).",
+  regionalPulse: "",
   trends: {
-    regions: [
-      { id: "us", label: "United States", items: [] },
-      {
-        id: "thailand",
-        label: "Thailand",
-        items: [],
-        summary:
-          "Placeholder Thailand summary — top searches and why they are rising, in English only.",
-      },
-      {
-        id: "bulgaria",
-        label: "Bulgaria",
-        items: [],
-        summary:
-          "Placeholder Bulgaria summary — top searches and why they are rising, in English only.",
-      },
-    ],
+    regions: [],
     crossRegion: [],
   },
-  reddit: demoRedditFeeds(),
+  reddit: [],
   sites: [],
   sentiment: {
     collectedAt: new Date().toISOString(),
-    valueDial:
-      "Neutral dial — CNN 52 (Neutral) · Crypto 28 (Fear) · VIX 18.4 (Greed). Size adds from valuation, not mood.",
+    valueDial: "",
     meters: [
       {
         id: "cnn",
         label: "CNN Fear & Greed",
-        value: 52,
-        band: "Neutral",
-        changeDay: 1.2,
-        changeWeek: -4.5,
+        value: 60,
+        band: "Greed",
+        changeDay: 0.7,
+        changeWeek: 19.7,
         sourceUrl: "https://www.cnn.com/markets/fear-and-greed",
       },
       {
         id: "crypto",
         label: "Crypto Fear & Greed",
-        value: 28,
-        band: "Fear",
+        value: 25,
+        band: "Extreme Fear",
         changeDay: -2,
-        changeWeek: -8,
+        changeWeek: -3,
         sourceUrl: "https://alternative.me/crypto/fear-and-greed-index/",
       },
       {
         id: "vix",
         label: "VIX",
-        value: 18.4,
+        value: 15.85,
         band: "Greed",
-        changeDay: -0.35,
+        changeDay: 0.04,
         sourceUrl: "https://www.cboe.com/tradable_products/vix/",
       },
     ],

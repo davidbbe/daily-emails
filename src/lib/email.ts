@@ -13,6 +13,10 @@ import type {
 import { getEmailFrom, getEmailTo, PEOPLE, TICKERS } from "@/lib/config";
 import { formatHumanDate } from "@/lib/dates";
 import type { RedditSubFeed, RedditWindow } from "@/lib/reddit";
+import {
+  buildFearGreedGaugeAttachments,
+  type FearGreedGaugeAttachment,
+} from "@/lib/fear-greed-gauge";
 import type {
   FearGreedMeter,
   SentimentBand,
@@ -304,16 +308,10 @@ function stanceBadge(stance: ValueStance | undefined) {
   return `<span style="display:inline-block;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:${style.text};background:${style.bg};border-radius:999px;padding:2px 7px;">${escapeHtml(stance)}</span>`;
 }
 
-function renderMeterCard(meter: FearGreedMeter) {
-  const style = meter.band
-    ? BAND_STYLES[meter.band]
-    : { bg: "#f8fafc", text: "#64748b", accent: "#94a3b8" };
-  const valueLabel =
-    meter.value == null
-      ? "—"
-      : meter.id === "vix"
-        ? meter.value.toFixed(2)
-        : String(Math.round(meter.value));
+function renderMeterColumn(
+  meter: FearGreedMeter,
+  gaugeCid: string | undefined,
+) {
   const deltaBits = [
     meter.changeDay !== undefined
       ? `1d ${formatSigned(meter.changeDay, meter.id === "vix" ? 2 : 1)}`
@@ -325,22 +323,38 @@ function renderMeterCard(meter: FearGreedMeter) {
     .filter(Boolean)
     .join(" · ");
 
+  const shortLabel =
+    meter.id === "cnn" ? "CNN" : meter.id === "crypto" ? "Crypto" : "VIX";
+
+  const gaugeImg = gaugeCid
+    ? `<img src="cid:${escapeHtml(gaugeCid)}" width="220" height="140" alt="${escapeHtml(meter.label)}" style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;width:100%;max-width:220px;height:auto;" />`
+    : `<div style="padding:28px 8px;font-size:22px;font-weight:750;color:#0f172a;">${
+        meter.value == null
+          ? "—"
+          : meter.id === "vix"
+            ? meter.value.toFixed(2)
+            : Math.round(meter.value)
+      }</div>`;
+
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;height:100%;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
       <tr>
-        <td style="width:5px;background:${style.accent};"></td>
-        <td style="padding:12px 12px 14px 12px;vertical-align:top;">
-          <div style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;margin:0 0 8px 0;">
-            <a href="${escapeHtml(meter.sourceUrl)}" style="color:#64748b;text-decoration:none;">${escapeHtml(meter.label)}</a>
-          </div>
-          <div style="font-size:28px;line-height:1;font-weight:750;color:#0f172a;margin:0 0 8px 0;">${escapeHtml(valueLabel)}</div>
-          <div style="margin:0 0 6px 0;">${bandBadge(meter.band)}</div>
+        <td style="padding:10px 10px 4px 10px;text-align:center;">
+          <a href="${escapeHtml(meter.sourceUrl)}" style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;text-decoration:none;">${escapeHtml(shortLabel)}</a>
+        </td>
+      </tr>
+      <tr>
+        <td align="center" style="padding:0 4px;">
+          ${gaugeImg}
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:2px 10px 12px 10px;text-align:center;">
+          ${bandBadge(meter.band)}
           ${
-            meter.error
-              ? `<div style="font-size:12px;color:#b45309;">${escapeHtml(meter.error)}</div>`
-              : deltaBits
-                ? `<div style="font-size:12px;color:#64748b;">${escapeHtml(deltaBits)}</div>`
-                : ""
+            deltaBits
+              ? `<div style="margin-top:6px;font-size:11px;color:#94a3b8;">${escapeHtml(deltaBits)}</div>`
+              : ""
           }
         </td>
       </tr>
@@ -403,69 +417,50 @@ function renderTickerProxyRow(proxy: TickerGreedProxy) {
   </tr>`;
 }
 
-function renderSentimentSection(sentiment: SentimentReport | undefined) {
+function renderSentimentSection(
+  sentiment: SentimentReport | undefined,
+  gaugeAttachments: FearGreedGaugeAttachment[] = [],
+) {
   if (!sentiment) return "";
 
   const meters = sentiment.meters ?? [];
+  const cidByMeter = new Map(
+    gaugeAttachments.map((item) => [item.meterId, item.contentId] as const),
+  );
+
   const meterRow =
     meters.length === 0
-      ? `<tr><td style="padding:8px 0;font-size:14px;color:#94a3b8;font-style:italic;">No market meters available.</td></tr>`
+      ? `<tr><td style="padding:0 0 14px 0;font-size:14px;color:#94a3b8;font-style:italic;">No market meters available.</td></tr>`
       : `<tr>
-        <td style="padding:0 0 12px 0;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-              ${meters
-                .map(
-                  (meter, index) => `
-                <td width="33.33%" style="width:33.33%;padding:${
-                  index === 0
-                    ? "0 4px 0 0"
-                    : index === meters.length - 1
-                      ? "0 0 0 4px"
-                      : "0 4px"
-                };vertical-align:top;">
-                  ${renderMeterCard(meter)}
-                </td>`,
-                )
-                .join("")}
-            </tr>
-          </table>
-        </td>
-      </tr>`;
+    <td style="padding:0 0 14px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          ${meters
+            .map((meter, index) => {
+              const pad =
+                index === 0
+                  ? "0 4px 0 0"
+                  : index === meters.length - 1
+                    ? "0 0 0 4px"
+                    : "0 4px";
+              return `<td width="33.33%" style="width:33.33%;padding:${pad};vertical-align:top;">
+              ${renderMeterColumn(meter, cidByMeter.get(meter.id))}
+            </td>`;
+            })
+            .join("")}
+        </tr>
+      </table>
+    </td>
+  </tr>`;
 
   const proxyRows = (sentiment.tickers ?? [])
     .map((proxy) => renderTickerProxyRow(proxy))
     .join("");
 
   return `${sectionLabel("Fear &amp; greed", { first: true })}
+  ${meterRow}
   <tr>
-    <td style="padding:0 0 14px 0;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
-        <tr>
-          <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
-            <span style="font-size:15px;font-weight:700;color:#0f172a;">Market meters</span>
-            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">CNN · Crypto · VIX</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:12px 16px 4px 16px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-              ${meterRow}
-            </table>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:0 16px 14px 16px;">
-            <div style="font-size:13px;line-height:1.5;color:#334155;background:#f8fafc;border-radius:10px;padding:10px 12px;">
-              <span style="font-weight:700;color:#0f172a;">Value dial:</span> ${escapeHtml(sentiment.valueDial)}
-            </div>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-  <tr>
-    <td style="padding:0 0 14px 0;">
+    <td style="padding:4px 0 14px 0;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
         <tr>
           <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
@@ -1019,7 +1014,11 @@ function renderUsageReport(usage: UsageReport) {
     </tr>`;
 }
 
-export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
+export function renderBriefHtml(
+  brief: DailyBrief,
+  usage?: UsageReport,
+  gaugeAttachments: FearGreedGaugeAttachment[] = [],
+) {
   const date = formatHumanDate(brief.generatedAt);
   const dateShort = formatHumanDate(brief.generatedAt, { withTime: false });
 
@@ -1169,7 +1168,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             </tr>
 
             ${calloutBox("Theme of the day", brief.themeOfTheDay, "#7c3aed")}
-            ${renderSentimentSection(brief.sentiment)}
+            ${renderSentimentSection(brief.sentiment, gaugeAttachments)}
 
             ${sectionLabel("Overnight")}
             ${renderOvernightOpeners(brief)}
@@ -1233,7 +1232,7 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
   ];
 
   if (brief.sentiment) {
-    lines.push("", "FEAR & GREED", "Market meters");
+    lines.push("", "FEAR & GREED");
     for (const meter of brief.sentiment.meters) {
       if (meter.value == null) {
         lines.push(
@@ -1256,7 +1255,6 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
         `- ${meter.label}: ${meter.id === "vix" ? meter.value.toFixed(2) : Math.round(meter.value)}${band}${deltas ? ` (${deltas})` : ""}`,
       );
     }
-    lines.push(`Value dial: ${brief.sentiment.valueDial}`);
     lines.push("", "Per-ticker greed proxy");
     for (const proxy of brief.sentiment.tickers) {
       if (proxy.score == null) {
@@ -1485,6 +1483,13 @@ export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
     throw new Error("RESEND_API_KEY is required");
   }
 
+  const gaugeAttachments = await buildFearGreedGaugeAttachments(
+    brief.sentiment?.meters ?? [],
+  ).catch((error) => {
+    console.warn("fear-greed gauge render failed", error);
+    return [] as FearGreedGaugeAttachment[];
+  });
+
   const dateLabel = formatHumanDate(brief.generatedAt, { withTime: false });
   // Use fetch (not the SDK) so we can read quota response headers — needed for
   // send-only API keys that cannot call GET /emails.
@@ -1498,8 +1503,14 @@ export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
       from: getEmailFrom(),
       to: [getEmailTo()],
       subject: `Daily Brief · ${dateLabel}`,
-      html: renderBriefHtml(brief, usage),
+      html: renderBriefHtml(brief, usage, gaugeAttachments),
       text: renderBriefText(brief, usage),
+      attachments: gaugeAttachments.map((item) => ({
+        filename: item.filename,
+        content: item.content,
+        content_id: item.contentId,
+        content_type: item.contentType,
+      })),
     }),
   });
 
