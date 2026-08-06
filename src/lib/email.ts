@@ -801,9 +801,6 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
                 <div style="font-size:13px;line-height:1.5;color:#334155;background:#f8fafc;border-radius:10px;padding:10px 12px;">
                   <span style="font-weight:700;color:#0f172a;">Why it matters:</span> ${escapeHtml(section?.whyItMatters || "Limited coverage today.")}
                 </div>
-                <div style="margin-top:8px;font-size:12px;line-height:1.45;color:#64748b;">
-                  <span style="font-weight:700;color:#475569;">vs yesterday:</span> ${escapeHtml(section?.watchlistDelta || "n/a")}
-                </div>
               </td>
             </tr>
           </table>
@@ -979,7 +976,6 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
       lines.push("- No material headlines in the last 24 hours.");
     }
     lines.push(`Why it matters: ${section?.whyItMatters || "n/a"}`);
-    lines.push(`vs yesterday: ${section?.watchlistDelta || "n/a"}`);
   }
 
   lines.push("", "EARNINGS & CATALYSTS");
