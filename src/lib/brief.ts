@@ -15,6 +15,8 @@ export type BriefBullet = {
   flag: BulletFlag;
   sourceUrl?: string;
   sourceTitle?: string;
+  /** Short publisher name, e.g. Reuters */
+  sourceName?: string;
 };
 
 export type TickerBrief = {
@@ -129,11 +131,15 @@ function formatSources(bundle: ResearchBundle) {
 function resolveSource(
   items: NewsItem[] | undefined,
   sourceIndex: number | undefined,
-): { sourceUrl?: string; sourceTitle?: string } {
+): { sourceUrl?: string; sourceTitle?: string; sourceName?: string } {
   if (sourceIndex === undefined || !items?.length) return {};
   const item = items[sourceIndex];
   if (!item) return {};
-  return { sourceUrl: item.link, sourceTitle: item.title };
+  return {
+    sourceUrl: item.link,
+    sourceTitle: item.title,
+    sourceName: item.source,
+  };
 }
 
 function formatPreviousForPrompt(previous: BriefSnapshot | null) {

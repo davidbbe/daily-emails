@@ -99,9 +99,13 @@ function flagBadge(flag: BulletFlag) {
   return `<span style="display:inline-block;margin-right:8px;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:${style.text};background:${style.bg};border-radius:999px;padding:2px 7px;vertical-align:middle;">${flag}</span>`;
 }
 
-function sourceLink(url?: string) {
-  if (!url) return "";
-  return ` <a href="${escapeHtml(url)}" style="color:#2563eb;text-decoration:none;font-size:12px;font-weight:600;">Source →</a>`;
+function sourceLink(url?: string, name?: string) {
+  const label = name?.trim() || "Source";
+  if (!url) {
+    if (!name?.trim()) return "";
+    return ` <span style="color:#94a3b8;font-size:12px;font-weight:600;">${escapeHtml(label)}</span>`;
+  }
+  return ` <a href="${escapeHtml(url)}" style="color:#2563eb;text-decoration:none;font-size:12px;font-weight:600;">${escapeHtml(label)} →</a>`;
 }
 
 function trendDisplayTitle(item: BriefTrendItem) {
@@ -774,7 +778,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
               (b) =>
                 `<tr>
                   <td style="padding:0 0 10px 0;font-size:15px;line-height:1.55;color:#1e293b;">
-                    ${flagBadge(b.flag)}${escapeHtml(b.text)}${sourceLink(b.sourceUrl)}
+                    ${flagBadge(b.flag)}${escapeHtml(b.text)}${sourceLink(b.sourceUrl, b.sourceName)}
                   </td>
                 </tr>`,
             )
@@ -969,8 +973,13 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     lines.push("", ticker.label);
     if (section?.bullets?.length) {
       for (const bullet of section.bullets) {
+        const source = bullet.sourceName
+          ? ` · ${bullet.sourceName}`
+          : bullet.sourceUrl
+            ? " · Source"
+            : "";
         const link = bullet.sourceUrl ? ` (${bullet.sourceUrl})` : "";
-        lines.push(`- [${bullet.flag}] ${bullet.text}${link}`);
+        lines.push(`- [${bullet.flag}] ${bullet.text}${source}${link}`);
       }
     } else {
       lines.push("- No material headlines in the last 24 hours.");
