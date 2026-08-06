@@ -24,6 +24,10 @@ import type {
   TickerGreedProxy,
   ValueStance,
 } from "@/lib/sentiment";
+import {
+  buildTickerProxyChartAttachments,
+  type TickerProxyChartAttachment,
+} from "@/lib/ticker-proxy-chart";
 import type { BriefTrendItem } from "@/lib/trends";
 import {
   formatMetricLimit,
@@ -296,6 +300,20 @@ function formatPct(n: number | undefined) {
   return `${formatSigned(n, 1)}%`;
 }
 
+/** Human-readable day/week point deltas under fear & greed gauges. */
+function formatMeterDeltas(meter: FearGreedMeter) {
+  const dayDigits = meter.id === "vix" ? 2 : 1;
+  const bits = [
+    meter.changeDay !== undefined
+      ? `${formatSigned(meter.changeDay, dayDigits)} vs yesterday`
+      : "",
+    meter.changeWeek !== undefined
+      ? `${formatSigned(meter.changeWeek, 1)} vs last week`
+      : "",
+  ].filter(Boolean);
+  return bits.join(" · ");
+}
+
 function bandBadge(band: SentimentBand | null | undefined) {
   if (!band) return "";
   const style = BAND_STYLES[band];
@@ -312,16 +330,7 @@ function renderMeterColumn(
   meter: FearGreedMeter,
   gaugeCid: string | undefined,
 ) {
-  const deltaBits = [
-    meter.changeDay !== undefined
-      ? `1d ${formatSigned(meter.changeDay, meter.id === "vix" ? 2 : 1)}`
-      : "",
-    meter.changeWeek !== undefined
-      ? `1w ${formatSigned(meter.changeWeek, 1)}`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const deltaBits = formatMeterDeltas(meter);
 
   const shortLabel =
     meter.id === "cnn" ? "CNN" : meter.id === "crypto" ? "Crypto" : "VIX";
@@ -361,23 +370,8 @@ function renderMeterColumn(
     </table>`;
 }
 
-function renderTickerProxyRow(proxy: TickerGreedProxy) {
-  const colors = TICKER_COLORS[proxy.tickerId] ?? {
-    bg: "#f8fafc",
-    text: "#334155",
-    accent: "#64748b",
-  };
-
-  if (proxy.error || proxy.score == null) {
-    return `<tr>
-      <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
-        <span style="display:inline-block;font-size:11px;font-weight:700;color:${colors.text};background:${colors.bg};border-radius:999px;padding:2px 8px;margin-right:8px;">${escapeHtml(proxy.tickerId)}</span>
-        <span style="font-size:13px;color:#94a3b8;font-style:italic;">${escapeHtml(proxy.error || "Unavailable")}</span>
-      </td>
-    </tr>`;
-  }
-
-  const detail = [
+function tickerProxyDetail(proxy: TickerGreedProxy) {
+  return [
     proxy.price != null ? `$${proxy.price.toLocaleString("en-US")}` : "",
     proxy.drawdownFromHighPct != null
       ? `${formatPct(proxy.drawdownFromHighPct)} vs 52w high`
@@ -389,27 +383,54 @@ function renderTickerProxyRow(proxy: TickerGreedProxy) {
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/** Compact greed-proxy strip shown inside each Markets ticker card. */
+function renderTickerProxyStrip(
+  proxy: TickerGreedProxy | undefined,
+  chartCid?: string,
+) {
+  if (!proxy) return "";
+
+  if (proxy.error || proxy.score == null) {
+    return `<tr>
+      <td style="padding:10px 18px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;margin:0 0 4px 0;">Greed proxy</div>
+        <div style="font-size:13px;color:#94a3b8;font-style:italic;">${escapeHtml(proxy.error || "Unavailable")}</div>
+      </td>
+    </tr>`;
+  }
+
+  const chartImg = chartCid
+    ? `<img src="cid:${escapeHtml(chartCid)}" width="560" height="148" alt="Greed proxy ${proxy.score}" style="display:block;border:0;outline:none;text-decoration:none;width:100%;max-width:560px;height:auto;" />`
+    : `<div style="padding:4px 0 2px 0;">
+        <span style="font-size:22px;font-weight:750;color:#0f172a;vertical-align:middle;margin-right:8px;">${proxy.score}</span>
+        <div style="margin-top:6px;font-size:12px;line-height:1.4;color:#64748b;">
+          ${escapeHtml(tickerProxyDetail(proxy))}
+        </div>
+      </div>`;
 
   return `<tr>
-    <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
+    <td style="padding:12px 18px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <tr>
-          <td style="vertical-align:middle;padding:0 8px 0 0;">
-            <span style="display:inline-block;font-size:11px;font-weight:700;color:${colors.text};background:${colors.bg};border-radius:999px;padding:2px 8px;">${escapeHtml(proxy.tickerId)}</span>
-          </td>
-          <td style="vertical-align:middle;white-space:nowrap;padding:0 8px 0 0;">
-            <span style="font-size:18px;font-weight:750;color:#0f172a;">${proxy.score}</span>
-          </td>
-          <td style="vertical-align:middle;padding:0 8px 0 0;">
-            ${bandBadge(proxy.band)}
-          </td>
-          <td style="vertical-align:middle;text-align:right;">
-            ${stanceBadge(proxy.stance)}
+          <td style="vertical-align:middle;padding:0 0 8px 0;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <div style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;">Greed proxy</div>
+                </td>
+                <td style="vertical-align:middle;text-align:right;">
+                  ${bandBadge(proxy.band)}
+                  <span style="display:inline-block;margin-left:6px;vertical-align:middle;">${stanceBadge(proxy.stance)}</span>
+                </td>
+              </tr>
+            </table>
           </td>
         </tr>
         <tr>
-          <td colspan="4" style="padding:4px 0 0 0;font-size:12px;line-height:1.4;color:#64748b;">
-            ${escapeHtml(detail)}
+          <td style="padding:0;">
+            ${chartImg}
           </td>
         </tr>
       </table>
@@ -453,41 +474,8 @@ function renderSentimentSection(
     </td>
   </tr>`;
 
-  const proxyRows = (sentiment.tickers ?? [])
-    .map((proxy) => renderTickerProxyRow(proxy))
-    .join("");
-
   return `${sectionLabel("Fear &amp; greed", { first: true })}
-  ${meterRow}
-  <tr>
-    <td style="padding:4px 0 14px 0;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
-        <tr>
-          <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
-            <span style="font-size:15px;font-weight:700;color:#0f172a;">Per-ticker greed proxy</span>
-            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">52w range + RSI(14)</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:4px 16px 8px 16px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-              ${
-                proxyRows ||
-                `<tr><td style="padding:8px 0;font-size:14px;color:#94a3b8;font-style:italic;">No ticker proxies available.</td></tr>`
-              }
-            </table>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:0 16px 14px 16px;">
-            <div style="font-size:11px;line-height:1.45;color:#94a3b8;">
-              Score blends 52-week range position and RSI(14). Lower = more fearful / better for value adds; not a valuation model.
-            </div>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>`;
+  ${meterRow}`;
 }
 
 function renderEarningsCard(event: EarningsEvent) {
@@ -1018,12 +1006,25 @@ export function renderBriefHtml(
   brief: DailyBrief,
   usage?: UsageReport,
   gaugeAttachments: FearGreedGaugeAttachment[] = [],
+  proxyChartAttachments: TickerProxyChartAttachment[] = [],
 ) {
   const date = formatHumanDate(brief.generatedAt);
   const dateShort = formatHumanDate(brief.generatedAt, { withTime: false });
 
+  const proxyByTicker = new Map(
+    (brief.sentiment?.tickers ?? []).map(
+      (proxy) => [proxy.tickerId, proxy] as const,
+    ),
+  );
+  const proxyChartCidByTicker = new Map(
+    proxyChartAttachments.map(
+      (item) => [item.tickerId, item.contentId] as const,
+    ),
+  );
+
   const tickerSections = TICKERS.map((ticker) => {
     const section = brief.tickers.find((t) => t.id === ticker.id);
+    const proxy = proxyByTicker.get(ticker.id);
     const colors = TICKER_COLORS[ticker.id] ?? {
       bg: "#f8fafc",
       text: "#334155",
@@ -1053,6 +1054,7 @@ export function renderBriefHtml(
                 <span style="display:inline-block;margin-left:8px;font-size:16px;font-weight:650;color:#0f172a;">${escapeHtml(ticker.label)}</span>
               </td>
             </tr>
+            ${renderTickerProxyStrip(proxy, proxyChartCidByTicker.get(ticker.id))}
             <tr>
               <td style="padding:16px 18px 8px 18px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${bullets}</table>
@@ -1241,40 +1243,10 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
         continue;
       }
       const band = meter.band ? ` · ${meter.band}` : "";
-      const deltas = [
-        meter.changeDay !== undefined
-          ? `1d ${formatSigned(meter.changeDay, meter.id === "vix" ? 2 : 1)}`
-          : "",
-        meter.changeWeek !== undefined
-          ? `1w ${formatSigned(meter.changeWeek, 1)}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
+      const deltas = formatMeterDeltas(meter);
       lines.push(
         `- ${meter.label}: ${meter.id === "vix" ? meter.value.toFixed(2) : Math.round(meter.value)}${band}${deltas ? ` (${deltas})` : ""}`,
       );
-    }
-    lines.push("", "Per-ticker greed proxy");
-    for (const proxy of brief.sentiment.tickers) {
-      if (proxy.score == null) {
-        lines.push(
-          `- ${proxy.tickerId}: ${proxy.error || "unavailable"}`,
-        );
-        continue;
-      }
-      const bits = [
-        `score ${proxy.score}`,
-        proxy.band,
-        proxy.stance,
-        proxy.drawdownFromHighPct != null
-          ? `${formatPct(proxy.drawdownFromHighPct)} vs 52w high`
-          : "",
-        proxy.rsi14 != null ? `RSI ${proxy.rsi14}` : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      lines.push(`- ${proxy.tickerId}: ${bits}`);
     }
   }
 
@@ -1285,10 +1257,32 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     lines.push(`${ticker.id}: ${section?.overnightOpener || "Quiet overnight."}`);
   }
 
+  const proxyByTickerText = new Map(
+    (brief.sentiment?.tickers ?? []).map(
+      (proxy) => [proxy.tickerId, proxy] as const,
+    ),
+  );
+
   lines.push("", "MARKETS");
   for (const ticker of TICKERS) {
     const section = brief.tickers.find((t) => t.id === ticker.id);
+    const proxy = proxyByTickerText.get(ticker.id);
     lines.push("", ticker.label);
+    if (proxy) {
+      if (proxy.score == null) {
+        lines.push(`Greed proxy: ${proxy.error || "unavailable"}`);
+      } else {
+        const bits = [
+          `score ${proxy.score}`,
+          proxy.band,
+          proxy.stance,
+          tickerProxyDetail(proxy),
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        lines.push(`Greed proxy: ${bits}`);
+      }
+    }
     if (section?.bullets?.length) {
       for (const bullet of section.bullets) {
         const source = bullet.sourceName
@@ -1490,6 +1484,15 @@ export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
     return [] as FearGreedGaugeAttachment[];
   });
 
+  const proxyChartAttachments = await buildTickerProxyChartAttachments(
+    brief.sentiment?.tickers ?? [],
+  ).catch((error) => {
+    console.warn("ticker proxy chart render failed", error);
+    return [] as TickerProxyChartAttachment[];
+  });
+
+  const inlineAttachments = [...gaugeAttachments, ...proxyChartAttachments];
+
   const dateLabel = formatHumanDate(brief.generatedAt, { withTime: false });
   // Use fetch (not the SDK) so we can read quota response headers — needed for
   // send-only API keys that cannot call GET /emails.
@@ -1503,9 +1506,14 @@ export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
       from: getEmailFrom(),
       to: [getEmailTo()],
       subject: `Daily Brief · ${dateLabel}`,
-      html: renderBriefHtml(brief, usage, gaugeAttachments),
+      html: renderBriefHtml(
+        brief,
+        usage,
+        gaugeAttachments,
+        proxyChartAttachments,
+      ),
       text: renderBriefText(brief, usage),
-      attachments: gaugeAttachments.map((item) => ({
+      attachments: inlineAttachments.map((item) => ({
         filename: item.filename,
         content: item.content,
         content_id: item.contentId,
