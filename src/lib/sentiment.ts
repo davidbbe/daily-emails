@@ -588,14 +588,6 @@ async function fetchTickerProxies(): Promise<TickerGreedProxy[]> {
   return Promise.all(
     TICKERS.map(async (ticker) => {
       const quoteSymbol = ticker.quoteSymbol;
-      if (!quoteSymbol) {
-        return {
-          tickerId: ticker.id,
-          label: ticker.label,
-          error: "No public quote (private / unlisted)",
-        } satisfies TickerGreedProxy;
-      }
-
       if (quoteSymbol === "BTC-USD") {
         return fetchBitcoinProxy(ticker.id, ticker.label);
       }
