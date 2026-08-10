@@ -7,16 +7,19 @@ import type { BriefBullet, EarningsEvent } from "@/lib/brief";
 import { TICKERS } from "@/lib/config";
 import { formatHumanDate } from "@/lib/dates";
 import {
+  bandFromGaugeScore,
   buildFearGreedGaugeSvg,
   gaugeScoreFromMeter,
 } from "@/lib/fear-greed-gauge";
 import { isValidMarketsToken } from "@/lib/markets-auth";
 import { loadMarketsBrief } from "@/lib/markets-brief";
-import type {
-  FearGreedMeter,
-  SentimentBand,
-  TickerGreedProxy,
+import {
+  fetchVixMeter,
+  type FearGreedMeter,
+  type SentimentBand,
+  type TickerGreedProxy,
 } from "@/lib/sentiment";
+import { buildVixLineChartSvg } from "@/lib/vix-line-chart";
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +29,11 @@ export const metadata: Metadata = {
 };
 
 const BAND_STYLES: Record<SentimentBand, string> = {
-  "Extreme Fear": "bg-red-50 text-red-700",
-  Fear: "bg-orange-50 text-orange-700",
+  "Extreme Fear": "bg-red-100 text-red-800",
+  Fear: "bg-red-50 text-red-700",
   Neutral: "bg-slate-100 text-slate-600",
   Greed: "bg-emerald-50 text-emerald-700",
-  "Extreme Greed": "bg-emerald-50 text-emerald-800",
+  "Extreme Greed": "bg-emerald-100 text-emerald-800",
 };
 
 const FLAG_STYLES: Record<BriefBullet["flag"], string> = {
@@ -88,14 +91,21 @@ function BandBadge({ band }: { band?: SentimentBand | null }) {
 }
 
 function MeterCard({ meter }: { meter: FearGreedMeter }) {
-  const score = gaugeScoreFromMeter(meter);
   const shortLabel =
     meter.id === "cnn" ? "Stocks" : meter.id === "crypto" ? "Crypto" : "VIX";
   const deltas = formatMeterDeltas(meter);
-  const valueLabel =
+  const isVix = meter.id === "vix";
+  const vixHistory = isVix
+    ? (meter.history ?? []).filter(
+        (n) => typeof n === "number" && Number.isFinite(n),
+      )
+    : [];
+  const score = isVix ? null : gaugeScoreFromMeter(meter);
+  const dialBand = score != null ? bandFromGaugeScore(score) : meter.band;
+  const rawValueLabel =
     meter.value == null
       ? "—"
-      : meter.id === "vix"
+      : isVix
         ? meter.value.toFixed(2)
         : String(Math.round(meter.value));
 
@@ -109,18 +119,22 @@ function MeterCard({ meter }: { meter: FearGreedMeter }) {
       >
         {shortLabel}
       </a>
-      {score != null ? (
+      {isVix && vixHistory.length >= 2 ? (
         <SvgMarkup
-          className="mx-auto mt-2 max-w-[220px] [&_svg]:h-auto [&_svg]:w-full"
-          svg={buildFearGreedGaugeSvg({
-            score,
-            valueLabel,
-            band: meter.band,
+          className="mx-auto mt-2 w-full [&_svg]:h-auto [&_svg]:w-full"
+          svg={buildVixLineChartSvg({
+            history: vixHistory,
+            asOf: meter.asOf,
           })}
+        />
+      ) : score != null ? (
+        <SvgMarkup
+          className="mx-auto mt-2 w-full [&_svg]:h-auto [&_svg]:w-full"
+          svg={buildFearGreedGaugeSvg({ score, activeColorOnly: true })}
         />
       ) : (
         <div className="py-10 text-center text-2xl font-bold text-slate-900">
-          {valueLabel}
+          {rawValueLabel}
           {meter.error ? (
             <p className="mt-2 text-sm font-normal italic text-slate-400">
               {meter.error}
@@ -129,7 +143,17 @@ function MeterCard({ meter }: { meter: FearGreedMeter }) {
         </div>
       )}
       <div className="mt-2 flex flex-col items-center gap-1">
-        <BandBadge band={meter.band} />
+        {isVix && meter.value != null ? (
+          <p className="text-center text-2xl font-bold tabular-nums text-slate-900">
+            {meter.value.toFixed(2)}
+          </p>
+        ) : null}
+        <BandBadge band={dialBand} />
+        {isVix ? (
+          <p className="text-center text-xs text-slate-400">
+            Last ~3 months · daily closes
+          </p>
+        ) : null}
         {deltas ? (
           <p className="text-center text-xs text-slate-400">{deltas}</p>
         ) : null}
@@ -225,6 +249,22 @@ export default async function MarketsPage({
     );
   }
 
+  // Older briefs omit VIX history — hydrate the chart from the live quote API.
+  const meters = [...(brief.sentiment?.meters ?? [])];
+  const vixIndex = meters.findIndex((m) => m.id === "vix");
+  const savedVix = vixIndex >= 0 ? meters[vixIndex] : null;
+  if (!savedVix?.history || savedVix.history.length < 2) {
+    try {
+      const liveVix = await fetchVixMeter();
+      if (liveVix.history && liveVix.history.length >= 2) {
+        if (vixIndex >= 0) meters[vixIndex] = { ...savedVix!, ...liveVix };
+        else meters.push(liveVix);
+      }
+    } catch (error) {
+      console.warn("markets: live VIX hydrate failed", error);
+    }
+  }
+
   const proxyByTicker = new Map(
     (brief.sentiment?.tickers ?? []).map(
       (proxy) => [proxy.tickerId, proxy] as const,
@@ -259,11 +299,11 @@ export default async function MarketsPage({
           <h2 className="mb-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
             Fear &amp; greed
           </h2>
-          {(brief.sentiment?.meters?.length ?? 0) === 0 ? (
+          {meters.length === 0 ? (
             <p className="italic text-slate-400">No market meters available.</p>
           ) : (
             <div className="grid gap-4 sm:grid-cols-3">
-              {brief.sentiment.meters.map((meter) => (
+              {meters.map((meter) => (
                 <MeterCard key={meter.id} meter={meter} />
               ))}
             </div>

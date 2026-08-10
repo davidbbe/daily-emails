@@ -22,6 +22,10 @@ export type FearGreedMeter = {
   previous1Week?: number;
   changeDay?: number;
   changeWeek?: number;
+  /**
+   * Daily closes oldest→newest (VIX only). Roughly ~3 months from the quote API.
+   */
+  history?: number[];
   asOf?: string;
   sourceUrl: string;
   error?: string;
@@ -325,7 +329,8 @@ async function fetchCryptoFearGreed(): Promise<FearGreedMeter> {
   }
 }
 
-async function fetchVix(): Promise<FearGreedMeter> {
+/** Live VIX quote + ~3 months of daily closes (for markets page chart). */
+export async function fetchVixMeter(): Promise<FearGreedMeter> {
   const sourceUrl = "https://www.cboe.com/tradable_products/vix/";
   const base: FearGreedMeter = {
     id: "vix",
@@ -358,21 +363,38 @@ async function fetchVix(): Promise<FearGreedMeter> {
       return { ...base, error: "Missing quote" };
     }
 
-    const closes = Array.isArray(vix?.closes) ? vix.closes : [];
+    const closes = (Array.isArray(vix?.closes) ? vix.closes : []).filter(
+      (n): n is number => typeof n === "number" && Number.isFinite(n),
+    );
+    const history =
+      closes.length > 0
+        ? closes.map(round2)
+        : [round2(value)];
+    // Keep the latest close aligned with the live quote when the series lags.
+    if (history[history.length - 1] !== round2(value)) {
+      history.push(round2(value));
+    }
+
     const previousClose =
-      closes.length >= 2 && typeof closes[closes.length - 2] === "number"
-        ? round2(closes[closes.length - 2]!)
+      history.length >= 2
+        ? history[history.length - 2]
         : typeof vix?.chg === "number"
           ? round2(value - vix.chg)
           : undefined;
+    const previous1Week =
+      history.length >= 6 ? history[history.length - 6] : undefined;
 
     return {
       ...base,
       value: round2(value),
       band: bandFromVix(value),
       previousClose,
+      previous1Week,
       changeDay:
         previousClose !== undefined ? round2(value - previousClose) : undefined,
+      changeWeek:
+        previous1Week !== undefined ? round2(value - previous1Week) : undefined,
+      history,
       asOf:
         typeof json.ts === "number"
           ? new Date(json.ts).toISOString()
@@ -638,7 +660,7 @@ export async function collectSentiment(): Promise<SentimentReport> {
   const [cnn, crypto, vix, tickers] = await Promise.all([
     fetchCnnFearGreed(),
     fetchCryptoFearGreed(),
-    fetchVix(),
+    fetchVixMeter(),
     fetchTickerProxies(),
   ]);
 

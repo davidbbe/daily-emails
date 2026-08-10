@@ -11,8 +11,8 @@ export type TickerProxyChartAttachment = {
 };
 
 const BAND_COLOR: Record<SentimentBand, string> = {
-  "Extreme Fear": "#e11d48",
-  Fear: "#ea580c",
+  "Extreme Fear": "#dc2626",
+  Fear: "#ef4444",
   Neutral: "#64748b",
   Greed: "#65a30d",
   "Extreme Greed": "#059669",
@@ -54,8 +54,8 @@ function clampPct(n: number) {
 }
 
 function metricBarColor(pct: number) {
-  if (pct <= 24) return "#e11d48";
-  if (pct <= 44) return "#ea580c";
+  if (pct <= 24) return "#dc2626";
+  if (pct <= 44) return "#ef4444";
   if (pct <= 55) return "#94a3b8";
   if (pct <= 75) return "#65a30d";
   return "#059669";
@@ -139,23 +139,32 @@ export function buildTickerProxyChartSvg(proxy: TickerGreedProxy): string {
   ].filter(Boolean);
   const footer = footerBits.join("  ·  ");
 
+  // Only paint the active band on the arc; the rest stays a neutral track.
+  // Ranges match bandFromScore in sentiment.ts.
+  const activeRange =
+    band === "Extreme Fear"
+      ? { start: 0, end: 24 }
+      : band === "Fear"
+        ? { start: 24, end: 44 }
+        : band === "Neutral"
+          ? { start: 44, end: 55 }
+          : band === "Greed"
+            ? { start: 55, end: 75 }
+            : band === "Extreme Greed"
+              ? { start: 75, end: 100 }
+              : null;
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="proxyGrad" x1="${cx - r}" y1="${cy}" x2="${cx + r}" y2="${cy}" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#dc2626"/>
-      <stop offset="25%" stop-color="#ea580c"/>
-      <stop offset="45%" stop-color="#ca8a04"/>
-      <stop offset="55%" stop-color="#a3a3a3"/>
-      <stop offset="70%" stop-color="#65a30d"/>
-      <stop offset="100%" stop-color="#15803d"/>
-    </linearGradient>
-  </defs>
   <rect width="${width}" height="${height}" fill="#f8fafc"/>
 
-  <!-- Mini dial -->
-  <path d="${arcPath(cx, cy, r, 0, 100)}" fill="none" stroke="#eef2f7" stroke-width="14" stroke-linecap="butt"/>
-  <path d="${arcPath(cx, cy, r, 0, 100)}" fill="none" stroke="url(#proxyGrad)" stroke-width="12" stroke-linecap="butt"/>
+  <!-- Mini dial: neutral track + active band only -->
+  <path d="${arcPath(cx, cy, r, 0, 100)}" fill="none" stroke="#e2e8f0" stroke-width="12" stroke-linecap="butt"/>
+  ${
+    activeRange
+      ? `<path d="${arcPath(cx, cy, r, activeRange.start, activeRange.end)}" fill="none" stroke="${bandColor}" stroke-width="12" stroke-linecap="butt"/>`
+      : ""
+  }
   <polygon points="${tip.x.toFixed(2)},${tip.y.toFixed(2)} ${left.x.toFixed(2)},${left.y.toFixed(2)} ${right.x.toFixed(2)},${right.y.toFixed(2)}" fill="#111827"/>
   <circle cx="${cx}" cy="${cy}" r="8" fill="#111827"/>
   <circle cx="${cx}" cy="${cy}" r="3.5" fill="#ffffff"/>
