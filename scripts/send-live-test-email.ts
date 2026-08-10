@@ -15,6 +15,7 @@ import {
 } from "@/lib/config";
 import { collectEarningsCalendar } from "@/lib/earnings";
 import { sendBriefEmail } from "@/lib/email";
+import { saveMarketsBrief, toMarketsBrief } from "@/lib/markets-brief";
 import { loadPreviousBrief } from "@/lib/history";
 import {
   collectSiteAnalytics,
@@ -185,6 +186,10 @@ async function main() {
   brief.trends = { regions: [], crossRegion: [] };
   brief.regionalPulse = "";
   brief.themeOfTheDay = `[TEST · live data, no Reddit/Trends] ${brief.themeOfTheDay}`;
+
+  await saveMarketsBrief(toMarketsBrief(brief)).catch((error) => {
+    console.warn("markets-brief save failed", error);
+  });
 
   console.log("Collecting usage + sending...");
   const usage = await collectUsageReport();

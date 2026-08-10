@@ -5,6 +5,7 @@ export const TICKERS = [
     query: "TSLA OR Tesla stock",
     earningsSymbol: "TSLA",
     quoteSymbol: "TSLA",
+    tradingViewSymbol: "NASDAQ:TSLA",
   },
   {
     id: "MU",
@@ -12,6 +13,7 @@ export const TICKERS = [
     query: "MU OR Micron Technology stock",
     earningsSymbol: "MU",
     quoteSymbol: "MU",
+    tradingViewSymbol: "NASDAQ:MU",
   },
   {
     id: "META",
@@ -19,6 +21,7 @@ export const TICKERS = [
     query: "META OR Meta Platforms stock",
     earningsSymbol: "META",
     quoteSymbol: "META",
+    tradingViewSymbol: "NASDAQ:META",
   },
   {
     id: "BTC",
@@ -26,6 +29,7 @@ export const TICKERS = [
     query: "Bitcoin OR BTC crypto",
     earningsSymbol: null,
     quoteSymbol: "BTC-USD",
+    tradingViewSymbol: "COINBASE:BTCUSD",
   },
   {
     id: "AVGO",
@@ -33,6 +37,7 @@ export const TICKERS = [
     query: "AVGO OR Broadcom stock",
     earningsSymbol: "AVGO",
     quoteSymbol: "AVGO",
+    tradingViewSymbol: "NASDAQ:AVGO",
   },
   {
     id: "CRCL",
@@ -40,14 +45,16 @@ export const TICKERS = [
     query: "CRCL OR Circle Internet Group stock",
     earningsSymbol: "CRCL",
     quoteSymbol: "CRCL",
+    tradingViewSymbol: "NYSE:CRCL",
   },
   {
     id: "SPCX",
     label: "SpaceX (SPCX)",
     query: "SPCX OR SpaceX stock OR Space Exploration Technologies",
     earningsSymbol: null,
-    /** Private — no Yahoo quote for greed proxy */
+    /** Private — no Yahoo quote for greed proxy / no public TradingView chart */
     quoteSymbol: null,
+    tradingViewSymbol: null,
   },
   {
     id: "MSFT",
@@ -55,8 +62,53 @@ export const TICKERS = [
     query: "MSFT OR Microsoft stock",
     earningsSymbol: "MSFT",
     quoteSymbol: "MSFT",
+    tradingViewSymbol: "NASDAQ:MSFT",
   },
 ] as const;
+
+/** Local/dev fallback when MARKETS_PAGE_SECRET is unset (never used in production). */
+export const DEV_MARKETS_PAGE_SECRET = "dev-markets-secret";
+
+export function getMarketsPageSecret(): string | null {
+  const fromEnv = process.env.MARKETS_PAGE_SECRET?.trim();
+  if (fromEnv) return fromEnv;
+  if (process.env.NODE_ENV !== "production") return DEV_MARKETS_PAGE_SECRET;
+  return null;
+}
+
+/** Public site origin for email deep links. */
+export function getAppBaseUrl(): string | null {
+  const explicit = process.env.APP_BASE_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+
+  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (production) {
+    return production.startsWith("http")
+      ? production.replace(/\/$/, "")
+      : `https://${production.replace(/\/$/, "")}`;
+  }
+
+  const vercel = process.env.VERCEL_URL?.trim();
+  if (vercel) {
+    return vercel.startsWith("http")
+      ? vercel.replace(/\/$/, "")
+      : `https://${vercel.replace(/\/$/, "")}`;
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    return "http://localhost:3000";
+  }
+
+  return null;
+}
+
+/** Secret markets brief URL for the email CTA, or null if not configured. */
+export function getMarketsPageUrl(): string | null {
+  const secret = getMarketsPageSecret();
+  const base = getAppBaseUrl();
+  if (!secret || !base) return null;
+  return `${base}/markets/${encodeURIComponent(secret)}`;
+}
 
 export const PEOPLE = [
   { id: "karpathy", name: "Andrej Karpathy", query: "Andrej Karpathy" },

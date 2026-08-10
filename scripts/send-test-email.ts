@@ -7,6 +7,7 @@ import {
 import type { DailyBrief } from "@/lib/brief";
 import { GA_ACCOUNTS } from "@/lib/config";
 import { sendBriefEmail } from "@/lib/email";
+import { saveMarketsBrief, toMarketsBrief } from "@/lib/markets-brief";
 import { collectRedditTops } from "@/lib/reddit";
 import { collectUsageReport } from "@/lib/usage";
 
@@ -325,6 +326,10 @@ async function main() {
   brief.sites = sites.length > 0 ? sites : demoSites();
   brief.reddit = reddit;
   brief.generatedAt = new Date().toISOString();
+
+  await saveMarketsBrief(toMarketsBrief(brief)).catch((error) => {
+    console.warn("markets-brief save failed", error);
+  });
 
   const email = await sendBriefEmail(brief, usage);
   console.log(

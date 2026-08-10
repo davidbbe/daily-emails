@@ -1,6 +1,10 @@
 import { generateDailyBrief } from "@/lib/brief";
 import { sendBriefEmail } from "@/lib/email";
 import { loadPreviousBrief, savePreviousBrief, toSnapshot } from "@/lib/history";
+import {
+  saveMarketsBrief,
+  toMarketsBrief,
+} from "@/lib/markets-brief";
 import { collectResearch } from "@/lib/research";
 import { collectUsageReport } from "@/lib/usage";
 
@@ -30,6 +34,10 @@ export async function GET(request: Request) {
     // Snapshot is best-effort — never block the email on history persistence.
     await savePreviousBrief(toSnapshot(brief)).catch((error) => {
       console.warn("daily-brief: previous-brief save failed", error);
+    });
+    // Hosted markets page payload — same best-effort rules as previous-brief.
+    await saveMarketsBrief(toMarketsBrief(brief)).catch((error) => {
+      console.warn("daily-brief: markets-brief save failed", error);
     });
     // Collect after the brief so AI Gateway balance includes today's spend.
     const usage = await collectUsageReport();

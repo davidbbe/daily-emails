@@ -5,29 +5,16 @@ import {
   percentChange,
   type SiteAnalytics,
 } from "@/lib/analytics";
-import type {
-  BulletFlag,
-  DailyBrief,
-  EarningsEvent,
-} from "@/lib/brief";
-import { getEmailFrom, getEmailTo, PEOPLE, TICKERS } from "@/lib/config";
+import type { DailyBrief } from "@/lib/brief";
+import {
+  getEmailFrom,
+  getEmailTo,
+  getMarketsPageUrl,
+  PEOPLE,
+  TICKERS,
+} from "@/lib/config";
 import { formatHumanDate } from "@/lib/dates";
 import type { RedditSubFeed, RedditWindow } from "@/lib/reddit";
-import {
-  buildFearGreedGaugeAttachments,
-  type FearGreedGaugeAttachment,
-} from "@/lib/fear-greed-gauge";
-import type {
-  FearGreedMeter,
-  SentimentBand,
-  SentimentReport,
-  TickerGreedProxy,
-  ValueStance,
-} from "@/lib/sentiment";
-import {
-  buildTickerProxyChartAttachments,
-  type TickerProxyChartAttachment,
-} from "@/lib/ticker-proxy-chart";
 import type { BriefTrendItem } from "@/lib/trends";
 import {
   formatMetricLimit,
@@ -59,26 +46,6 @@ const TREND_ACCENTS: Record<string, string> = {
   us: "#1d4ed8",
   thailand: "#c2410c",
   bulgaria: "#7c3aed",
-};
-
-const FLAG_STYLES: Record<BulletFlag, { bg: string; text: string }> = {
-  Actionable: { bg: "#ecfdf5", text: "#047857" },
-  Watch: { bg: "#fffbeb", text: "#b45309" },
-  Noise: { bg: "#f1f5f9", text: "#64748b" },
-};
-
-const BAND_STYLES: Record<SentimentBand, { bg: string; text: string; accent: string }> = {
-  "Extreme Fear": { bg: "#fef2f2", text: "#b91c1c", accent: "#dc2626" },
-  Fear: { bg: "#fff7ed", text: "#c2410c", accent: "#ea580c" },
-  Neutral: { bg: "#f8fafc", text: "#475569", accent: "#64748b" },
-  Greed: { bg: "#ecfdf5", text: "#047857", accent: "#10b981" },
-  "Extreme Greed": { bg: "#ecfdf5", text: "#065f46", accent: "#059669" },
-};
-
-const STANCE_STYLES: Record<ValueStance, { bg: string; text: string }> = {
-  "Lean buy": { bg: "#ecfdf5", text: "#047857" },
-  Neutral: { bg: "#f1f5f9", text: "#64748b" },
-  Patience: { bg: "#fffbeb", text: "#b45309" },
 };
 
 function escapeHtml(value: string) {
@@ -121,11 +88,6 @@ function calloutBox(title: string, body: string, accent = "#0f766e", topPad = "0
       </table>
     </td>
   </tr>`;
-}
-
-function flagBadge(flag: BulletFlag) {
-  const style = FLAG_STYLES[flag];
-  return `<span style="display:inline-block;margin-right:8px;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:${style.text};background:${style.bg};border-radius:999px;padding:2px 7px;vertical-align:middle;">${flag}</span>`;
 }
 
 function sourceLink(url?: string, name?: string) {
@@ -281,272 +243,26 @@ function renderOvernightOpeners(brief: DailyBrief) {
   </tr>`;
 }
 
-function formatEarningsDate(value?: string, opts?: { est?: boolean }) {
-  if (!value) return "—";
-  const formatted = formatHumanDate(value, { withTime: false });
-  if (opts?.est) return `${formatted} (est.)`;
-  return formatted;
-}
-
-function formatSigned(n: number | undefined, digits = 1) {
-  if (n === undefined || !Number.isFinite(n)) return "";
-  const fixed = n.toFixed(digits);
-  if (n > 0) return `+${fixed}`;
-  return fixed;
-}
-
-function formatPct(n: number | undefined) {
-  if (n === undefined || !Number.isFinite(n)) return "—";
-  return `${formatSigned(n, 1)}%`;
-}
-
-/** Human-readable day/week point deltas under fear & greed gauges. */
-function formatMeterDeltas(meter: FearGreedMeter) {
-  const dayDigits = meter.id === "vix" ? 2 : 1;
-  const bits = [
-    meter.changeDay !== undefined
-      ? `${formatSigned(meter.changeDay, dayDigits)} vs yesterday`
-      : "",
-    meter.changeWeek !== undefined
-      ? `${formatSigned(meter.changeWeek, 1)} vs last week`
-      : "",
-  ].filter(Boolean);
-  return bits.join(" · ");
-}
-
-function bandBadge(band: SentimentBand | null | undefined) {
-  if (!band) return "";
-  const style = BAND_STYLES[band];
-  return `<span style="display:inline-block;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:${style.text};background:${style.bg};border-radius:999px;padding:2px 7px;">${escapeHtml(band)}</span>`;
-}
-
-function stanceBadge(stance: ValueStance | undefined) {
-  if (!stance) return "";
-  const style = STANCE_STYLES[stance];
-  return `<span style="display:inline-block;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:${style.text};background:${style.bg};border-radius:999px;padding:2px 7px;">${escapeHtml(stance)}</span>`;
-}
-
-function renderMeterColumn(
-  meter: FearGreedMeter,
-  gaugeCid: string | undefined,
-) {
-  const deltaBits = formatMeterDeltas(meter);
-
-  const shortLabel =
-    meter.id === "cnn" ? "Stocks" : meter.id === "crypto" ? "Crypto" : "VIX";
-
-  const gaugeImg = gaugeCid
-    ? `<img src="cid:${escapeHtml(gaugeCid)}" width="220" height="140" alt="${escapeHtml(meter.label)}" style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;width:100%;max-width:220px;height:auto;" />`
-    : `<div style="padding:28px 8px;font-size:22px;font-weight:700;color:#0f172a;">${
-        meter.value == null
-          ? "—"
-          : meter.id === "vix"
-            ? meter.value.toFixed(2)
-            : Math.round(meter.value)
-      }</div>`;
-
-  return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
-      <tr>
-        <td style="padding:10px 10px 4px 10px;text-align:center;">
-          <a href="${escapeHtml(meter.sourceUrl)}" style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;text-decoration:none;">${escapeHtml(shortLabel)}</a>
-        </td>
-      </tr>
-      <tr>
-        <td align="center" style="padding:0 4px;">
-          ${gaugeImg}
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:2px 10px 12px 10px;text-align:center;">
-          ${bandBadge(meter.band)}
-          ${
-            deltaBits
-              ? `<div style="margin-top:6px;font-size:11px;color:#94a3b8;">${escapeHtml(deltaBits)}</div>`
-              : ""
-          }
-        </td>
-      </tr>
-    </table>`;
-}
-
-function tickerProxyDetail(proxy: TickerGreedProxy) {
-  return [
-    proxy.price != null ? `$${proxy.price.toLocaleString("en-US")}` : "",
-    proxy.drawdownFromHighPct != null
-      ? `${formatPct(proxy.drawdownFromHighPct)} vs 52w high`
-      : "",
-    proxy.rsi14 != null ? `RSI ${proxy.rsi14}` : "",
-    proxy.rangePositionPct != null
-      ? `Range ${Math.round(proxy.rangePositionPct)}%`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
-
-/** Compact greed-proxy strip shown inside each Markets ticker card. */
-function renderTickerProxyStrip(
-  proxy: TickerGreedProxy | undefined,
-  chartCid?: string,
-) {
-  if (!proxy) return "";
-
-  if (proxy.error || proxy.score == null) {
-    return `<tr>
-      <td style="padding:10px 18px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
-        <div style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;margin:0 0 4px 0;">Greed proxy</div>
-        <div style="font-size:13px;color:#94a3b8;font-style:italic;">${escapeHtml(proxy.error || "Unavailable")}</div>
-      </td>
-    </tr>`;
-  }
-
-  const chartImg = chartCid
-    ? `<img src="cid:${escapeHtml(chartCid)}" width="560" height="148" alt="Greed proxy ${proxy.score}" style="display:block;border:0;outline:none;text-decoration:none;width:100%;max-width:560px;height:auto;" />`
-    : `<div style="padding:4px 0 2px 0;">
-        <span style="font-size:22px;font-weight:700;color:#0f172a;vertical-align:middle;margin-right:8px;">${proxy.score}</span>
-        <div style="margin-top:6px;font-size:12px;line-height:1.4;color:#64748b;">
-          ${escapeHtml(tickerProxyDetail(proxy))}
-        </div>
-      </div>`;
+function renderMarketsCta(url: string | null) {
+  if (!url) return "";
 
   return `<tr>
-    <td style="padding:12px 18px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-        <tr>
-          <td style="vertical-align:middle;padding:0 0 8px 0;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-              <tr>
-                <td style="vertical-align:middle;">
-                  <div style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;">Greed proxy</div>
-                </td>
-                <td style="vertical-align:middle;text-align:right;">
-                  ${bandBadge(proxy.band)}
-                  <span style="display:inline-block;margin-left:6px;vertical-align:middle;">${stanceBadge(proxy.stance)}</span>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:0;">
-            ${chartImg}
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>`;
-}
-
-function renderSentimentSection(
-  sentiment: SentimentReport | undefined,
-  gaugeAttachments: FearGreedGaugeAttachment[] = [],
-) {
-  if (!sentiment) return "";
-
-  const meters = sentiment.meters ?? [];
-  const cidByMeter = new Map(
-    gaugeAttachments.map((item) => [item.meterId, item.contentId] as const),
-  );
-
-  const meterRow =
-    meters.length === 0
-      ? `<tr><td style="padding:0 0 14px 0;font-size:14px;color:#94a3b8;font-style:italic;">No market meters available.</td></tr>`
-      : `<tr>
     <td style="padding:0 0 14px 0;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#ecfdf5 0%,#eff6ff 100%);border:1px solid #99f6e4;border-radius:14px;overflow:hidden;">
         <tr>
-          ${meters
-            .map((meter, index) => {
-              const pad =
-                index === 0
-                  ? "0 4px 0 0"
-                  : index === meters.length - 1
-                    ? "0 0 0 4px"
-                    : "0 4px";
-              return `<td class="stack-col" width="33.33%" style="width:33.33%;padding:${pad};vertical-align:top;">
-              ${renderMeterColumn(meter, cidByMeter.get(meter.id))}
-            </td>`;
-            })
-            .join("")}
+          <td style="padding:18px 20px;">
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0f766e;margin:0 0 6px 0;">Full markets brief</div>
+            <div style="font-size:15px;line-height:1.5;color:#334155;margin:0 0 14px 0;">
+              Fear &amp; greed, TradingView charts, ticker notes, and earnings — open the hosted page.
+            </div>
+            <a href="${escapeHtml(url)}" style="display:inline-block;background:#0f766e;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:999px;padding:10px 18px;">
+              Open full markets brief →
+            </a>
+          </td>
         </tr>
       </table>
     </td>
   </tr>`;
-
-  return `${sectionLabel("Fear &amp; greed", { first: true })}
-  ${meterRow}`;
-}
-
-function renderEarningsCard(event: EarningsEvent) {
-  const colors = TICKER_COLORS[event.tickerId] ?? {
-    bg: "#f8fafc",
-    text: "#334155",
-    accent: "#64748b",
-  };
-  const previous = formatEarningsDate(event.previousDate);
-  const next = formatEarningsDate(event.nextDate, {
-    est: Boolean(event.nextDate) && event.nextConfirmed === false,
-  });
-
-  return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
-      <tr>
-        <td style="padding:10px 12px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-              <td style="vertical-align:middle;padding:0 0 8px 0;">
-                <span style="display:inline-block;font-size:11px;font-weight:700;color:${colors.text};background:${colors.bg};border-radius:999px;padding:2px 8px;">${escapeHtml(event.tickerId)}</span>
-              </td>
-            </tr>
-            <tr>
-              <td width="50%" style="width:50%;padding:0 4px 0 0;vertical-align:top;">
-                <div style="font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;">Prev</div>
-                <div style="margin-top:2px;font-size:13px;line-height:1.3;font-weight:600;color:#334155;">${escapeHtml(previous)}</div>
-              </td>
-              <td width="50%" style="width:50%;padding:0 0 0 4px;vertical-align:top;">
-                <div style="font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#94a3b8;">Next</div>
-                <div style="margin-top:2px;font-size:13px;line-height:1.3;font-weight:600;color:#0f172a;">${escapeHtml(next)}</div>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>`;
-}
-
-function renderEarningsCalendar(events: EarningsEvent[]) {
-  if (events.length === 0) {
-    return `<tr>
-      <td style="padding:0 0 14px 0;">
-        <div style="font-size:14px;line-height:1.5;color:#94a3b8;font-style:italic;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
-          No earnings dates available for tracked stocks.
-        </div>
-      </td>
-    </tr>`;
-  }
-
-  const rows: string[] = [];
-  for (let i = 0; i < events.length; i += 2) {
-    const left = events[i];
-    const right = events[i + 1];
-    rows.push(`<tr>
-      <td style="padding:0 0 10px 0;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-          <tr>
-            <td class="stack-col" width="50%" style="width:50%;padding:0 5px 0 0;vertical-align:top;">
-              ${left ? renderEarningsCard(left) : ""}
-            </td>
-            <td class="stack-col" width="50%" style="width:50%;padding:0 0 0 5px;vertical-align:top;">
-              ${right ? renderEarningsCard(right) : ""}
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>`);
-  }
-
-  return rows.join("");
 }
 
 function percentColor(percent: number, available: boolean) {
@@ -1072,75 +788,15 @@ function renderUsageReport(usage: UsageReport) {
     })}`;
 }
 
-export function renderBriefHtml(
-  brief: DailyBrief,
-  usage?: UsageReport,
-  gaugeAttachments: FearGreedGaugeAttachment[] = [],
-  proxyChartAttachments: TickerProxyChartAttachment[] = [],
-) {
+export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
   const date = formatHumanDate(brief.generatedAt);
   const dateShort = formatHumanDate(brief.generatedAt, { withTime: false });
-
-  const proxyByTicker = new Map(
-    (brief.sentiment?.tickers ?? []).map(
-      (proxy) => [proxy.tickerId, proxy] as const,
-    ),
-  );
-  const proxyChartCidByTicker = new Map(
-    proxyChartAttachments.map(
-      (item) => [item.tickerId, item.contentId] as const,
-    ),
-  );
-
-  const tickerSections = TICKERS.map((ticker) => {
-    const section = brief.tickers.find((t) => t.id === ticker.id);
-    const proxy = proxyByTicker.get(ticker.id);
-    const colors = TICKER_COLORS[ticker.id] ?? {
-      bg: "#f8fafc",
-      text: "#334155",
-      accent: "#64748b",
-    };
-    const bullets =
-      section?.bullets?.length
-        ? section.bullets
-            .map(
-              (b) =>
-                `<tr>
-                  <td style="padding:0 0 10px 0;font-size:15px;line-height:1.55;color:#1e293b;">
-                    ${flagBadge(b.flag)}${escapeHtml(b.text)}${sourceLink(b.sourceUrl, b.sourceName)}
-                  </td>
-                </tr>`,
-            )
-            .join("")
-        : `<tr><td style="font-size:15px;color:#64748b;">No material headlines in the last 24 hours.</td></tr>`;
-
-    return `
-      <tr>
-        <td style="padding:0 0 16px 0;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
-            <tr>
-              <td style="padding:14px 18px;background:${colors.bg};border-bottom:1px solid #e2e8f0;">
-                <span style="display:inline-block;font-size:12px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:${colors.text};background:#fff;border:1px solid ${colors.accent}33;border-radius:999px;padding:4px 10px;">${escapeHtml(ticker.id)}</span>
-                <span style="display:inline-block;margin-left:8px;font-size:16px;font-weight:600;color:#0f172a;">${escapeHtml(ticker.label)}</span>
-              </td>
-            </tr>
-            ${renderTickerProxyStrip(proxy, proxyChartCidByTicker.get(ticker.id))}
-            <tr>
-              <td style="padding:16px 18px 8px 18px;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${bullets}</table>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:0 18px 14px 18px;">
-                <div style="font-size:13px;line-height:1.5;color:#334155;background:#f8fafc;border-radius:10px;padding:10px 12px;">
-                  <span style="font-weight:700;color:#0f172a;">Why it matters:</span> ${escapeHtml(section?.whyItMatters || "Limited coverage today.")}
-                </div>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>`;
-  }).join("");
+  const marketsUrl = getMarketsPageUrl();
+  if (!marketsUrl) {
+    console.warn(
+      "email: markets CTA omitted — set MARKETS_PAGE_SECRET and APP_BASE_URL (or Vercel URL envs)",
+    );
+  }
 
   const peopleSections = PEOPLE.map((person, index) => {
     const section = brief.people.find((p) => p.id === person.id);
@@ -1263,16 +919,10 @@ export function renderBriefHtml(
             </tr>
 
             ${calloutBox("Theme of the day", brief.themeOfTheDay, "#7c3aed")}
-            ${renderSentimentSection(brief.sentiment, gaugeAttachments)}
 
-            ${sectionLabel("Overnight")}
+            ${sectionLabel("Overnight", { first: true })}
             ${renderOvernightOpeners(brief)}
-
-            ${sectionLabel("Markets")}
-            ${tickerSections}
-
-            ${sectionLabel("Earnings &amp; catalysts")}
-            ${renderEarningsCalendar(brief.earningsCalendar)}
+            ${renderMarketsCta(marketsUrl)}
 
             ${sectionLabel("Speeches &amp; announcements")}
             ${peopleSections}
@@ -1326,23 +976,6 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     brief.themeOfTheDay,
   ];
 
-  if (brief.sentiment) {
-    lines.push("", "FEAR & GREED");
-    for (const meter of brief.sentiment.meters) {
-      if (meter.value == null) {
-        lines.push(
-          `- ${meter.label}: unavailable${meter.error ? ` (${meter.error})` : ""}`,
-        );
-        continue;
-      }
-      const band = meter.band ? ` · ${meter.band}` : "";
-      const deltas = formatMeterDeltas(meter);
-      lines.push(
-        `- ${meter.label}: ${meter.id === "vix" ? meter.value.toFixed(2) : Math.round(meter.value)}${band}${deltas ? ` (${deltas})` : ""}`,
-      );
-    }
-  }
-
   lines.push("", "OVERNIGHT OPENERS");
 
   for (const ticker of TICKERS) {
@@ -1350,59 +983,14 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     lines.push(`${ticker.id}: ${section?.overnightOpener || "Quiet overnight."}`);
   }
 
-  const proxyByTickerText = new Map(
-    (brief.sentiment?.tickers ?? []).map(
-      (proxy) => [proxy.tickerId, proxy] as const,
-    ),
-  );
-
-  lines.push("", "MARKETS");
-  for (const ticker of TICKERS) {
-    const section = brief.tickers.find((t) => t.id === ticker.id);
-    const proxy = proxyByTickerText.get(ticker.id);
-    lines.push("", ticker.label);
-    if (proxy) {
-      if (proxy.score == null) {
-        lines.push(`Greed proxy: ${proxy.error || "unavailable"}`);
-      } else {
-        const bits = [
-          `score ${proxy.score}`,
-          proxy.band,
-          proxy.stance,
-          tickerProxyDetail(proxy),
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        lines.push(`Greed proxy: ${bits}`);
-      }
-    }
-    if (section?.bullets?.length) {
-      for (const bullet of section.bullets) {
-        const source = bullet.sourceName
-          ? ` · ${bullet.sourceName}`
-          : bullet.sourceUrl
-            ? " · Source"
-            : "";
-        const link = bullet.sourceUrl ? ` (${bullet.sourceUrl})` : "";
-        lines.push(`- [${bullet.flag}] ${bullet.text}${source}${link}`);
-      }
-    } else {
-      lines.push("- No material headlines in the last 24 hours.");
-    }
-    lines.push(`Why it matters: ${section?.whyItMatters || "n/a"}`);
-  }
-
-  lines.push("", "EARNINGS & CATALYSTS");
-  if (brief.earningsCalendar.length === 0) {
-    lines.push("No earnings dates available for tracked stocks.");
-  } else {
-    for (const event of brief.earningsCalendar) {
-      const previous = formatEarningsDate(event.previousDate);
-      const next = formatEarningsDate(event.nextDate, {
-        est: Boolean(event.nextDate) && event.nextConfirmed === false,
-      });
-      lines.push(`- ${event.tickerId} · Previous ${previous} · Next ${next}`);
-    }
+  const marketsUrl = getMarketsPageUrl();
+  if (marketsUrl) {
+    lines.push(
+      "",
+      "FULL MARKETS BRIEF",
+      "Fear & greed, TradingView charts, ticker notes, and earnings:",
+      marketsUrl,
+    );
   }
 
   lines.push("", "SPEECHES & ANNOUNCEMENTS");
@@ -1586,22 +1174,6 @@ export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
     throw new Error("RESEND_API_KEY is required");
   }
 
-  const gaugeAttachments = await buildFearGreedGaugeAttachments(
-    brief.sentiment?.meters ?? [],
-  ).catch((error) => {
-    console.warn("fear-greed gauge render failed", error);
-    return [] as FearGreedGaugeAttachment[];
-  });
-
-  const proxyChartAttachments = await buildTickerProxyChartAttachments(
-    brief.sentiment?.tickers ?? [],
-  ).catch((error) => {
-    console.warn("ticker proxy chart render failed", error);
-    return [] as TickerProxyChartAttachment[];
-  });
-
-  const inlineAttachments = [...gaugeAttachments, ...proxyChartAttachments];
-
   const dateLabel = formatHumanDate(brief.generatedAt, { withTime: false });
   // Use fetch (not the SDK) so we can read quota response headers — needed for
   // send-only API keys that cannot call GET /emails.
@@ -1615,19 +1187,8 @@ export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
       from: getEmailFrom(),
       to: [getEmailTo()],
       subject: `Daily Brief · ${dateLabel}`,
-      html: renderBriefHtml(
-        brief,
-        usage,
-        gaugeAttachments,
-        proxyChartAttachments,
-      ),
+      html: renderBriefHtml(brief, usage),
       text: renderBriefText(brief, usage),
-      attachments: inlineAttachments.map((item) => ({
-        filename: item.filename,
-        content: item.content,
-        content_id: item.contentId,
-        content_type: item.contentType,
-      })),
     }),
   });
 

@@ -19,24 +19,40 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
 8. Pulls **GA4** yesterday + 7-day trend + month-to-date overviews for configured sites (when a service account is set)
 9. Loads yesterday’s slim snapshot (when available) as synthesis context
 10. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
-11. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest
-12. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
-13. Saves a slim snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
+11. Saves a **markets brief** payload for the secret hosted page (Blob when configured, otherwise `.data/markets-latest.json`)
+12. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest (Overnight stays in-email; full markets live on the hosted page)
+13. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
+14. Saves a slim day-over-day snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
 
 Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGIONS`, `REDDIT_SUBREDDITS`, `GA_ACCOUNTS`, `DEFAULT_MODEL`).
+
+## Hosted markets page
+
+Fear & greed, watchlist notes, greed proxies, **TradingView** charts, and earnings render at a **secret URL**:
+
+```
+https://your-app.vercel.app/markets/<MARKETS_PAGE_SECRET>
+```
+
+- Set `MARKETS_PAGE_SECRET` to a long random string (`openssl rand -hex 24`)
+- Set `APP_BASE_URL` to your public origin so the email CTA links correctly (on Vercel, `VERCEL_PROJECT_PRODUCTION_URL` / `VERCEL_URL` are used as fallbacks)
+- Local/dev without a secret uses `dev-markets-secret` → `http://localhost:3000/markets/dev-markets-secret`
+- Wrong token → 404; page is `noindex`
+- Requires the daily brief to have saved once (Blob or local `.data/markets-latest.json`)
 
 ## What’s in the email (data + AI)
 
 All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk.dev) `generateObject` helper. Default model: **`google/gemini-2.5-flash`** (override with `AI_MODEL`). No provider SDKs are wired directly — the Gateway routes the request.
 
-| Email section                                             | Data source (no AI)                                                                                                                                                | LLM / API used                                                                                                                  |
+| Email / page section                                      | Data source (no AI)                                                                                                                                                | LLM / API used                                                                                                                  |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Theme of the day**                                      | Markets + people + trends + sentiment context                                                                                                                      | AI Gateway — one cross-cutting sentence                                                                                         |
-| **Fear & greed**                                          | CNN F&G, Alternative.me Crypto F&G, VIX via feargreedchart; equities via Stock Analysis (52w + RSI14); BTC via CoinGecko                                           | **No LLM** — value dial + Lean buy / Neutral / Patience stance per ticker (SPCX skipped — private)                              |
-| **Overnight openers**                                     | Google News RSS — last 24h per ticker                                                                                                                              | Same core brief call — one session-context line each                                                                            |
-| **Markets** (TSLA, MU, META, BTC, AVGO, CRCL, SPCX, MSFT) | Google News RSS — last 24h                                                                                                                                         | Core brief: 3–5 bullets with **Watch / Noise / Actionable** flags, **source links**, **why it matters**                         |
-| **Earnings & catalysts**                                  | Stock Analysis earnings calendar (prev + next report dates)                                                                                                        | **No LLM** — skips BTC / SPCX                                                                                                   |
-| **Speeches & announcements**                              | Google News RSS — last 24h per person                                                                                                                              | Core brief: one sentence each, optional **quote** + source link                                                                 |
+| **Theme of the day** _(email)_                            | Markets + people + trends + sentiment context                                                                                                                      | AI Gateway — one cross-cutting sentence                                                                                         |
+| **Overnight openers** _(email)_                           | Google News RSS — last 24h per ticker                                                                                                                              | Same core brief call — one session-context line each                                                                            |
+| **Full markets brief CTA** _(email → hosted page)_        | Link built from `APP_BASE_URL` + `MARKETS_PAGE_SECRET`                                                                                                             | **No LLM**                                                                                                                      |
+| **Fear & greed** _(hosted page)_                          | CNN F&G, Alternative.me Crypto F&G, VIX via feargreedchart; equities via Stock Analysis (52w + RSI14); BTC via CoinGecko                                           | **No LLM** — value dial + Lean buy / Neutral / Patience stance per ticker (SPCX skipped — private)                              |
+| **Markets + TradingView** _(hosted page)_                 | Google News RSS — last 24h; charts via TradingView embeds (`tradingViewSymbol` in config)                                                                          | Core brief: 3–5 bullets with **Watch / Noise / Actionable** flags, **source links**, **why it matters**                         |
+| **Earnings & catalysts** _(hosted page)_                  | Stock Analysis earnings calendar (prev + next report dates)                                                                                                        | **No LLM** — skips BTC / SPCX                                                                                                   |
+| **Speeches & announcements** _(email)_                    | Google News RSS — last 24h per person                                                                                                                              | Core brief: one sentence each, optional **quote** + source link                                                                 |
 | **Regional pulse**                                        | Trends across US / TH / BG                                                                                                                                         | Synthesis call — 2–3 sentences comparing regions                                                                                |
 | **Web trends · United States**                            | Google Trends Trending Now (`geo=US`); Sports filtered                                                                                                             | Optional translation when non-English                                                                                           |
 | **Web trends · Thailand / Bulgaria**                      | Google Trends Trending Now (`geo=TH`, `geo=BG`); Sports filtered                                                                                                   | One English summary each of the **top 3** trends and why they are rising (no item list; no local-language text)                 |
@@ -71,6 +87,8 @@ cp .env.example .env
 | `EMAIL_FROM`                | Yes      | Verified Resend domain (sent as `Daily Emails <EMAIL_FROM>`)                                                 |
 | `EMAIL_TO`                  | No       | Defaults to `streethouse4@gmail.com`                                                                         |
 | `CRON_SECRET`               | Prod     | Random string; same value in Vercel env                                                                      |
+| `MARKETS_PAGE_SECRET`       | Prod     | Long random string for `/markets/<secret>`; local/dev falls back to `dev-markets-secret`                     |
+| `APP_BASE_URL`              | Prod\*   | Public origin for the email markets CTA (e.g. `https://your-app.vercel.app`); Vercel URL envs used if unset  |
 | `AI_GATEWAY_API_KEY`        | Local    | From the [AI Gateway](https://vercel.com/docs/ai-gateway) dashboard; on Vercel, OIDC can work without this   |
 | `AI_MODEL`                  | No       | Defaults to `google/gemini-2.5-flash`                                                                        |
 | `AI_GATEWAY_MONTHLY_BUDGET` | No       | USD free-credit budget for usage watch (default `5`)                                                         |
@@ -82,7 +100,7 @@ cp .env.example .env
 | `GOOGLE_CLIENT_EMAIL`       | No       | GCP service account email for the **Google Analytics** section                                               |
 | `GOOGLE_PRIVATE_KEY`        | No       | Service account private key (PEM; literal `\n` newlines are fine)                                            |
 
-\*Without Blob, local runs still persist to `.data/previous-brief.json`. On Vercel without Blob, day-over-day sections stay empty until a store is connected.
+\*Without Blob, local runs still persist to `.data/previous-brief.json` and `.data/markets-latest.json`. On Vercel without Blob, day-over-day sections and the hosted markets page stay empty until a store is connected. `APP_BASE_URL` is recommended in production so the email CTA always points at your canonical domain.
 
 ### Google Analytics
 
@@ -118,10 +136,11 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://your-app.vercel.app/api/dai
 ## Deploy on Vercel (Hobby / free)
 
 1. Push to GitHub and import the project in Vercel
-2. Set env vars: `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_TO`, `CRON_SECRET`
-3. (Recommended) Create a Blob store and set `BLOB_READ_WRITE_TOKEN` for durable day-over-day snapshot history
+2. Set env vars: `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_TO`, `CRON_SECRET`, `MARKETS_PAGE_SECRET`, and preferably `APP_BASE_URL`
+3. (Recommended) Create a Blob store and set `BLOB_READ_WRITE_TOKEN` for durable day-over-day + markets-page history
 4. Deploy to **Production** (crons only run on production)
 5. Cron schedule is defined in `vercel.json`: `0 9 * * *` → `/api/daily-brief`
+6. After the first successful run, open `/markets/<MARKETS_PAGE_SECRET>`
 
 Optional: set `AI_MODEL` to a free-tier Gateway model slug (see below).
 
