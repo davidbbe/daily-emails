@@ -51,10 +51,9 @@ export const TICKERS = [
     id: "SPCX",
     label: "SpaceX (SPCX)",
     query: "SPCX OR SpaceX stock OR Space Exploration Technologies",
-    earningsSymbol: null,
-    /** Private — no Yahoo quote for greed proxy / no public TradingView chart */
-    quoteSymbol: null,
-    tradingViewSymbol: null,
+    earningsSymbol: "SPCX",
+    quoteSymbol: "SPCX",
+    tradingViewSymbol: "NASDAQ:SPCX",
   },
   {
     id: "MSFT",

@@ -48,9 +48,15 @@ function loadTradingViewScript() {
   return scriptPromise;
 }
 
+const DEFAULT_STUDIES = [
+  { id: "BB@tv-basicstudies" },
+  { id: "MACD@tv-basicstudies" },
+  { id: "RSI@tv-basicstudies", inputs: { length: 14 } },
+];
+
 export function TradingViewChart({
   symbol,
-  height = 460,
+  height = 720,
 }: TradingViewChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const reactId = useId().replace(/:/g, "");
@@ -76,7 +82,19 @@ export function TradingViewChart({
           enable_publishing: false,
           allow_symbol_change: false,
           hide_side_toolbar: false,
+          hide_volume: true,
           container_id: containerId,
+          // Avoid restoring a prior layout that omitted custom studies.
+          disabled_features: [
+            "use_localstorage_for_settings",
+            "create_volume_indicator_by_default",
+          ],
+          studies: DEFAULT_STUDIES,
+          studies_overrides: {
+            "relative strength index.length": 14,
+            "relative strength index.rsi.color": "#7c3aed",
+            "relative strength index.rsi.linewidth": 2,
+          },
         });
         void widget;
       })
