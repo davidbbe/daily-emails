@@ -991,27 +991,85 @@ function renderUsageRow(m: UsageMetric) {
   </tr>`;
 }
 
+function isResendUsageMetric(m: UsageMetric) {
+  return m.id.startsWith("resend-");
+}
+
+function splitUsageMetrics(metrics: UsageMetric[]) {
+  const vercel: UsageMetric[] = [];
+  const resend: UsageMetric[] = [];
+  for (const m of metrics) {
+    if (isResendUsageMetric(m)) resend.push(m);
+    else vercel.push(m);
+  }
+  return { vercel, resend };
+}
+
+function renderUsageBrandHeader(opts: {
+  logoHtml: string;
+  title?: string;
+  subtitle?: string;
+}) {
+  const title = opts.title
+    ? `<span style="font-size:15px;font-weight:700;color:#0f172a;letter-spacing:-0.01em;">${opts.title}</span>`
+    : "";
+  const subtitle = opts.subtitle
+    ? `<span style="margin-left:8px;font-size:12px;color:#94a3b8;">${opts.subtitle}</span>`
+    : "";
+  return `<table role="presentation" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="padding:0 10px 0 0;vertical-align:middle;">${opts.logoHtml}</td>
+      <td style="vertical-align:middle;">${title}${subtitle}</td>
+    </tr>
+  </table>`;
+}
+
+function renderUsageTable(opts: {
+  headerHtml: string;
+  metrics: UsageMetric[];
+}) {
+  if (opts.metrics.length === 0) return "";
+  const rows = opts.metrics.map(renderUsageRow).join("");
+  return `<tr>
+    <td style="padding:0 0 14px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+        <tr>
+          <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
+            ${opts.headerHtml}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 16px 8px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>`;
+}
+
 function renderUsageReport(usage: UsageReport) {
-  const rows = usage.metrics.map(renderUsageRow).join("");
+  const { vercel, resend } = splitUsageMetrics(usage.metrics);
+  const vercelLogo = `<img src="https://assets.vercel.com/image/upload/q_auto/front/assets/design/vercel-triangle-black.png" width="16" height="14" alt="" style="display:block;border:0;outline:none;text-decoration:none;width:16px;height:14px;" />`;
+  const resendLogo = `<img src="https://cdn.resend.com/brand/resend-wordmark-black.png" width="78" height="18" alt="Resend" style="display:block;border:0;outline:none;text-decoration:none;width:78px;height:18px;" />`;
+
   return `
     ${renderUsageWatch(usage)}
-    <tr>
-      <td style="padding:0 0 14px 0;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
-          <tr>
-            <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
-              <span style="font-size:15px;font-weight:700;color:#0f172a;">Vercel &amp; delivery usage</span>
-              <span style="margin-left:8px;font-size:12px;color:#94a3b8;">Gateway · FOT · Blob · Resend</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:4px 16px 8px 16px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>`;
+    ${renderUsageTable({
+      headerHtml: renderUsageBrandHeader({
+        logoHtml: vercelLogo,
+        title: "Vercel",
+        subtitle: "Gateway · FOT · Blob",
+      }),
+      metrics: vercel,
+    })}
+    ${renderUsageTable({
+      headerHtml: renderUsageBrandHeader({
+        logoHtml: resendLogo,
+        subtitle: "Daily · Monthly",
+      }),
+      metrics: resend,
+    })}`;
 }
 
 export function renderBriefHtml(
@@ -1490,16 +1548,32 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
       }
     }
 
-    lines.push("", "VERCEL & DELIVERY USAGE");
-    for (const m of usage.metrics) {
-      if (!m.available) {
-        lines.push(`- ${m.label}: unavailable — ${m.detail}`);
-        continue;
+    const { vercel, resend } = splitUsageMetrics(usage.metrics);
+    if (vercel.length > 0) {
+      lines.push("", "VERCEL USAGE");
+      for (const m of vercel) {
+        if (!m.available) {
+          lines.push(`- ${m.label}: unavailable — ${m.detail}`);
+          continue;
+        }
+        lines.push(
+          `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.percent}%)`,
+        );
+        lines.push(`  ${m.detail}`);
       }
-      lines.push(
-        `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.percent}%)`,
-      );
-      lines.push(`  ${m.detail}`);
+    }
+    if (resend.length > 0) {
+      lines.push("", "RESEND USAGE");
+      for (const m of resend) {
+        if (!m.available) {
+          lines.push(`- ${m.label}: unavailable — ${m.detail}`);
+          continue;
+        }
+        lines.push(
+          `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.percent}%)`,
+        );
+        lines.push(`  ${m.detail}`);
+      }
     }
   }
 
