@@ -289,30 +289,31 @@ function siteOrigin() {
   return undefined;
 }
 
-const REDDIT_THUMB_SIZE = 110;
 const REDDIT_POSTS_PER_ROW = 3;
+/** Intrinsic square size hint; CSS `width:100%` scales thumbs to fill each grid cell. */
+const REDDIT_THUMB_ATTR_SIZE = 200;
+const REDDIT_CELL_PAD = 3;
 
 /** Crossed-out picture icon when a post has no thumbnail. */
 function redditNoImageThumbHtml() {
-  const size = REDDIT_THUMB_SIZE;
+  const size = REDDIT_THUMB_ATTR_SIZE;
   const origin = siteOrigin();
   if (origin) {
-    return `<img src="${escapeHtml(`${origin}/reddit-no-image.svg`)}" width="${size}" height="${size}" alt="No image" style="display:block;width:100%;max-width:${size}px;height:auto;aspect-ratio:1/1;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;background:#f1f5f9;" />`;
+    return `<img src="${escapeHtml(`${origin}/reddit-no-image.svg`)}" width="${size}" height="${size}" alt="No image" style="display:block;width:100%;height:auto;aspect-ratio:1/1;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;background:#f1f5f9;" />`;
   }
 
   // Fallback when no public origin is available (local sends).
-  return `<table role="presentation" width="${size}" height="${size}" cellpadding="0" cellspacing="0" style="width:100%;max-width:${size}px;height:${size}px;border-radius:8px;border:1px solid #e2e8f0;background:#f1f5f9;"><tr><td align="center" valign="middle" width="${size}" height="${size}" style="width:${size}px;height:${size}px;font-size:22px;line-height:22px;color:#64748b;font-family:${FONT};" title="No image">∅</td></tr></table>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;background:#f1f5f9;"><tr><td align="center" valign="middle" style="padding:32% 0;font-size:22px;line-height:22px;color:#64748b;font-family:${FONT};" title="No image">∅</td></tr></table>`;
 }
 
-function renderRedditPostCell(post: RedditSubFeed["posts"][number], rank: number) {
+function renderRedditPostCell(post: RedditSubFeed["posts"][number]) {
   const thumb = post.thumbnail
-    ? `<img src="${escapeHtml(post.thumbnail)}" width="${REDDIT_THUMB_SIZE}" height="${REDDIT_THUMB_SIZE}" alt="" style="display:block;width:100%;max-width:${REDDIT_THUMB_SIZE}px;height:auto;aspect-ratio:1/1;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;" />`
+    ? `<img src="${escapeHtml(post.thumbnail)}" width="${REDDIT_THUMB_ATTR_SIZE}" height="${REDDIT_THUMB_ATTR_SIZE}" alt="" style="display:block;width:100%;height:auto;aspect-ratio:1/1;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;" />`
     : redditNoImageThumbHtml();
 
-  return `<td width="33.33%" style="width:33.33%;padding:2px;vertical-align:top;">
+  return `<td width="33.33%" style="width:33.33%;padding:${REDDIT_CELL_PAD}px;vertical-align:top;">
       <a href="${escapeHtml(post.permalink)}" style="text-decoration:none;">${thumb}</a>
       <div style="padding:4px 0 1px 0;">
-        <div style="font-size:9px;font-weight:700;color:#94a3b8;line-height:1.2;margin:0 0 2px 0;">${rank}</div>
         <a href="${escapeHtml(post.permalink)}" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-height:2.6em;font-size:10px;line-height:1.3;font-weight:600;color:#0f172a;text-decoration:none;">${escapeHtml(post.title)}</a>
       </div>
     </td>`;
@@ -326,9 +327,9 @@ function renderRedditPostGrid(posts: RedditSubFeed["posts"]) {
   const rows: string[] = [];
   for (let i = 0; i < posts.length; i += REDDIT_POSTS_PER_ROW) {
     const slice = posts.slice(i, i + REDDIT_POSTS_PER_ROW);
-    const cells = slice.map((post, j) => renderRedditPostCell(post, i + j + 1));
+    const cells = slice.map((post) => renderRedditPostCell(post));
     while (cells.length < REDDIT_POSTS_PER_ROW) {
-      cells.push(`<td width="33.33%" style="width:33.33%;padding:2px;"></td>`);
+      cells.push(`<td width="33.33%" style="width:33.33%;padding:${REDDIT_CELL_PAD}px;"></td>`);
     }
     rows.push(`<tr>${cells.join("")}</tr>`);
   }
@@ -345,7 +346,7 @@ function renderRedditSubColumn(feed: RedditSubFeed) {
         </td>
       </tr>
       <tr>
-        <td style="padding:4px 4px 8px 4px;">
+        <td style="padding:5px 5px 8px 5px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${renderRedditPostGrid(feed.posts)}</table>
         </td>
       </tr>

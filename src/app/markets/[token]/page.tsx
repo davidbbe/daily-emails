@@ -188,36 +188,28 @@ function ProxyBlock({ proxy }: { proxy: TickerGreedProxy }) {
   );
 }
 
-function EarningsCard({ event }: { event: EarningsEvent }) {
-  const pill = TICKER_PILL[event.tickerId] ?? "bg-slate-100 text-slate-600";
+function TickerEarningsDates({ event }: { event: EarningsEvent }) {
   return (
-    <article className="rounded-xl border border-slate-200 bg-white p-4">
-      <span
-        className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold ${pill}`}
-      >
-        {event.tickerId}
-      </span>
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-            Prev
-          </div>
-          <div className="mt-0.5 text-sm font-semibold text-slate-600">
-            {formatEarningsDate(event.previousDate)}
-          </div>
+    <div className="flex shrink-0 items-start gap-4 text-right sm:gap-5">
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+          Prev earnings
         </div>
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-            Next
-          </div>
-          <div className="mt-0.5 text-sm font-semibold text-slate-900">
-            {formatEarningsDate(event.nextDate, {
-              est: Boolean(event.nextDate) && event.nextConfirmed === false,
-            })}
-          </div>
+        <div className="mt-0.5 text-xs font-semibold tabular-nums text-slate-600 sm:text-sm">
+          {formatEarningsDate(event.previousDate)}
         </div>
       </div>
-    </article>
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+          Next earnings
+        </div>
+        <div className="mt-0.5 text-xs font-semibold tabular-nums text-slate-900 sm:text-sm">
+          {formatEarningsDate(event.nextDate, {
+            est: Boolean(event.nextDate) && event.nextConfirmed === false,
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -269,6 +261,9 @@ export default async function MarketsPage({
     (brief.sentiment?.tickers ?? []).map(
       (proxy) => [proxy.tickerId, proxy] as const,
     ),
+  );
+  const earningsByTicker = new Map(
+    brief.earningsCalendar.map((event) => [event.tickerId, event] as const),
   );
   const dateLabel = formatHumanDate(brief.generatedAt);
 
@@ -323,6 +318,7 @@ export default async function MarketsPage({
             {TICKERS.map((ticker) => {
               const section = brief.tickers.find((t) => t.id === ticker.id);
               const proxy = proxyByTicker.get(ticker.id);
+              const earnings = earningsByTicker.get(ticker.id);
               const pill =
                 TICKER_PILL[ticker.id] ?? "bg-slate-100 text-slate-600";
 
@@ -331,19 +327,72 @@ export default async function MarketsPage({
                   key={ticker.id}
                   className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
                 >
-                  <div className="border-b border-slate-100 px-5 py-4">
-                    <span
-                      className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold ${pill}`}
-                    >
-                      {ticker.id}
-                    </span>
-                    <span className="ml-2 text-base font-semibold text-slate-900">
-                      {ticker.label}
-                    </span>
+                  <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+                    <div className="min-w-0">
+                      <span
+                        className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold ${pill}`}
+                      >
+                        {ticker.id}
+                      </span>
+                      <span className="ml-2 text-lg font-semibold text-slate-900">
+                        {ticker.label}
+                      </span>
+                    </div>
+                    {earnings ? <TickerEarningsDates event={earnings} /> : null}
                   </div>
 
                   <div className="space-y-4 px-5 py-5">
-                    {proxy ? <ProxyBlock proxy={proxy} /> : null}
+                    <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_11rem] sm:items-start">
+                      <div className="min-w-0 space-y-3">
+                        <ul className="space-y-3">
+                          {section?.bullets?.length ? (
+                            section.bullets.map((bullet, index) => (
+                              <li
+                                key={`${ticker.id}-${index}`}
+                                className="text-[15px] leading-relaxed text-slate-800"
+                              >
+                                <span
+                                  className={`mr-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${FLAG_STYLES[bullet.flag]}`}
+                                >
+                                  {bullet.flag}
+                                </span>
+                                {bullet.text}
+                                {bullet.sourceUrl ? (
+                                  <>
+                                    {" "}
+                                    <a
+                                      href={bullet.sourceUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-sm font-medium text-teal-800 underline decoration-teal-800/30 underline-offset-2 hover:decoration-teal-800"
+                                    >
+                                      {bullet.sourceName || "Source"}
+                                    </a>
+                                  </>
+                                ) : null}
+                              </li>
+                            ))
+                          ) : (
+                            <li className="text-[15px] text-slate-500">
+                              No material headlines in the last 24 hours.
+                            </li>
+                          )}
+                        </ul>
+
+                        <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
+                          <span className="font-bold text-slate-900">
+                            Why it matters:{" "}
+                          </span>
+                          {section?.whyItMatters || "Limited coverage today."}
+                        </div>
+                      </div>
+
+                      {proxy ? (
+                        <div className="sm:w-44 sm:justify-self-end">
+                          <ProxyBlock proxy={proxy} />
+                        </div>
+                      ) : null}
+                    </div>
 
                     {ticker.tradingViewSymbol ? (
                       <TradingViewChart symbol={ticker.tradingViewSymbol} />
@@ -352,70 +401,11 @@ export default async function MarketsPage({
                         No public TradingView chart (private company).
                       </p>
                     )}
-
-                    <ul className="space-y-3">
-                      {section?.bullets?.length ? (
-                        section.bullets.map((bullet, index) => (
-                          <li
-                            key={`${ticker.id}-${index}`}
-                            className="text-[15px] leading-relaxed text-slate-800"
-                          >
-                            <span
-                              className={`mr-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${FLAG_STYLES[bullet.flag]}`}
-                            >
-                              {bullet.flag}
-                            </span>
-                            {bullet.text}
-                            {bullet.sourceUrl ? (
-                              <>
-                                {" "}
-                                <a
-                                  href={bullet.sourceUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-sm font-medium text-teal-800 underline decoration-teal-800/30 underline-offset-2 hover:decoration-teal-800"
-                                >
-                                  {bullet.sourceName || "Source"}
-                                </a>
-                              </>
-                            ) : null}
-                          </li>
-                        ))
-                      ) : (
-                        <li className="text-[15px] text-slate-500">
-                          No material headlines in the last 24 hours.
-                        </li>
-                      )}
-                    </ul>
-
-                    <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
-                      <span className="font-bold text-slate-900">
-                        Why it matters:{" "}
-                      </span>
-                      {section?.whyItMatters || "Limited coverage today."}
-                    </div>
                   </div>
                 </article>
               );
             })}
           </div>
-        </section>
-
-        <section className="mb-8">
-          <h2 className="mb-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-            Earnings &amp; catalysts
-          </h2>
-          {brief.earningsCalendar.length === 0 ? (
-            <p className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm italic text-slate-400">
-              No earnings dates available for tracked stocks.
-            </p>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {brief.earningsCalendar.map((event) => (
-                <EarningsCard key={event.tickerId} event={event} />
-              ))}
-            </div>
-          )}
         </section>
 
         <footer className="border-t border-black/5 pt-6 text-center text-xs text-slate-400">
