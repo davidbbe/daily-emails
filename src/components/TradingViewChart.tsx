@@ -49,7 +49,6 @@ function loadTradingViewScript() {
 }
 
 const DEFAULT_STUDIES = [
-  { id: "BB@tv-basicstudies" },
   { id: "MACD@tv-basicstudies" },
   { id: "RSI@tv-basicstudies", inputs: { length: 14 } },
 ];
@@ -76,19 +75,16 @@ export function TradingViewChart({
           interval: "D",
           timezone: "Etc/UTC",
           theme: "light",
-          style: "1",
+          style: "2",
           locale: "en",
           toolbar_bg: "#f8fafc",
           enable_publishing: false,
           allow_symbol_change: false,
           hide_side_toolbar: false,
-          hide_volume: true,
+          hide_volume: false,
           container_id: containerId,
           // Avoid restoring a prior layout that omitted custom studies.
-          disabled_features: [
-            "use_localstorage_for_settings",
-            "create_volume_indicator_by_default",
-          ],
+          disabled_features: ["use_localstorage_for_settings"],
           studies: DEFAULT_STUDIES,
           studies_overrides: {
             "relative strength index.length": 14,
