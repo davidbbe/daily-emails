@@ -92,6 +92,14 @@ export async function GET(request: Request) {
           error: t.error ?? null,
         })),
       },
+      whales: {
+        quarterLabel: brief.whales?.quarterLabel ?? null,
+        filingsSoFar: brief.whales?.filingsSoFar ?? null,
+        filingsTotal: brief.whales?.filingsTotal ?? null,
+        clusteredBuys: brief.whales?.clusteredBuys.length ?? 0,
+        notableBuys: brief.whales?.notableBuys.length ?? 0,
+        error: brief.whales?.error ?? null,
+      },
       usage: {
         thresholdPercent: usage.thresholdPercent,
         watch: usage.watch.map((m) => ({

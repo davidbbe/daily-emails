@@ -7,6 +7,7 @@ import type { NewsItem, ResearchBundle } from "@/lib/research";
 import type { RedditSubFeed } from "@/lib/reddit";
 import type { SentimentReport } from "@/lib/sentiment";
 import { buildBriefTrends, type BriefTrends } from "@/lib/trends";
+import { buildWhaleBrief, type WhaleBrief } from "@/lib/whale-brief";
 
 export const BULLET_FLAGS = ["Watch", "Noise", "Actionable"] as const;
 export type BulletFlag = (typeof BULLET_FLAGS)[number];
@@ -57,6 +58,8 @@ export type DailyBrief = {
   sites: SiteAnalytics[];
   /** Fear & greed meters + per-ticker proxies — pass-through, no LLM */
   sentiment: SentimentReport;
+  /** Superinvestor 13F briefing for the hosted markets page */
+  whales: WhaleBrief;
   generatedAt: string;
   model: string;
   windowHours: number;
@@ -394,9 +397,10 @@ export async function generateDailyBrief(
 ): Promise<DailyBrief> {
   const model = getModel();
 
-  const [coreResult, trends] = await Promise.all([
+  const [coreResult, trends, whales] = await Promise.all([
     generateCoreBrief(bundle, model),
     buildBriefTrends(bundle),
+    buildWhaleBrief(bundle.whales),
   ]);
 
   const core = normalizeCore(coreResult.object, bundle);
@@ -426,6 +430,7 @@ export async function generateDailyBrief(
     reddit: bundle.reddit ?? [],
     sites: bundle.sites ?? [],
     sentiment,
+    whales,
     hasPreviousBrief: Boolean(previous),
     themeOfTheDay:
       synthesisResult.object.themeOfTheDay.trim() ||

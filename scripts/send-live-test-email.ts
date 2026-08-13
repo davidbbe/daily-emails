@@ -24,6 +24,7 @@ import {
 import type { NewsItem, ResearchBundle, TrendItem } from "@/lib/research";
 import { collectSentiment } from "@/lib/sentiment";
 import { collectUsageReport } from "@/lib/usage";
+import { collectWhaleActivity, emptyWhaleResearch } from "@/lib/whales";
 import Parser from "rss-parser";
 
 function loadEnvFile(filename: string) {
@@ -99,7 +100,7 @@ async function collectResearchWithoutTrendsOrReddit(
     trends[region.id] = [];
   }
 
-  const [, , earnings, sites, sentiment] = await Promise.all([
+  const [, , earnings, sites, sentiment, whales] = await Promise.all([
     Promise.all(
       TICKERS.map(async (ticker) => {
         tickers[ticker.id] = await fetchRecentNews(ticker.query, hours).catch(
@@ -126,6 +127,12 @@ async function collectResearchWithoutTrendsOrReddit(
       return [] as SiteAnalytics[];
     }),
     collectSentiment(),
+    collectWhaleActivity().catch((error) => {
+      console.warn("whale activity fetch failed", error);
+      return emptyWhaleResearch(
+        error instanceof Error ? error.message : "Whale activity fetch failed",
+      );
+    }),
   ]);
 
   return {
@@ -138,6 +145,7 @@ async function collectResearchWithoutTrendsOrReddit(
     reddit: [],
     sites,
     sentiment,
+    whales,
   };
 }
 
@@ -173,6 +181,11 @@ async function main() {
           score: t.score ?? null,
           stance: t.stance ?? null,
         })),
+        whales: {
+          quarter: research.whales.quarterLabel,
+          clusters: research.whales.clusterBuys.length,
+          error: research.whales.error ?? null,
+        },
       },
       null,
       2,

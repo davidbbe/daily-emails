@@ -20,6 +20,11 @@ import {
   type TickerGreedProxy,
 } from "@/lib/sentiment";
 import { buildVixLineChartSvg } from "@/lib/vix-line-chart";
+import {
+  formatWhaleUsd,
+  type WhaleBrief,
+} from "@/lib/whale-brief";
+import type { WhaleManagerMove } from "@/lib/whales";
 
 export const dynamic = "force-dynamic";
 
@@ -213,6 +218,209 @@ function TickerEarningsDates({ event }: { event: EarningsEvent }) {
   );
 }
 
+function dataromaStockUrl(ticker: string) {
+  return `https://www.dataroma.com/m/stock.php?sym=${encodeURIComponent(ticker)}`;
+}
+
+function formatMoveAction(move: WhaleManagerMove) {
+  if (move.action === "Buy") return "New buy";
+  if (move.shareChangePct != null) return `Add ${move.shareChangePct}%`;
+  return "Add";
+}
+
+function WhaleWatchSection({ whales }: { whales?: WhaleBrief }) {
+  if (!whales) return null;
+  const hasBody =
+    Boolean(whales.briefing?.trim()) ||
+    whales.clusteredBuys.length > 0 ||
+    whales.notableBuys.length > 0 ||
+    whales.realtimeBuys.length > 0;
+  if (!hasBody) return null;
+
+  const filingNote =
+    whales.filingsSoFar != null && whales.filingsTotal != null
+      ? `${whales.filingsSoFar} of ${whales.filingsTotal} superinvestor 13Fs in`
+      : null;
+
+  return (
+    <section className="mb-12">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+        <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+          Whale watch
+        </h2>
+        <p className="text-xs text-slate-400">
+          {[whales.quarterLabel, filingNote].filter(Boolean).join(" · ")}
+        </p>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {whales.briefing?.trim() ? (
+          <div className="border-b border-slate-100 px-5 py-5">
+            <p className="text-[15px] leading-relaxed text-slate-800">
+              {whales.briefing}
+            </p>
+            <p className="mt-3 text-xs leading-relaxed text-slate-400">
+              13F holdings are quarter-end snapshots, filed up to 45 days later
+              — not live trades.
+              {whales.buyAddCount
+                ? ` ${whales.buyAddCount} buys/adds reported so far this quarter.`
+                : ""}
+            </p>
+          </div>
+        ) : null}
+
+        {whales.themes.length > 0 ? (
+          <div className="grid gap-px border-b border-slate-100 bg-slate-100 sm:grid-cols-2 lg:grid-cols-3">
+            {whales.themes.map((theme, index) => (
+              <div key={`${theme.title}-${index}`} className="bg-white px-5 py-4">
+                <div className="text-[11px] font-bold uppercase tracking-wide text-teal-800">
+                  {theme.title}
+                </div>
+                <p className="mt-1.5 text-sm leading-relaxed text-slate-700">
+                  {theme.detail}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {whales.watchlist.length > 0 ? (
+          <div className="border-b border-slate-100 px-5 py-4">
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              Watchlist overlap
+            </div>
+            <ul className="space-y-2">
+              {whales.watchlist.map((item) => (
+                <li
+                  key={item.tickerId}
+                  className="text-sm leading-relaxed text-slate-700"
+                >
+                  <span className="mr-2 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                    {item.tickerId}
+                  </span>
+                  {item.note}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div
+          className={`grid gap-px bg-slate-100 ${
+            whales.clusteredBuys.length > 0 && whales.notableBuys.length > 0
+              ? "lg:grid-cols-2"
+              : ""
+          }`}
+        >
+          {whales.clusteredBuys.length > 0 ? (
+            <div className="bg-white px-5 py-4">
+              <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Clustered buys
+              </div>
+              <ul className="space-y-2">
+                {whales.clusteredBuys.map((row) => (
+                  <li
+                    key={row.ticker}
+                    className="flex items-baseline justify-between gap-3 text-sm"
+                  >
+                    <a
+                      href={dataromaStockUrl(row.ticker)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-w-0 truncate text-slate-800 no-underline hover:text-teal-800"
+                    >
+                      <span className="font-semibold">{row.ticker}</span>
+                      <span className="ml-2 text-slate-500">{row.name}</span>
+                    </a>
+                    <span className="shrink-0 tabular-nums text-slate-500">
+                      {row.buyerCount} funds
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {whales.notableBuys.length > 0 ? (
+            <div className="bg-white px-5 py-4">
+              <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Notable adds
+              </div>
+              <ul className="space-y-2.5">
+                {whales.notableBuys.map((move) => (
+                  <li
+                    key={`${move.manager}-${move.ticker}-${move.period}`}
+                    className="text-sm leading-snug text-slate-700"
+                  >
+                    <span className="font-semibold text-slate-900">
+                      {move.manager}
+                    </span>
+                    <span className="text-slate-400"> · {move.period}</span>
+                    <div className="mt-0.5 text-slate-600">
+                      {formatMoveAction(move)}{" "}
+                      <a
+                        href={dataromaStockUrl(move.ticker)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-teal-800 no-underline hover:underline"
+                      >
+                        {move.ticker}
+                      </a>{" "}
+                      · {move.portfolioPct.toFixed(1)}% of book
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+
+        {whales.realtimeBuys.length > 0 ? (
+          <div className="border-t border-slate-100 px-5 py-4">
+            <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              Recent Form 4 buys
+            </div>
+            <ul className="space-y-2">
+              {whales.realtimeBuys.map((row) => (
+                <li
+                  key={`${row.filer}-${row.security}-${row.date}`}
+                  className="flex items-baseline justify-between gap-3 text-sm"
+                >
+                  <span className="min-w-0 text-slate-700">
+                    <span className="font-semibold text-slate-900">
+                      {row.filer}
+                    </span>
+                    <span className="text-slate-500"> · {row.security}</span>
+                    <span className="ml-2 text-xs text-slate-400">
+                      {row.date}
+                    </span>
+                  </span>
+                  <span className="shrink-0 tabular-nums font-medium text-slate-800">
+                    {formatWhaleUsd(row.totalUsd)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-400">
+          Source:{" "}
+          <a
+            href={whales.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-teal-800 underline decoration-teal-800/30 underline-offset-2 hover:decoration-teal-800"
+          >
+            {whales.sourceName}
+          </a>{" "}
+          (superinvestor 13Fs + Form 4)
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default async function MarketsPage({
   params,
 }: {
@@ -278,8 +486,8 @@ export default async function MarketsPage({
             Markets brief
           </h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-slate-600">
-            Fear &amp; greed, watchlist charts, and earnings for the latest
-            daily run.
+            Fear &amp; greed, hedge-fund flows, watchlist charts, and earnings
+            for the latest daily run.
           </p>
           <p className="mt-2 text-sm text-slate-500">{dateLabel}</p>
           {brief.themeOfTheDay?.trim() ? (
@@ -309,6 +517,8 @@ export default async function MarketsPage({
             </p>
           ) : null}
         </section>
+
+        <WhaleWatchSection whales={brief.whales} />
 
         <section className="mb-12">
           <h2 className="mb-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">

@@ -305,6 +305,55 @@ const brief: DailyBrief = {
       },
     ],
   },
+  whales: {
+    collectedAt: new Date().toISOString(),
+    quarterLabel: "Q2 2026",
+    filingsSoFar: 23,
+    filingsTotal: 83,
+    buyAddCount: 700,
+    briefing:
+      "Placeholder whale briefing — superinvestor 13Fs are still coming in for Q2.",
+    themes: [
+      {
+        title: "Managed care",
+        detail: "ELV and UNH show up among the most-shared buys so far.",
+      },
+    ],
+    clusteredBuys: [
+      {
+        ticker: "BRK.B",
+        name: "Berkshire Hathaway CL B",
+        buyerCount: 6,
+        portfolioWeightPct: 0.069,
+      },
+    ],
+    notableBuys: [
+      {
+        manager: "Bill Ackman - Pershing Square",
+        period: "Q1 2026",
+        ticker: "MSFT",
+        name: "Microsoft Corp.",
+        action: "Buy",
+        portfolioPct: 15.26,
+      },
+    ],
+    realtimeBuys: [
+      {
+        date: "31 Jul 2026",
+        filer: "DURABLE CAPITAL PARTNERS LP",
+        security: "Goosehead Insurance Inc",
+        totalUsd: 9_800_000,
+      },
+    ],
+    watchlist: [
+      {
+        tickerId: "MSFT",
+        note: "Ackman opened a large new stake last quarter.",
+      },
+    ],
+    sourceUrl: "https://www.dataroma.com/m/allact.php?typ=a",
+    sourceName: "Dataroma",
+  },
   generatedAt: new Date().toISOString(),
   model: "test-send (no LLM)",
   windowHours: 24,

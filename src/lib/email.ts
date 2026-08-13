@@ -253,7 +253,7 @@ function renderMarketsCta(url: string | null) {
           <td style="padding:18px 20px;">
             <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0f766e;margin:0 0 6px 0;">Full markets brief</div>
             <div style="font-size:15px;line-height:1.5;color:#334155;margin:0 0 14px 0;">
-              Fear &amp; greed, TradingView charts, ticker notes, and earnings — open the hosted page.
+              Fear &amp; greed, hedge-fund flows, TradingView charts, ticker notes, and earnings — open the hosted page.
             </div>
             <a href="${escapeHtml(url)}" style="display:inline-block;background:#0f766e;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:999px;padding:10px 18px;">
               Open full markets brief →
@@ -989,7 +989,7 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     lines.push(
       "",
       "FULL MARKETS BRIEF",
-      "Fear & greed, TradingView charts, ticker notes, and earnings:",
+      "Fear & greed, hedge-fund flows, TradingView charts, ticker notes, and earnings:",
       marketsUrl,
     );
   }
