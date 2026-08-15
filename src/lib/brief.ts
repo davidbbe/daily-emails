@@ -7,6 +7,7 @@ import type { NewsItem, ResearchBundle } from "@/lib/research";
 import type { RedditSubFeed } from "@/lib/reddit";
 import type { SentimentReport } from "@/lib/sentiment";
 import { buildBriefTrends, type BriefTrends } from "@/lib/trends";
+import type { TickerValuation } from "@/lib/valuation";
 import { buildWhaleBrief, type WhaleBrief } from "@/lib/whale-brief";
 
 export const BULLET_FLAGS = ["Watch", "Noise", "Actionable"] as const;
@@ -60,6 +61,8 @@ export type DailyBrief = {
   sentiment: SentimentReport;
   /** Superinvestor 13F briefing for the hosted markets page */
   whales: WhaleBrief;
+  /** Value multiples for listed equity tickers — pass-through, no LLM */
+  valuation: TickerValuation[];
   generatedAt: string;
   model: string;
   windowHours: number;
@@ -431,6 +434,7 @@ export async function generateDailyBrief(
     sites: bundle.sites ?? [],
     sentiment,
     whales,
+    valuation: bundle.valuation ?? [],
     hasPreviousBrief: Boolean(previous),
     themeOfTheDay:
       synthesisResult.object.themeOfTheDay.trim() ||

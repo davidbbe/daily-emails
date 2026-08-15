@@ -100,6 +100,18 @@ export async function GET(request: Request) {
         notableBuys: brief.whales?.notableBuys.length ?? 0,
         error: brief.whales?.error ?? null,
       },
+      valuation: (brief.valuation ?? []).map((row) => ({
+        tickerId: row.tickerId,
+        pe: row.pe ?? null,
+        forwardPe: row.forwardPe ?? null,
+        fcfYield: row.fcfYield ?? null,
+        peg: row.peg ?? null,
+        evEbitda: row.evEbitda ?? null,
+        netDebtEbitda: row.netDebtEbitda ?? null,
+        pe5yAvg: row.pe5yAvg ?? null,
+        roic: row.roic ?? null,
+        error: row.error ?? null,
+      })),
       usage: {
         thresholdPercent: usage.thresholdPercent,
         watch: usage.watch.map((m) => ({

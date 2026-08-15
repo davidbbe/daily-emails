@@ -49,13 +49,12 @@ function loadTradingViewScript() {
 }
 
 const DEFAULT_STUDIES = [
-  { id: "MACD@tv-basicstudies" },
   { id: "RSI@tv-basicstudies", inputs: { length: 14 } },
 ];
 
 export function TradingViewChart({
   symbol,
-  height = 720,
+  height = 360,
 }: TradingViewChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const reactId = useId().replace(/:/g, "");

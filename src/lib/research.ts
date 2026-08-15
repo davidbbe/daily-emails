@@ -25,6 +25,10 @@ import {
   type SentimentReport,
 } from "@/lib/sentiment";
 import {
+  collectValuation,
+  type TickerValuation,
+} from "@/lib/valuation";
+import {
   collectWhaleActivity,
   emptyWhaleResearch,
   type WhaleResearch,
@@ -61,6 +65,8 @@ export type ResearchBundle = {
   sentiment: SentimentReport;
   /** Superinvestor 13F / Form 4 activity — pass-through, then LLM briefing */
   whales: WhaleResearch;
+  /** Value multiples for listed equity tickers — pass-through, no LLM */
+  valuation: TickerValuation[];
 };
 
 const parser = new Parser({
@@ -207,7 +213,8 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
   const people: Record<string, NewsItem[]> = {};
   const trends = {} as Record<TrendRegionId, TrendItem[]>;
 
-  const [, , earnings, reddit, , sites, sentiment, whales] = await Promise.all([
+  const [, , earnings, reddit, , sites, sentiment, whales, valuation] =
+    await Promise.all([
     Promise.all(
       TICKERS.map(async (ticker) => {
         tickers[ticker.id] = await fetchRecentNews(ticker.query, hours);
@@ -253,6 +260,10 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
         error instanceof Error ? error.message : "Whale activity fetch failed",
       );
     }),
+    collectValuation().catch((error) => {
+      console.warn("valuation fetch failed", error);
+      return [] as TickerValuation[];
+    }),
   ]);
 
   return {
@@ -266,5 +277,6 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
     sites,
     sentiment,
     whales,
+    valuation,
   };
 }

@@ -24,6 +24,7 @@ import {
 import type { NewsItem, ResearchBundle, TrendItem } from "@/lib/research";
 import { collectSentiment } from "@/lib/sentiment";
 import { collectUsageReport } from "@/lib/usage";
+import { collectValuation, type TickerValuation } from "@/lib/valuation";
 import { collectWhaleActivity, emptyWhaleResearch } from "@/lib/whales";
 import Parser from "rss-parser";
 
@@ -100,7 +101,7 @@ async function collectResearchWithoutTrendsOrReddit(
     trends[region.id] = [];
   }
 
-  const [, , earnings, sites, sentiment, whales] = await Promise.all([
+  const [, , earnings, sites, sentiment, whales, valuation] = await Promise.all([
     Promise.all(
       TICKERS.map(async (ticker) => {
         tickers[ticker.id] = await fetchRecentNews(ticker.query, hours).catch(
@@ -133,6 +134,10 @@ async function collectResearchWithoutTrendsOrReddit(
         error instanceof Error ? error.message : "Whale activity fetch failed",
       );
     }),
+    collectValuation().catch((error) => {
+      console.warn("valuation fetch failed", error);
+      return [] as TickerValuation[];
+    }),
   ]);
 
   return {
@@ -146,6 +151,7 @@ async function collectResearchWithoutTrendsOrReddit(
     sites,
     sentiment,
     whales,
+    valuation,
   };
 }
 

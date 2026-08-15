@@ -24,6 +24,13 @@ import {
   formatWhaleUsd,
   type WhaleBrief,
 } from "@/lib/whale-brief";
+import {
+  collectValuation,
+  hasValuationMetrics,
+  valuationContextLine,
+  valuationMetrics,
+  type TickerValuation,
+} from "@/lib/valuation";
 import type { WhaleManagerMove } from "@/lib/whales";
 
 export const dynamic = "force-dynamic";
@@ -189,6 +196,32 @@ function ProxyBlock({ proxy }: { proxy: TickerGreedProxy }) {
         label="Greed proxy"
         gradientId={`proxy-${proxy.tickerId.toLowerCase()}`}
       />
+    </div>
+  );
+}
+
+function TickerValueCard({ valuation }: { valuation: TickerValuation }) {
+  if (!hasValuationMetrics(valuation)) return null;
+  const metrics = valuationMetrics(valuation);
+  const context = valuationContextLine(valuation);
+
+  return (
+    <div className="border-b border-slate-100 px-5 py-3">
+      <div className="grid grid-cols-3 gap-x-3 gap-y-2 sm:grid-cols-6">
+        {metrics.map((metric) => (
+          <div key={metric.key}>
+            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              {metric.label}
+            </div>
+            <div className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900">
+              {metric.value}
+            </div>
+          </div>
+        ))}
+      </div>
+      {context ? (
+        <p className="mt-2 text-xs leading-relaxed text-slate-500">{context}</p>
+      ) : null}
     </div>
   );
 }
@@ -473,6 +506,17 @@ export default async function MarketsPage({
   const earningsByTicker = new Map(
     brief.earningsCalendar.map((event) => [event.tickerId, event] as const),
   );
+  let valuationRows = brief.valuation ?? [];
+  if (!valuationRows.some(hasValuationMetrics)) {
+    try {
+      valuationRows = await collectValuation();
+    } catch (error) {
+      console.warn("markets: live valuation hydrate failed", error);
+    }
+  }
+  const valuationByTicker = new Map(
+    valuationRows.map((row) => [row.tickerId, row] as const),
+  );
   const dateLabel = formatHumanDate(brief.generatedAt);
 
   return (
@@ -486,8 +530,8 @@ export default async function MarketsPage({
             Markets brief
           </h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-slate-600">
-            Fear &amp; greed, hedge-fund flows, watchlist charts, and earnings
-            for the latest daily run.
+            Fear &amp; greed, hedge-fund flows, valuation, watchlist charts, and
+            earnings for the latest daily run.
           </p>
           <p className="mt-2 text-sm text-slate-500">{dateLabel}</p>
           {brief.themeOfTheDay?.trim() ? (
@@ -529,6 +573,7 @@ export default async function MarketsPage({
               const section = brief.tickers.find((t) => t.id === ticker.id);
               const proxy = proxyByTicker.get(ticker.id);
               const earnings = earningsByTicker.get(ticker.id);
+              const valuation = valuationByTicker.get(ticker.id);
               const pill =
                 TICKER_PILL[ticker.id] ?? "bg-slate-100 text-slate-600";
 
@@ -550,6 +595,8 @@ export default async function MarketsPage({
                     </div>
                     {earnings ? <TickerEarningsDates event={earnings} /> : null}
                   </div>
+
+                  {valuation ? <TickerValueCard valuation={valuation} /> : null}
 
                   <div className="space-y-4 px-5 py-5">
                     <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_11rem] sm:items-start">

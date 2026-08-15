@@ -354,6 +354,7 @@ const brief: DailyBrief = {
     sourceUrl: "https://www.dataroma.com/m/allact.php?typ=a",
     sourceName: "Dataroma",
   },
+  valuation: [],
   generatedAt: new Date().toISOString(),
   model: "test-send (no LLM)",
   windowHours: 24,

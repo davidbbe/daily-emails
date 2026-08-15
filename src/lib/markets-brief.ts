@@ -3,6 +3,7 @@ import path from "node:path";
 import { get, put } from "@vercel/blob";
 import type { DailyBrief, EarningsEvent, TickerBrief } from "@/lib/brief";
 import type { SentimentReport } from "@/lib/sentiment";
+import type { TickerValuation } from "@/lib/valuation";
 import type { WhaleBrief } from "@/lib/whale-brief";
 
 const BLOB_PATHNAME = "daily-emails/markets-latest.json";
@@ -16,6 +17,7 @@ export type MarketsBrief = {
   tickers: TickerBrief[];
   earningsCalendar: EarningsEvent[];
   whales?: WhaleBrief;
+  valuation?: TickerValuation[];
 };
 
 export function toMarketsBrief(brief: DailyBrief): MarketsBrief {
@@ -26,6 +28,7 @@ export function toMarketsBrief(brief: DailyBrief): MarketsBrief {
     tickers: brief.tickers,
     earningsCalendar: brief.earningsCalendar,
     whales: brief.whales,
+    valuation: brief.valuation,
   };
 }
 
