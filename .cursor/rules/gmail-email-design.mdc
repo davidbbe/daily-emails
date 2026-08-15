@@ -13,7 +13,7 @@ This project’s emails are opened **only in Gmail** (web + mobile). Optimize fo
 - Build HTML as strings in `src/lib/email.ts` with nested `<table role="presentation">` for structure.
 - Critical styles must be **inline** on elements (Gmail may strip or limit `<style>`).
 - Escape all dynamic text with `escapeHtml`.
-- Markets charts (Fear & greed, whale watch, ticker notes, earnings, TradingView) live on the secret hosted page (`/markets/<token>`), not in the email. Keep Overnight + a CTA link in the email body.
+- Markets charts (Fear & greed, insider trades, whale watch, ticker notes, earnings, TradingView) live on the secret hosted page (`/markets/<token>`), not in the email. Keep Overnight + a CTA link in the email body.
 - Always ship a plain-text part (`renderBriefText`) alongside HTML.
 
 ## Prefer (Gmail-supported polish)

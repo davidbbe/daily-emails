@@ -4,6 +4,7 @@ import { get, put } from "@vercel/blob";
 import type { DailyBrief, EarningsEvent, TickerBrief } from "@/lib/brief";
 import type { SentimentReport } from "@/lib/sentiment";
 import type { TickerValuation } from "@/lib/valuation";
+import type { InsiderBrief } from "@/lib/openinsider";
 import type { WhaleBrief } from "@/lib/whale-brief";
 
 const BLOB_PATHNAME = "daily-emails/markets-latest.json";
@@ -15,6 +16,7 @@ export type MarketsBrief = {
   sentiment: SentimentReport;
   tickers: TickerBrief[];
   earningsCalendar: EarningsEvent[];
+  insiders?: InsiderBrief;
   whales?: WhaleBrief;
   valuation?: TickerValuation[];
 };
@@ -25,6 +27,7 @@ export function toMarketsBrief(brief: DailyBrief): MarketsBrief {
     sentiment: brief.sentiment,
     tickers: brief.tickers,
     earningsCalendar: brief.earningsCalendar,
+    insiders: brief.insiders,
     whales: brief.whales,
     valuation: brief.valuation,
   };

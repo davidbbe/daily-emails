@@ -25,6 +25,7 @@ import type { NewsItem, ResearchBundle, TrendItem } from "@/lib/research";
 import { collectSentiment } from "@/lib/sentiment";
 import { collectUsageReport } from "@/lib/usage";
 import { collectValuation, type TickerValuation } from "@/lib/valuation";
+import { collectInsiderTrades, emptyInsiderBrief } from "@/lib/openinsider";
 import { collectWhaleActivity, emptyWhaleResearch } from "@/lib/whales";
 import Parser from "rss-parser";
 
@@ -101,7 +102,7 @@ async function collectResearchWithoutTrendsOrReddit(
     trends[region.id] = [];
   }
 
-  const [, , earnings, sites, sentiment, whales, valuation] = await Promise.all([
+  const [, , earnings, sites, sentiment, insiders, whales, valuation] = await Promise.all([
     Promise.all(
       TICKERS.map(async (ticker) => {
         tickers[ticker.id] = await fetchRecentNews(ticker.query, hours).catch(
@@ -128,6 +129,12 @@ async function collectResearchWithoutTrendsOrReddit(
       return [] as SiteAnalytics[];
     }),
     collectSentiment(),
+    collectInsiderTrades().catch((error) => {
+      console.warn("insider trades fetch failed", error);
+      return emptyInsiderBrief(
+        error instanceof Error ? error.message : "Insider trades fetch failed",
+      );
+    }),
     collectWhaleActivity().catch((error) => {
       console.warn("whale activity fetch failed", error);
       return emptyWhaleResearch(
@@ -150,6 +157,7 @@ async function collectResearchWithoutTrendsOrReddit(
     reddit: [],
     sites,
     sentiment,
+    insiders,
     whales,
     valuation,
   };
@@ -187,6 +195,12 @@ async function main() {
           score: t.score ?? null,
           stance: t.stance ?? null,
         })),
+        insiders: {
+          window: research.insiders.windowLabel,
+          buys: research.insiders.buyCount,
+          sells: research.insiders.sellCount,
+          error: research.insiders.error ?? null,
+        },
         whales: {
           quarter: research.whales.quarterLabel,
           clusters: research.whales.clusterBuys.length,

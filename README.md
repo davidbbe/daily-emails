@@ -10,26 +10,27 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
 2. Checks for speeches/announcements by **Andrej Karpathy, Jensen Huang, Alex Karp, Sam Altman**
 3. Pulls previous + next earnings report dates for public tickers on the watchlist
 4. Pulls **Fear & greed** meters (CNN equities, Crypto Alternative.me, VIX) plus a per-ticker greed proxy (52-week range + RSI)
-5. Pulls **superinvestor 13F activity** from [Dataroma](https://www.dataroma.com/m/home.php) (clustered buys, notable adds, recent Form 4) and writes a short whale briefing
-6. Pulls Google Trends top searches (Trending Now) for:
+5. Pulls **open-market Form 4 buys and sells** from [OpenInsider](http://openinsider.com/) filed in the last 24 hours (officer-weighted, watchlist hits, clustered buys)
+6. Pulls **superinvestor 13F activity** from [Dataroma](https://www.dataroma.com/m/home.php) (clustered buys, notable adds, recent Form 4) and writes a short whale briefing
+7. Pulls Google Trends top searches (Trending Now) for:
    - **United States** — top 10 (with traffic + related news; non-English titles translated)
    - **Thailand** and **Bulgaria** — top 3 each, summarized in English (what’s rising and why; no local-language text)
    - Fetches **2×** each region’s limit, drops **Sports**-category rows, then keeps the configured top N
-7. Flags topics rising in **2+ regions**
-8. Pulls top Reddit posts (title, link, thumbnail when available) for configured subreddits
-9. Pulls **GA4** yesterday + 7-day trend + month-to-date overviews for configured sites (when a service account is set)
-10. Loads yesterday’s slim snapshot (when available) as synthesis context
-11. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
-12. Saves a **markets brief** payload for the secret hosted page (Blob when configured, otherwise `.data/markets-latest.json`)
-13. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest (Overnight stays in-email; full markets live on the hosted page)
-14. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
-15. Saves a slim day-over-day snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
+8. Flags topics rising in **2+ regions**
+9. Pulls top Reddit posts (title, link, thumbnail when available) for configured subreddits
+10. Pulls **GA4** yesterday + 7-day trend + month-to-date overviews for configured sites (when a service account is set)
+11. Loads yesterday’s slim snapshot (when available) as synthesis context
+12. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
+13. Saves a **markets brief** payload for the secret hosted page (Blob when configured, otherwise `.data/markets-latest.json`)
+14. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest (Overnight stays in-email; full markets live on the hosted page)
+15. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
+16. Saves a slim day-over-day snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
 
 Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGIONS`, `REDDIT_SUBREDDITS`, `GA_ACCOUNTS`, `DEFAULT_MODEL`).
 
 ## Hosted markets page
 
-Fear & greed, whale watch, watchlist notes, greed proxies, **TradingView** charts, and earnings render at a **secret URL**:
+Fear & greed, insider trades, whale watch, watchlist notes, greed proxies, **TradingView** charts, and earnings render at a **secret URL**:
 
 ```
 https://your-app.vercel.app/markets/<MARKETS_PAGE_SECRET>
@@ -50,6 +51,7 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 | **Overnight openers** _(email)_                           | Google News RSS — last 24h per ticker                                                                                                                              | Same core brief call — one session-context line each                                                                            |
 | **Full markets brief CTA** _(email → hosted page)_        | Link built from `APP_BASE_URL` + `MARKETS_PAGE_SECRET`                                                                                                             | **No LLM**                                                                                                                      |
 | **Fear & greed** _(hosted page)_                          | CNN F&G, Alternative.me Crypto F&G, VIX via feargreedchart; equities via Stock Analysis (52w + RSI14); BTC via CoinGecko                                           | **No LLM** — value dial + Lean buy / Neutral / Patience stance per ticker (SPCX skipped — private)                              |
+| **Insider trades** _(hosted page)_                        | [OpenInsider](http://openinsider.com/) SEC Form 4 open-market P/S filed in the last 24 hours (buys $25k+, sells $100k+; clusters + watchlist)                      | **No LLM** — tables stay data-backed. Falls back to the latest filing day on weekends / Monday 09:00 UTC.                       |
 | **Whale watch** _(hosted page)_                           | [Dataroma](https://www.dataroma.com/m/home.php) superinvestor 13Fs (clustered buys, manager adds) + Form 4 realtime buys                                           | AI Gateway — briefing, sector themes, watchlist overlap. Tables stay data-backed. 13Fs lag up to 45 days.                       |
 | **Markets + TradingView** _(hosted page)_                 | Google News RSS — last 24h; charts via TradingView embeds (`tradingViewSymbol` in config)                                                                          | Core brief: 3–5 bullets with **Watch / Noise / Actionable** flags, **source links**, **why it matters**                         |
 | **Earnings & catalysts** _(hosted page)_                  | Stock Analysis earnings calendar (prev + next report dates)                                                                                                        | **No LLM** — skips BTC / SPCX                                                                                                   |

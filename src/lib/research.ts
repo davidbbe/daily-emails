@@ -29,6 +29,11 @@ import {
   type TickerValuation,
 } from "@/lib/valuation";
 import {
+  collectInsiderTrades,
+  emptyInsiderBrief,
+  type InsiderBrief,
+} from "@/lib/openinsider";
+import {
   collectWhaleActivity,
   emptyWhaleResearch,
   type WhaleResearch,
@@ -63,6 +68,8 @@ export type ResearchBundle = {
   sites: SiteAnalytics[];
   /** Fear & greed meters + per-ticker proxies — pass-through, no LLM */
   sentiment: SentimentReport;
+  /** Open-market Form 4 buys/sells from OpenInsider — pass-through, no LLM */
+  insiders: InsiderBrief;
   /** Superinvestor 13F / Form 4 activity — pass-through, then LLM briefing */
   whales: WhaleResearch;
   /** Value multiples for listed equity tickers — pass-through, no LLM */
@@ -213,7 +220,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
   const people: Record<string, NewsItem[]> = {};
   const trends = {} as Record<TrendRegionId, TrendItem[]>;
 
-  const [, , earnings, reddit, , sites, sentiment, whales, valuation] =
+  const [, , earnings, reddit, , sites, sentiment, insiders, whales, valuation] =
     await Promise.all([
     Promise.all(
       TICKERS.map(async (ticker) => {
@@ -254,6 +261,12 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
           "Sentiment meters unavailable today — rely on valuation and catalysts.",
       } satisfies SentimentReport;
     }),
+    collectInsiderTrades().catch((error) => {
+      console.warn("insider trades fetch failed", error);
+      return emptyInsiderBrief(
+        error instanceof Error ? error.message : "Insider trades fetch failed",
+      );
+    }),
     collectWhaleActivity().catch((error) => {
       console.warn("whale activity fetch failed", error);
       return emptyWhaleResearch(
@@ -276,6 +289,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
     reddit,
     sites,
     sentiment,
+    insiders,
     whales,
     valuation,
   };

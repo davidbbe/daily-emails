@@ -91,6 +91,14 @@ export async function GET(request: Request) {
           error: t.error ?? null,
         })),
       },
+      insiders: {
+        windowLabel: brief.insiders?.windowLabel ?? null,
+        buyCount: brief.insiders?.buyCount ?? 0,
+        sellCount: brief.insiders?.sellCount ?? 0,
+        clusters: brief.insiders?.clusters.length ?? 0,
+        watchlist: brief.insiders?.watchlist.length ?? 0,
+        error: brief.insiders?.error ?? null,
+      },
       whales: {
         quarterLabel: brief.whales?.quarterLabel ?? null,
         filingsSoFar: brief.whales?.filingsSoFar ?? null,

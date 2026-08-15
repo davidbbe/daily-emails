@@ -20,7 +20,16 @@ import {
   type TickerGreedProxy,
 } from "@/lib/sentiment";
 import { buildVixLineChartSvg } from "@/lib/vix-line-chart";
+import {
+  collectInsiderTrades,
+  formatInsiderUsd,
+  hasInsiderTrades,
+  type InsiderBrief,
+  type InsiderCluster,
+  type InsiderTrade,
+} from "@/lib/openinsider";
 import type { WhaleBrief } from "@/lib/whale-brief";
+import type { WhaleManagerMove } from "@/lib/whales";
 import {
   annotateValuation,
   collectValuation,
@@ -31,7 +40,6 @@ import {
   type TickerValuation,
   type ValueStance,
 } from "@/lib/valuation";
-import type { WhaleManagerMove } from "@/lib/whales";
 
 export const dynamic = "force-dynamic";
 
@@ -275,6 +283,200 @@ function TickerEarningsDates({ event }: { event: EarningsEvent }) {
   );
 }
 
+function signedInsiderUsd(trade: InsiderTrade) {
+  const amount = formatInsiderUsd(trade.valueUsd);
+  return trade.side === "buy" ? `+${amount}` : `−${amount}`;
+}
+
+function TradeRow({ trade }: { trade: InsiderTrade }) {
+  const pill = TICKER_PILL[trade.ticker] ?? "bg-slate-100 text-slate-600";
+  return (
+    <li className="text-sm leading-snug">
+      <div className="flex items-baseline justify-between gap-3">
+        <a
+          href={trade.tickerUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="min-w-0 truncate text-slate-800 no-underline hover:text-teal-800"
+        >
+          <span className="font-semibold">{trade.ticker}</span>
+          {trade.watchlist ? (
+            <span
+              className={`ml-2 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-bold ${pill}`}
+            >
+              Watchlist
+            </span>
+          ) : null}
+          <span className="ml-2 text-slate-500">{trade.company}</span>
+        </a>
+        <span
+          className={`shrink-0 tabular-nums font-semibold ${
+            trade.side === "buy" ? "text-emerald-700" : "text-red-700"
+          }`}
+        >
+          {signedInsiderUsd(trade)}
+        </span>
+      </div>
+      <div className="mt-0.5 flex items-baseline justify-between gap-3 text-slate-600">
+        <span className="min-w-0 truncate">
+          {trade.insider}
+          {trade.title ? (
+            <span className="text-slate-400"> · {trade.title}</span>
+          ) : null}
+        </span>
+        <span className="shrink-0 tabular-nums text-slate-500">
+          {trade.ownChange}
+          {trade.price ? ` · $${trade.price.toFixed(2)}` : ""}
+        </span>
+      </div>
+    </li>
+  );
+}
+
+function ClusterRow({ row }: { row: InsiderCluster }) {
+  return (
+    <li className="flex items-baseline justify-between gap-3 text-sm">
+      <a
+        href={row.tickerUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="min-w-0 truncate text-slate-800 no-underline hover:text-teal-800"
+      >
+        <span className="font-semibold">{row.ticker}</span>
+        <span className="ml-2 text-slate-500">{row.company}</span>
+        {row.titles.length > 0 ? (
+          <span className="ml-2 text-slate-400">{row.titles.join(", ")}</span>
+        ) : null}
+      </a>
+      <span className="shrink-0 tabular-nums text-slate-500">
+        {row.insiderCount} insiders · +{formatInsiderUsd(row.valueUsd)}
+      </span>
+    </li>
+  );
+}
+
+function InsiderTradesSection({ insiders }: { insiders?: InsiderBrief }) {
+  if (!insiders || !hasInsiderTrades(insiders)) {
+    if (insiders?.error) {
+      return (
+        <section className="mb-12">
+          <h2 className="mb-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+            Insider trades
+          </h2>
+          <p className="italic text-slate-400">{insiders.error}</p>
+        </section>
+      );
+    }
+    return null;
+  }
+
+  const countNote = [
+    insiders.buyCount ? `${insiders.buyCount} buys` : "",
+    insiders.sellCount ? `${insiders.sellCount} sells` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <section className="mb-12">
+      <div className="mb-4">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+            Insider trades
+          </h2>
+          <p className="text-xs text-slate-400">
+            {[insiders.windowLabel, countNote].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+        <p className="mt-1.5 text-xs text-slate-400">
+          Data from{" "}
+          <a
+            href={insiders.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-teal-800 underline decoration-teal-800/30 underline-offset-2 hover:decoration-teal-800"
+          >
+            {insiders.sourceName}
+          </a>
+          , an SEC Form 4 insider-trading screener.
+        </p>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {insiders.watchlist.length > 0 ? (
+          <div className="border-b border-slate-100 px-5 py-4">
+            <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              Watchlist
+            </div>
+            <ul className="space-y-2.5">
+              {insiders.watchlist.map((trade) => (
+                <TradeRow
+                  key={`watch-${trade.ticker}-${trade.insider}-${trade.filingAt}`}
+                  trade={trade}
+                />
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {insiders.clusters.length > 0 ? (
+          <div className="border-b border-slate-100 px-5 py-4">
+            <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              Clustered buys
+            </div>
+            <ul className="space-y-2">
+              {insiders.clusters.map((row) => (
+                <ClusterRow key={row.ticker} row={row} />
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div
+          className={`grid gap-px bg-slate-100 ${
+            insiders.buys.length > 0 && insiders.sells.length > 0
+              ? "lg:grid-cols-2"
+              : ""
+          }`}
+        >
+          {insiders.buys.length > 0 ? (
+            <div className="bg-white px-5 py-4">
+              <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Open-market buys
+              </div>
+              <ul className="space-y-2.5">
+                {insiders.buys.map((trade) => (
+                  <TradeRow
+                    key={`buy-${trade.ticker}-${trade.insider}-${trade.filingAt}`}
+                    trade={trade}
+                  />
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {insiders.sells.length > 0 ? (
+            <div className="bg-white px-5 py-4">
+              <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Open-market sells
+              </div>
+              <ul className="space-y-2.5">
+                {insiders.sells.map((trade) => (
+                  <TradeRow
+                    key={`sell-${trade.ticker}-${trade.insider}-${trade.filingAt}`}
+                    trade={trade}
+                  />
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+
+      </div>
+    </section>
+  );
+}
+
 function dataromaStockUrl(ticker: string) {
   return `https://www.dataroma.com/m/stock.php?sym=${encodeURIComponent(ticker)}`;
 }
@@ -303,12 +505,26 @@ function WhaleWatchSection({ whales }: { whales?: WhaleBrief }) {
 
   return (
     <section className="mb-12">
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-        <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-          Whale watch
-        </h2>
-        <p className="text-xs text-slate-400">
-          {[whales.quarterLabel, filingNote].filter(Boolean).join(" · ")}
+      <div className="mb-4">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+            Whale watch
+          </h2>
+          <p className="text-xs text-slate-400">
+            {[whales.quarterLabel, filingNote].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+        <p className="mt-1.5 text-xs text-slate-400">
+          Data from{" "}
+          <a
+            href={whales.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-teal-800 underline decoration-teal-800/30 underline-offset-2 hover:decoration-teal-800"
+          >
+            {whales.sourceName}
+          </a>
+          , which tracks superinvestor 13F filings.
         </p>
       </div>
 
@@ -416,18 +632,6 @@ function WhaleWatchSection({ whales }: { whales?: WhaleBrief }) {
           ) : null}
         </div>
 
-        <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-400">
-          Source:{" "}
-          <a
-            href={whales.sourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-teal-800 underline decoration-teal-800/30 underline-offset-2 hover:decoration-teal-800"
-          >
-            {whales.sourceName}
-          </a>{" "}
-          (superinvestor 13Fs)
-        </div>
       </div>
     </section>
   );
@@ -460,6 +664,11 @@ export default async function MarketsPage({
       </main>
     );
   }
+
+  const liveInsidersPromise = collectInsiderTrades().catch((error) => {
+    console.warn("markets: live insider trades hydrate failed", error);
+    return null;
+  });
 
   // Older briefs omit VIX history — hydrate the chart from the live quote API.
   const meters = [...(brief.sentiment?.meters ?? [])];
@@ -504,6 +713,13 @@ export default async function MarketsPage({
   const valuationByTicker = new Map(
     valuationRows.map((row) => [row.tickerId, row] as const),
   );
+  const liveInsiders = await liveInsidersPromise;
+  const insiders =
+    liveInsiders &&
+    (hasInsiderTrades(liveInsiders) || !hasInsiderTrades(brief.insiders))
+      ? liveInsiders
+      : brief.insiders;
+
   const dateLabel = formatTitleDate(brief.generatedAt);
 
   return (
@@ -514,8 +730,8 @@ export default async function MarketsPage({
             Markets brief - {dateLabel}
           </h1>
           <p className="mt-3 text-base leading-relaxed text-slate-600">
-            Fear &amp; greed, hedge-fund flows, valuation, watchlist charts, and
-            earnings for the latest daily run.
+            Fear &amp; greed, insider trades, whale watch, valuation, watchlist
+            charts, and earnings for the latest daily run.
           </p>
         </header>
 
@@ -538,6 +754,8 @@ export default async function MarketsPage({
             </p>
           ) : null}
         </section>
+
+        <InsiderTradesSection insiders={insiders} />
 
         <WhaleWatchSection whales={brief.whales} />
 

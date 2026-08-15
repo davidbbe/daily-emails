@@ -7,6 +7,7 @@ import type { NewsItem, ResearchBundle } from "@/lib/research";
 import type { RedditSubFeed } from "@/lib/reddit";
 import type { SentimentReport } from "@/lib/sentiment";
 import { buildBriefTrends, type BriefTrends } from "@/lib/trends";
+import { emptyInsiderBrief, type InsiderBrief } from "@/lib/openinsider";
 import { annotateValuation, type TickerValuation } from "@/lib/valuation";
 import { buildWhaleBrief, type WhaleBrief } from "@/lib/whale-brief";
 
@@ -58,6 +59,8 @@ export type DailyBrief = {
   sites: SiteAnalytics[];
   /** Fear & greed meters + per-ticker proxies — pass-through, no LLM */
   sentiment: SentimentReport;
+  /** Open-market Form 4 buys/sells for the hosted markets page */
+  insiders: InsiderBrief;
   /** Superinvestor 13F briefing for the hosted markets page */
   whales: WhaleBrief;
   /** Value multiples for listed equity tickers, plus a short LLM take */
@@ -429,6 +432,7 @@ export async function generateDailyBrief(
     reddit: bundle.reddit ?? [],
     sites: bundle.sites ?? [],
     sentiment,
+    insiders: bundle.insiders ?? emptyInsiderBrief("Insider trades were not collected"),
     whales,
     valuation,
     hasPreviousBrief: Boolean(previous),
