@@ -12,7 +12,7 @@ import {
   gaugeScoreFromMeter,
 } from "@/lib/fear-greed-gauge";
 import { isValidMarketsToken } from "@/lib/markets-auth";
-import { loadMarketsBrief } from "@/lib/markets-brief";
+import { loadMarketsBrief, saveMarketsBrief } from "@/lib/markets-brief";
 import {
   fetchVixMeter,
   type FearGreedMeter,
@@ -25,11 +25,14 @@ import {
   type WhaleBrief,
 } from "@/lib/whale-brief";
 import {
+  annotateValuation,
   collectValuation,
   hasValuationMetrics,
+  needsValueInvestorNote,
   valuationContextLine,
   valuationMetrics,
   type TickerValuation,
+  type ValueStance,
 } from "@/lib/valuation";
 import type { WhaleManagerMove } from "@/lib/whales";
 
@@ -52,6 +55,13 @@ const FLAG_STYLES: Record<BriefBullet["flag"], string> = {
   Actionable: "bg-emerald-50 text-emerald-700",
   Watch: "bg-amber-50 text-amber-700",
   Noise: "bg-slate-100 text-slate-500",
+};
+
+const VALUE_STANCE_STYLES: Record<ValueStance, string> = {
+  Cheap: "bg-emerald-50 text-emerald-700",
+  Fair: "bg-slate-100 text-slate-600",
+  Rich: "bg-amber-50 text-amber-800",
+  Trap: "bg-red-50 text-red-700",
 };
 
 const TICKER_PILL: Record<string, string> = {
@@ -221,6 +231,21 @@ function TickerValueCard({ valuation }: { valuation: TickerValuation }) {
       </div>
       {context ? (
         <p className="mt-2 text-xs leading-relaxed text-slate-500">{context}</p>
+      ) : null}
+      {valuation.valueInvestorNote?.trim() ? (
+        <div className="mt-1.5 flex items-start gap-2">
+          {valuation.valueStance ? (
+            <span
+              className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${VALUE_STANCE_STYLES[valuation.valueStance]}`}
+            >
+              {valuation.valueStance}
+            </span>
+          ) : null}
+          <p className="text-xs leading-relaxed text-slate-600">
+            <span className="font-semibold text-slate-700">Value investor: </span>
+            {valuation.valueInvestorNote.trim()}
+          </p>
+        </div>
       ) : null}
     </div>
   );
@@ -512,6 +537,14 @@ export default async function MarketsPage({
       valuationRows = await collectValuation();
     } catch (error) {
       console.warn("markets: live valuation hydrate failed", error);
+    }
+  }
+  if (valuationRows.some(needsValueInvestorNote)) {
+    try {
+      valuationRows = await annotateValuation(valuationRows);
+      await saveMarketsBrief({ ...brief, valuation: valuationRows });
+    } catch (error) {
+      console.warn("markets: value-investor notes failed", error);
     }
   }
   const valuationByTicker = new Map(

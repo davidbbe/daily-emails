@@ -110,6 +110,8 @@ export async function GET(request: Request) {
         netDebtEbitda: row.netDebtEbitda ?? null,
         pe5yAvg: row.pe5yAvg ?? null,
         roic: row.roic ?? null,
+        valueStance: row.valueStance ?? null,
+        valueInvestorNote: row.valueInvestorNote ?? null,
         error: row.error ?? null,
       })),
       usage: {

@@ -7,7 +7,7 @@ import type { NewsItem, ResearchBundle } from "@/lib/research";
 import type { RedditSubFeed } from "@/lib/reddit";
 import type { SentimentReport } from "@/lib/sentiment";
 import { buildBriefTrends, type BriefTrends } from "@/lib/trends";
-import type { TickerValuation } from "@/lib/valuation";
+import { annotateValuation, type TickerValuation } from "@/lib/valuation";
 import { buildWhaleBrief, type WhaleBrief } from "@/lib/whale-brief";
 
 export const BULLET_FLAGS = ["Watch", "Noise", "Actionable"] as const;
@@ -61,7 +61,7 @@ export type DailyBrief = {
   sentiment: SentimentReport;
   /** Superinvestor 13F briefing for the hosted markets page */
   whales: WhaleBrief;
-  /** Value multiples for listed equity tickers — pass-through, no LLM */
+  /** Value multiples for listed equity tickers, plus a short LLM take */
   valuation: TickerValuation[];
   generatedAt: string;
   model: string;
@@ -400,10 +400,11 @@ export async function generateDailyBrief(
 ): Promise<DailyBrief> {
   const model = getModel();
 
-  const [coreResult, trends, whales] = await Promise.all([
+  const [coreResult, trends, whales, valuation] = await Promise.all([
     generateCoreBrief(bundle, model),
     buildBriefTrends(bundle),
     buildWhaleBrief(bundle.whales),
+    annotateValuation(bundle.valuation ?? []),
   ]);
 
   const core = normalizeCore(coreResult.object, bundle);
@@ -434,7 +435,7 @@ export async function generateDailyBrief(
     sites: bundle.sites ?? [],
     sentiment,
     whales,
-    valuation: bundle.valuation ?? [],
+    valuation,
     hasPreviousBrief: Boolean(previous),
     themeOfTheDay:
       synthesisResult.object.themeOfTheDay.trim() ||

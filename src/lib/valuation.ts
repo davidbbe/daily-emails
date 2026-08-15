@@ -1,4 +1,9 @@
-import { TICKERS } from "@/lib/config";
+import { generateObject } from "ai";
+import { z } from "zod";
+import { getModel, TICKERS } from "@/lib/config";
+
+export const VALUE_STANCES = ["Cheap", "Fair", "Rich", "Trap"] as const;
+export type ValueStance = (typeof VALUE_STANCES)[number];
 
 export type TickerValuation = {
   tickerId: string;
@@ -16,6 +21,10 @@ export type TickerValuation = {
   pe5yAvg?: number;
   /** Return on invested capital as a decimal (0.26 = 26%) */
   roic?: number;
+  /** Cheap / Fair / Rich / Trap from the multiples (LLM). */
+  valueStance?: ValueStance;
+  /** 1–2 sentence value-investor take from the multiples (LLM). */
+  valueInvestorNote?: string;
   sourceUrl: string;
   error?: string;
 };
@@ -326,6 +335,114 @@ export function valuationContextLine(valuation: TickerValuation): string | undef
     parts.push(`ROIC ${formatPercent(valuation.roic, 0)}`);
   }
   return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+const valueNoteSchema = z.object({
+  notes: z.array(
+    z.object({
+      tickerId: z.string(),
+      stance: z.enum(VALUE_STANCES),
+      note: z.string(),
+    }),
+  ),
+});
+
+function parseValueStance(raw: string | undefined): ValueStance | undefined {
+  if (!raw) return undefined;
+  const match = VALUE_STANCES.find(
+    (stance) => stance.toLowerCase() === raw.trim().toLowerCase(),
+  );
+  return match;
+}
+
+function formatValuationForPrompt(row: TickerValuation) {
+  const ticker = TICKERS.find((item) => item.id === row.tickerId);
+  const bits = [`${ticker?.label ?? row.tickerId} (id=${row.tickerId})`];
+  if (row.pe != null) bits.push(`trailing PE ${formatMultiple(row.pe)}`);
+  if (row.forwardPe != null) bits.push(`forward PE ${formatMultiple(row.forwardPe)}`);
+  if (row.pe5yAvg != null) {
+    bits.push(`5y avg trailing PE ${formatMultiple(row.pe5yAvg)}`);
+  }
+  if (row.roic != null) bits.push(`ROIC ${formatPercent(row.roic, 0)}`);
+  if (row.fcfYield != null) bits.push(`FCF yield ${formatPercent(row.fcfYield)}`);
+  if (row.peg != null) bits.push(`PEG ${row.peg.toFixed(2)}`);
+  if (row.evEbitda != null) bits.push(`EV/EBITDA ${formatMultiple(row.evEbitda)}`);
+  if (row.netDebtEbitda != null) {
+    const label =
+      row.netDebtEbitda < 0 ? "net cash / EBITDA" : "net debt / EBITDA";
+    bits.push(`${label} ${formatMultiple(Math.abs(row.netDebtEbitda))}`);
+  }
+  return `- ${bits.join(" | ")}`;
+}
+
+export function needsValueInvestorNote(valuation: TickerValuation) {
+  return (
+    hasValuationMetrics(valuation) &&
+    (!valuation.valueInvestorNote?.trim() || !valuation.valueStance)
+  );
+}
+
+/** One batched value-investor take per equity with multiples. */
+export async function annotateValuation(
+  rows: TickerValuation[],
+): Promise<TickerValuation[]> {
+  const eligible = rows.filter(hasValuationMetrics);
+  if (eligible.length === 0) return rows;
+
+  try {
+    const { object } = await generateObject({
+      model: getModel(),
+      schema: valueNoteSchema,
+      maxOutputTokens: 2048,
+      providerOptions: {
+        google: { thinkingConfig: { thinkingBudget: 0 } },
+      },
+      system: `You are a disciplined value investor writing a short take on each stock.
+Only use the provided multiples. Do not invent prices, earnings, news, or ratios.
+Do not give a buy, sell, or hold recommendation.
+
+Read the setup like this:
+- Forward PE vs 5y avg trailing PE: cheaper or richer than this company's own history, not the market.
+- ROIC is quality. About 15%+ is strong; mid-single digits is weak.
+- FCF yield, PEG, EV/EBITDA, and net cash/debt refine the story when present.
+- A high PE can mean tiny earnings, not a beloved franchise. A low PE with low ROIC can be a value trap.
+- Forward PE vs trailing 5y avg is slightly apples-to-oranges; do not over-precision.
+
+stance: exactly one of Cheap, Fair, Rich, Trap.
+- Cheap: material discount to own history, and quality/FCF is not obviously broken.
+- Fair: in line with history, or cheap/rich signals cancel out.
+- Rich: premium to own history, or a very high multiple without a quality offset.
+- Trap: optically cheap (low PE / high FCF yield) but weak ROIC, poor cash conversion, or heavy leverage.
+
+note: 1–2 sentences, ≤50 words total. First sentence: cheap or rich vs this company's own history. Second sentence: quality, cash, or balance-sheet caveat when it matters. No ticker-symbol prefix.
+Return every requested tickerId exactly once.`,
+      prompt: `Write a value-investor stance and note for each name:
+${eligible.map(formatValuationForPrompt).join("\n")}`,
+    });
+
+    const byId = new Map(
+      object.notes.map((item) => [
+        item.tickerId.trim().toUpperCase(),
+        {
+          stance: parseValueStance(item.stance),
+          note: item.note.trim(),
+        },
+      ]),
+    );
+
+    return rows.map((row) => {
+      const found = byId.get(row.tickerId);
+      if (!found?.note) return row;
+      return {
+        ...row,
+        valueInvestorNote: found.note,
+        valueStance: found.stance,
+      };
+    });
+  } catch (error) {
+    console.warn("valuation: value-investor notes failed", error);
+    return rows;
+  }
 }
 
 function isCryptoQuote(quoteSymbol: string) {
