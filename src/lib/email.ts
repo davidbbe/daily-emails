@@ -776,7 +776,7 @@ function renderUsageReport(usage: UsageReport) {
       headerHtml: renderUsageBrandHeader({
         logoHtml: vercelLogo,
         title: "Vercel",
-        subtitle: "Gateway · FOT · Blob",
+        subtitle: "Gateway · Transfer · Blob",
       }),
       metrics: vercel,
     })}

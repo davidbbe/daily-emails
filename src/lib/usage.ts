@@ -9,7 +9,8 @@ import {
   BLOB_HOBBY_ADVANCED_OPS,
   BLOB_HOBBY_SIMPLE_OPS,
   BLOB_HOBBY_STORAGE_BYTES,
-  HOBBY_FAST_ORIGIN_TRANSFER_BYTES,
+  HOBBY_EDGE_REQUESTS,
+  HOBBY_FAST_DATA_TRANSFER_BYTES,
   HOBBY_FUNCTION_INVOCATIONS,
   RESEND_DAILY_LIMIT,
   RESEND_MONTHLY_LIMIT,
@@ -94,13 +95,14 @@ function formatUsd(value: number) {
   return `$${value.toFixed(2)}`;
 }
 
+/** SI units so transfer figures match the Vercel Usage dashboard (8.66 GB, not 8.05 GiB). */
 function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  if (bytes < 1000) return `${bytes} B`;
+  if (bytes < 1000 * 1000) return `${(bytes / 1000).toFixed(1)} KB`;
+  if (bytes < 1000 * 1000 * 1000) {
+    return `${(bytes / (1000 * 1000)).toFixed(2)} MB`;
   }
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  return `${(bytes / (1000 * 1000 * 1000)).toFixed(2)} GB`;
 }
 
 async function collectAiGateway(): Promise<UsageMetric> {
@@ -666,10 +668,17 @@ type PlatformUsageCache = {
 function platformUnavailable(reason: string): UsageMetric[] {
   return [
     unavailable(
-      "fast-origin-transfer",
-      "Fast Origin Transfer",
-      HOBBY_FAST_ORIGIN_TRANSFER_BYTES,
+      "fast-data-transfer",
+      "Fast Data Transfer",
+      HOBBY_FAST_DATA_TRANSFER_BYTES,
       "bytes",
+      reason,
+    ),
+    unavailable(
+      "edge-requests",
+      "Edge Requests",
+      HOBBY_EDGE_REQUESTS,
+      "requests",
       reason,
     ),
     unavailable(
@@ -770,7 +779,12 @@ async function collectPlatformUsage(): Promise<UsageMetric[]> {
 
     const incoming = sumField(requestDays, "bandwidth_incoming_bytes");
     const outgoing = sumField(requestDays, "bandwidth_outgoing_bytes");
+    // /v2/usage `bandwidth_*` is Fast Data Transfer (CDN ↔ visitor), not
+    // Fast Origin Transfer. Hobby's /v2/usage types do not expose FOT.
     const transferBytes = incoming + outgoing;
+    const edgeRequests =
+      sumField(requestDays, "request_hit_count") +
+      sumField(requestDays, "request_miss_count");
 
     const invocations =
       sumField(requestDays, "function_invocation_successful_count") +
@@ -780,15 +794,27 @@ async function collectPlatformUsage(): Promise<UsageMetric[]> {
 
     const simpleOps = sumField(blobDays, "blob_simple_request_count");
     const advancedOps = sumField(blobDays, "blob_advanced_request_count");
+    const updatedNote = requests.lastUpdate
+      ? ` · updated ${formatHumanDate(requests.lastUpdate)}`
+      : "";
 
     const metrics = [
       metric({
-        id: "fast-origin-transfer",
-        label: "Fast Origin Transfer",
+        id: "fast-data-transfer",
+        label: "Fast Data Transfer",
         used: transferBytes,
-        limit: HOBBY_FAST_ORIGIN_TRANSFER_BYTES,
+        limit: HOBBY_FAST_DATA_TRANSFER_BYTES,
         unit: "bytes",
-        detail: `${formatBytes(transferBytes)} / ${formatBytes(HOBBY_FAST_ORIGIN_TRANSFER_BYTES)} · ${label} (Hobby included)${requests.lastUpdate ? ` · updated ${formatHumanDate(requests.lastUpdate)}` : ""}`,
+        detail: `${formatBytes(outgoing)} out + ${formatBytes(incoming)} in · ${label} (Hobby 100 GB). Origin transfer is not in this API${updatedNote}`,
+        available: true,
+      }),
+      metric({
+        id: "edge-requests",
+        label: "Edge Requests",
+        used: edgeRequests,
+        limit: HOBBY_EDGE_REQUESTS,
+        unit: "requests",
+        detail: `${edgeRequests.toLocaleString("en-US")} / ${HOBBY_EDGE_REQUESTS.toLocaleString("en-US")} · ${label}`,
         available: true,
       }),
       metric({

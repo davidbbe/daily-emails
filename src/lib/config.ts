@@ -153,15 +153,18 @@ export const USAGE_WATCH_THRESHOLD = 50;
 /** Default AI Gateway free monthly credit allowance (USD) */
 export const AI_GATEWAY_MONTHLY_BUDGET_USD = 5;
 
-/** Hobby Blob included storage (1 GB) for near-limit watch */
-export const BLOB_HOBBY_STORAGE_BYTES = 1 * 1024 * 1024 * 1024;
+/** Hobby Blob included storage (1 GB, SI) for near-limit watch */
+export const BLOB_HOBBY_STORAGE_BYTES = 1_000_000_000;
 
 /** Hobby Blob included operations (per month / rolling window) */
 export const BLOB_HOBBY_SIMPLE_OPS = 10_000;
 export const BLOB_HOBBY_ADVANCED_OPS = 2_000;
 
-/** Hobby Fast Origin Transfer included (10 GB) */
-export const HOBBY_FAST_ORIGIN_TRANSFER_BYTES = 10 * 1024 * 1024 * 1024;
+/** Hobby Fast Data Transfer included (100 GB, SI — matches the Usage dashboard) */
+export const HOBBY_FAST_DATA_TRANSFER_BYTES = 100_000_000_000;
+
+/** Hobby Edge Requests included */
+export const HOBBY_EDGE_REQUESTS = 1_000_000;
 
 /** Hobby Function Invocations included */
 export const HOBBY_FUNCTION_INVOCATIONS = 1_000_000;
