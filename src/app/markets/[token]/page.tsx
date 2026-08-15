@@ -5,7 +5,7 @@ import { SvgMarkup } from "@/components/SvgMarkup";
 import { TradingViewChart } from "@/components/TradingViewChart";
 import type { BriefBullet, EarningsEvent } from "@/lib/brief";
 import { TICKERS } from "@/lib/config";
-import { formatHumanDate } from "@/lib/dates";
+import { formatHumanDate, formatTitleDate } from "@/lib/dates";
 import {
   bandFromGaugeScore,
   buildFearGreedGaugeSvg,
@@ -20,10 +20,7 @@ import {
   type TickerGreedProxy,
 } from "@/lib/sentiment";
 import { buildVixLineChartSvg } from "@/lib/vix-line-chart";
-import {
-  formatWhaleUsd,
-  type WhaleBrief,
-} from "@/lib/whale-brief";
+import type { WhaleBrief } from "@/lib/whale-brief";
 import {
   annotateValuation,
   collectValuation,
@@ -242,7 +239,9 @@ function TickerValueCard({ valuation }: { valuation: TickerValuation }) {
             </span>
           ) : null}
           <p className="text-xs leading-relaxed text-slate-600">
-            <span className="font-semibold text-slate-700">Value investor: </span>
+            <span className="font-semibold text-slate-700">
+              Value investor:{" "}
+            </span>
             {valuation.valueInvestorNote.trim()}
           </p>
         </div>
@@ -286,13 +285,15 @@ function formatMoveAction(move: WhaleManagerMove) {
   return "Add";
 }
 
+const NOTABLE_ADDS_LIMIT = 7;
+
 function WhaleWatchSection({ whales }: { whales?: WhaleBrief }) {
   if (!whales) return null;
+  const notableBuys = whales.notableBuys.slice(0, NOTABLE_ADDS_LIMIT);
   const hasBody =
     Boolean(whales.briefing?.trim()) ||
     whales.clusteredBuys.length > 0 ||
-    whales.notableBuys.length > 0 ||
-    whales.realtimeBuys.length > 0;
+    notableBuys.length > 0;
   if (!hasBody) return null;
 
   const filingNote =
@@ -330,7 +331,10 @@ function WhaleWatchSection({ whales }: { whales?: WhaleBrief }) {
         {whales.themes.length > 0 ? (
           <div className="grid gap-px border-b border-slate-100 bg-slate-100 sm:grid-cols-2 lg:grid-cols-3">
             {whales.themes.map((theme, index) => (
-              <div key={`${theme.title}-${index}`} className="bg-white px-5 py-4">
+              <div
+                key={`${theme.title}-${index}`}
+                className="bg-white px-5 py-4"
+              >
                 <div className="text-[11px] font-bold uppercase tracking-wide text-teal-800">
                   {theme.title}
                 </div>
@@ -342,30 +346,9 @@ function WhaleWatchSection({ whales }: { whales?: WhaleBrief }) {
           </div>
         ) : null}
 
-        {whales.watchlist.length > 0 ? (
-          <div className="border-b border-slate-100 px-5 py-4">
-            <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              Watchlist overlap
-            </div>
-            <ul className="space-y-2">
-              {whales.watchlist.map((item) => (
-                <li
-                  key={item.tickerId}
-                  className="text-sm leading-relaxed text-slate-700"
-                >
-                  <span className="mr-2 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
-                    {item.tickerId}
-                  </span>
-                  {item.note}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
         <div
           className={`grid gap-px bg-slate-100 ${
-            whales.clusteredBuys.length > 0 && whales.notableBuys.length > 0
+            whales.clusteredBuys.length > 0 && notableBuys.length > 0
               ? "lg:grid-cols-2"
               : ""
           }`}
@@ -399,13 +382,13 @@ function WhaleWatchSection({ whales }: { whales?: WhaleBrief }) {
             </div>
           ) : null}
 
-          {whales.notableBuys.length > 0 ? (
+          {notableBuys.length > 0 ? (
             <div className="bg-white px-5 py-4">
               <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
                 Notable adds
               </div>
               <ul className="space-y-2.5">
-                {whales.notableBuys.map((move) => (
+                {notableBuys.map((move) => (
                   <li
                     key={`${move.manager}-${move.ticker}-${move.period}`}
                     className="text-sm leading-snug text-slate-700"
@@ -433,35 +416,6 @@ function WhaleWatchSection({ whales }: { whales?: WhaleBrief }) {
           ) : null}
         </div>
 
-        {whales.realtimeBuys.length > 0 ? (
-          <div className="border-t border-slate-100 px-5 py-4">
-            <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              Recent Form 4 buys
-            </div>
-            <ul className="space-y-2">
-              {whales.realtimeBuys.map((row) => (
-                <li
-                  key={`${row.filer}-${row.security}-${row.date}`}
-                  className="flex items-baseline justify-between gap-3 text-sm"
-                >
-                  <span className="min-w-0 text-slate-700">
-                    <span className="font-semibold text-slate-900">
-                      {row.filer}
-                    </span>
-                    <span className="text-slate-500"> · {row.security}</span>
-                    <span className="ml-2 text-xs text-slate-400">
-                      {row.date}
-                    </span>
-                  </span>
-                  <span className="shrink-0 tabular-nums font-medium text-slate-800">
-                    {formatWhaleUsd(row.totalUsd)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
         <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-400">
           Source:{" "}
           <a
@@ -472,7 +426,7 @@ function WhaleWatchSection({ whales }: { whales?: WhaleBrief }) {
           >
             {whales.sourceName}
           </a>{" "}
-          (superinvestor 13Fs + Form 4)
+          (superinvestor 13Fs)
         </div>
       </div>
     </section>
@@ -550,23 +504,19 @@ export default async function MarketsPage({
   const valuationByTicker = new Map(
     valuationRows.map((row) => [row.tickerId, row] as const),
   );
-  const dateLabel = formatHumanDate(brief.generatedAt);
+  const dateLabel = formatTitleDate(brief.generatedAt);
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#e8f0ea,transparent_45%),linear-gradient(160deg,#f7f4ef,#dfe8e3)] text-[#1a1f1c]">
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
         <header className="mb-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-            Daily Emails
-          </p>
           <h1 className="mt-2 font-serif text-4xl tracking-tight sm:text-5xl">
-            Markets brief
+            Markets brief - {dateLabel}
           </h1>
-          <p className="mt-3 max-w-2xl text-base leading-relaxed text-slate-600">
+          <p className="mt-3 text-base leading-relaxed text-slate-600">
             Fear &amp; greed, hedge-fund flows, valuation, watchlist charts, and
             earnings for the latest daily run.
           </p>
-          <p className="mt-2 text-sm text-slate-500">{dateLabel}</p>
         </header>
 
         <section className="mb-12">

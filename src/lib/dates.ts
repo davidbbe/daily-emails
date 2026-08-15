@@ -1,3 +1,16 @@
+/** Title date like "Aug 15, 2026". */
+export function formatTitleDate(value: string | Date) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 /** Human-readable UTC date for email / usage copy (e.g. "26 Jul 2026, 16:51 UTC"). */
 export function formatHumanDate(
   value: string | Date,
