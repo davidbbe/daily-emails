@@ -50,7 +50,6 @@ export type DailyBrief = {
   tickers: TickerBrief[];
   people: PersonBrief[];
   earningsCalendar: EarningsEvent[];
-  themeOfTheDay: string;
   regionalPulse: string;
   trends: BriefTrends;
   /** Top Reddit posts — pass-through, no LLM */
@@ -99,7 +98,6 @@ const coreBriefSchema = z.object({
 });
 
 const synthesisSchema = z.object({
-  themeOfTheDay: z.string(),
   regionalPulse: z.string(),
 });
 
@@ -161,7 +159,6 @@ function formatPreviousForPrompt(previous: BriefSnapshot | null) {
     .join("\n");
 
   return `Previous brief at ${previous.generatedAt}
-Theme: ${previous.themeOfTheDay || "(none)"}
 
 Tickers:
 ${tickerLines}
@@ -295,8 +292,6 @@ async function generateSynthesis(args: {
     },
     system: `You write the cross-cutting synthesis for a daily market/tech email.
 Only use the provided today/previous brief material. Do not invent facts.
-
-themeOfTheDay: one sharp sentence (≤30 words) capturing the cross-cutting story across markets, people, and trends. You may nod to fear/greed or VIX when it is a material backdrop.
 
 regionalPulse: 2-3 short sentences comparing what is hot in the United States vs Thailand vs Bulgaria today. Mention concrete trend topics when available.`,
     prompt: `${formatPreviousForPrompt(args.previous)}
@@ -437,9 +432,6 @@ export async function generateDailyBrief(
     whales,
     valuation,
     hasPreviousBrief: Boolean(previous),
-    themeOfTheDay:
-      synthesisResult.object.themeOfTheDay.trim() ||
-      "A quiet session across markets and trends.",
     regionalPulse:
       synthesisResult.object.regionalPulse.trim() ||
       "Regional trend coverage was thin today.",

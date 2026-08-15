@@ -204,7 +204,6 @@ async function main() {
   brief.reddit = [];
   brief.trends = { regions: [], crossRegion: [] };
   brief.regionalPulse = "";
-  brief.themeOfTheDay = `[TEST · live data, no Reddit/Trends] ${brief.themeOfTheDay}`;
 
   await saveMarketsBrief(toMarketsBrief(brief)).catch((error) => {
     console.warn("markets-brief save failed", error);
@@ -221,7 +220,6 @@ async function main() {
         emailId: email?.id ?? null,
         to: process.env.EMAIL_TO,
         model: brief.model,
-        themeOfTheDay: brief.themeOfTheDay,
         sentiment: brief.sentiment.valueDial,
         earningsCount: brief.earningsCalendar.length,
         siteCount: brief.sites.length,

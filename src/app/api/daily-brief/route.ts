@@ -49,7 +49,6 @@ export async function GET(request: Request) {
       model: brief.model,
       generatedAt: brief.generatedAt,
       hasPreviousBrief: brief.hasPreviousBrief,
-      themeOfTheDay: brief.themeOfTheDay,
       earningsCount: brief.earningsCalendar.length,
       tickerCounts: Object.fromEntries(
         Object.entries(research.tickers).map(([id, items]) => [id, items.length]),

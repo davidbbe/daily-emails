@@ -868,7 +868,11 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
       </tr>`
       : "";
 
-  const preheader = `${brief.themeOfTheDay} · ${dateShort}`;
+  const firstOpener =
+    TICKERS.map((ticker) =>
+      brief.tickers.find((t) => t.id === ticker.id)?.overnightOpener?.trim(),
+    ).find(Boolean) ?? briefWindowLabel(brief);
+  const preheader = `${firstOpener} · ${dateShort}`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -918,8 +922,6 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
                 </table>
               </td>
             </tr>
-
-            ${calloutBox("Theme of the day", brief.themeOfTheDay, "#7c3aed")}
 
             ${sectionLabel("Overnight", { first: true })}
             ${renderOvernightOpeners(brief)}
@@ -972,9 +974,6 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
   const lines = [
     "Daily Market & Tech Brief",
     `${briefWindowLabel(brief)} · ${formatHumanDate(brief.generatedAt)} · ${brief.model}`,
-    "",
-    "THEME OF THE DAY",
-    brief.themeOfTheDay,
   ];
 
   lines.push("", "OVERNIGHT OPENERS");

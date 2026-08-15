@@ -567,12 +567,6 @@ export default async function MarketsPage({
             earnings for the latest daily run.
           </p>
           <p className="mt-2 text-sm text-slate-500">{dateLabel}</p>
-          {brief.themeOfTheDay?.trim() ? (
-            <p className="mt-4 rounded-xl border border-[#0f766e]/15 bg-white/70 px-4 py-3 text-sm leading-relaxed text-slate-700">
-              <span className="font-semibold text-slate-900">Theme: </span>
-              {brief.themeOfTheDay}
-            </p>
-          ) : null}
         </header>
 
         <section className="mb-12">

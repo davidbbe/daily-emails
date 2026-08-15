@@ -180,8 +180,6 @@ const brief: DailyBrief = {
       nextConfirmed: false,
     },
   ],
-  themeOfTheDay:
-    "TEST EMAIL — Reddit 3-column layout review (placeholder markets / no Trends).",
   regionalPulse: "",
   trends: {
     regions: [],

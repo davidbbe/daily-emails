@@ -47,7 +47,6 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 
 | Email / page section                                      | Data source (no AI)                                                                                                                                                | LLM / API used                                                                                                                  |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Theme of the day** _(email)_                            | Markets + people + trends + sentiment context                                                                                                                      | AI Gateway — one cross-cutting sentence                                                                                         |
 | **Overnight openers** _(email)_                           | Google News RSS — last 24h per ticker                                                                                                                              | Same core brief call — one session-context line each                                                                            |
 | **Full markets brief CTA** _(email → hosted page)_        | Link built from `APP_BASE_URL` + `MARKETS_PAGE_SECRET`                                                                                                             | **No LLM**                                                                                                                      |
 | **Fear & greed** _(hosted page)_                          | CNN F&G, Alternative.me Crypto F&G, VIX via feargreedchart; equities via Stock Analysis (52w + RSI14); BTC via CoinGecko                                           | **No LLM** — value dial + Lean buy / Neutral / Patience stance per ticker (SPCX skipped — private)                              |
@@ -70,7 +69,7 @@ In practice that means **up to five** Gateway model calls per daily run:
 2. One optional US translation pass if non-English strings appear
 3. One Thailand/Bulgaria English summary pass (top 3 each)
 4. One whale-watch briefing (superinvestor 13F / Form 4 themes)
-5. One synthesis pass (theme, regional pulse)
+5. One synthesis pass (regional pulse)
 
 Trend fetches, snapshot I/O, and email sending do not use AI credits.
 

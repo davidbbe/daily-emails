@@ -12,7 +12,6 @@ const LOCAL_PATH = path.join(process.cwd(), ".data", "markets-latest.json");
 /** Markets payload shown on the secret hosted page (latest run only). */
 export type MarketsBrief = {
   generatedAt: string;
-  themeOfTheDay: string;
   sentiment: SentimentReport;
   tickers: TickerBrief[];
   earningsCalendar: EarningsEvent[];
@@ -23,7 +22,6 @@ export type MarketsBrief = {
 export function toMarketsBrief(brief: DailyBrief): MarketsBrief {
   return {
     generatedAt: brief.generatedAt,
-    themeOfTheDay: brief.themeOfTheDay,
     sentiment: brief.sentiment,
     tickers: brief.tickers,
     earningsCalendar: brief.earningsCalendar,

@@ -19,7 +19,6 @@ export type BriefSnapshot = {
   }>;
   people: Array<{ id: string; summary: string }>;
   trendTitles: Partial<Record<TrendRegionId, string[]>>;
-  themeOfTheDay: string;
 };
 
 export function toSnapshot(brief: DailyBrief): BriefSnapshot {
@@ -42,7 +41,6 @@ export function toSnapshot(brief: DailyBrief): BriefSnapshot {
       summary: p.summary,
     })),
     trendTitles,
-    themeOfTheDay: brief.themeOfTheDay,
   };
 }
 
