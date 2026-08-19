@@ -453,7 +453,9 @@ function isCryptoQuote(quoteSymbol: string) {
 export async function collectValuation(): Promise<TickerValuation[]> {
   const results = await Promise.all(
     TICKERS.map(async (ticker) => {
-      if (isCryptoQuote(ticker.quoteSymbol)) return null;
+      if (isCryptoQuote(ticker.quoteSymbol) || !ticker.earningsSymbol) {
+        return null;
+      }
       return fetchTickerValuation(ticker.id, ticker.quoteSymbol);
     }),
   );

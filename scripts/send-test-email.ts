@@ -150,6 +150,13 @@ const brief: DailyBrief = {
       whyItMatters: "Layout check only.",
       overnightOpener: "Quiet overnight (test send).",
     },
+    {
+      id: "WQTM",
+      label: "WisdomTree Quantum (WQTM)",
+      bullets: [{ text: "Placeholder WQTM note.", flag: "Watch" }],
+      whyItMatters: "Layout check only.",
+      overnightOpener: "Quiet overnight (test send).",
+    },
   ],
   people: [
     { id: "karpathy", name: "Andrej Karpathy", summary: "None found" },

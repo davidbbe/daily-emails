@@ -78,6 +78,7 @@ const TICKER_PILL: Record<string, string> = {
   CRCL: "bg-cyan-50 text-cyan-700",
   SPCX: "bg-slate-100 text-slate-600",
   MSFT: "bg-blue-50 text-blue-700",
+  WQTM: "bg-indigo-50 text-indigo-700",
 };
 
 function formatSigned(n: number | undefined, digits = 1) {

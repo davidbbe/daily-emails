@@ -63,6 +63,14 @@ export const TICKERS = [
     quoteSymbol: "MSFT",
     tradingViewSymbol: "NASDAQ:MSFT",
   },
+  {
+    id: "WQTM",
+    label: "WisdomTree Quantum (WQTM)",
+    query: "WQTM OR WisdomTree Quantum Computing ETF",
+    earningsSymbol: null,
+    quoteSymbol: "WQTM",
+    tradingViewSymbol: "CBOE:WQTM",
+  },
 ] as const;
 
 /** Local/dev fallback when MARKETS_PAGE_SECRET is unset (never used in production). */
