@@ -1,14 +1,4 @@
-import sharp from "sharp";
 import type { SentimentBand, TickerGreedProxy } from "@/lib/sentiment";
-
-export type TickerProxyChartAttachment = {
-  tickerId: string;
-  filename: string;
-  contentId: string;
-  contentType: "image/png";
-  /** Base64-encoded PNG */
-  content: string;
-};
 
 const BAND_COLOR: Record<SentimentBand, string> = {
   "Extreme Fear": "#dc2626",
@@ -199,37 +189,4 @@ export function buildTickerProxyChartSvg(proxy: TickerGreedProxy): string {
       : ""
   }
 </svg>`;
-}
-
-export async function renderTickerProxyChartPng(
-  proxy: TickerGreedProxy,
-): Promise<Buffer> {
-  const svg = buildTickerProxyChartSvg(proxy);
-  return sharp(Buffer.from(svg))
-    .png()
-    .resize(1120, 296, { fit: "contain", background: "#f8fafc" })
-    .toBuffer();
-}
-
-export async function buildTickerProxyChartAttachments(
-  proxies: TickerGreedProxy[],
-): Promise<TickerProxyChartAttachment[]> {
-  const attachments: TickerProxyChartAttachment[] = [];
-
-  for (const proxy of proxies) {
-    if (proxy.error || proxy.score == null) continue;
-
-    const png = await renderTickerProxyChartPng(proxy);
-    const safeId = proxy.tickerId.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
-
-    attachments.push({
-      tickerId: proxy.tickerId,
-      filename: `proxy-${safeId}.png`,
-      contentId: `proxy-${safeId}`,
-      contentType: "image/png",
-      content: png.toString("base64"),
-    });
-  }
-
-  return attachments;
 }

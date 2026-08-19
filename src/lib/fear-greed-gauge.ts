@@ -1,14 +1,4 @@
-import sharp from "sharp";
 import type { FearGreedMeter, SentimentBand } from "@/lib/sentiment";
-
-export type FearGreedGaugeAttachment = {
-  meterId: FearGreedMeter["id"];
-  filename: string;
-  contentId: string;
-  contentType: "image/png";
-  /** Base64-encoded PNG */
-  content: string;
-};
 
 const SEGMENTS: ReadonlyArray<{
   band: SentimentBand;
@@ -214,41 +204,4 @@ export function buildFearGreedGaugeSvg(args: {
   <circle cx="${cx}" cy="${cy}" r="38" fill="#ffffff"/>
   <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" fill="#111827" style="font-family:Arial,Helvetica,sans-serif;font-size:36px;font-weight:700">${hubValue}</text>
 </svg>`;
-}
-
-export async function renderFearGreedGaugePng(args: {
-  score: number;
-  valueLabel?: string;
-  band?: SentimentBand | null;
-}): Promise<Buffer> {
-  const svg = buildFearGreedGaugeSvg(args);
-  return sharp(Buffer.from(svg))
-    .png()
-    .resize(440, 280, { fit: "contain", background: "#ffffff" })
-    .toBuffer();
-}
-
-export async function buildFearGreedGaugeAttachments(
-  meters: FearGreedMeter[],
-): Promise<FearGreedGaugeAttachment[]> {
-  const attachments: FearGreedGaugeAttachment[] = [];
-
-  for (const meter of meters) {
-    // VIX uses a history line chart on the markets page, not this F&G dial.
-    if (meter.id === "vix") continue;
-    const score = gaugeScoreFromMeter(meter);
-    if (score == null) continue;
-
-    const png = await renderFearGreedGaugePng({ score });
-
-    attachments.push({
-      meterId: meter.id,
-      filename: `fg-${meter.id}.png`,
-      contentId: `fg-${meter.id}`,
-      contentType: "image/png",
-      content: png.toString("base64"),
-    });
-  }
-
-  return attachments;
 }
