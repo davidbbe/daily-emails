@@ -5,7 +5,7 @@ import { SvgMarkup } from "@/components/SvgMarkup";
 import { TradingViewChart } from "@/components/TradingViewChart";
 import type { BriefBullet, EarningsEvent } from "@/lib/brief";
 import { TICKERS } from "@/lib/config";
-import { formatHumanDate, formatTitleDate } from "@/lib/dates";
+import { formatHumanDate, formatRelativeDay, formatTitleDate } from "@/lib/dates";
 import {
   bandFromGaugeScore,
   buildFearGreedGaugeSvg,
@@ -24,9 +24,10 @@ import {
   collectInsiderTrades,
   formatInsiderUsd,
   hasInsiderTrades,
+  rankBuyTickers,
+  rankSellTickers,
   type InsiderBrief,
   type InsiderCluster,
-  type InsiderTrade,
 } from "@/lib/openinsider";
 import type { WhaleBrief } from "@/lib/whale-brief";
 import type { WhaleManagerMove } from "@/lib/whales";
@@ -285,73 +286,143 @@ function TickerEarningsDates({ event }: { event: EarningsEvent }) {
   );
 }
 
-function signedInsiderUsd(trade: InsiderTrade) {
-  const amount = formatInsiderUsd(trade.valueUsd);
-  return trade.side === "buy" ? `+${amount}` : `−${amount}`;
+function signedInsiderUsd(amount: number, side: "buy" | "sell") {
+  const formatted = formatInsiderUsd(amount);
+  return side === "buy" ? `+${formatted}` : `−${formatted}`;
 }
 
-function TradeRow({ trade }: { trade: InsiderTrade }) {
-  const pill = TICKER_PILL[trade.ticker] ?? "bg-slate-100 text-slate-600";
-  return (
-    <li className="text-sm leading-snug">
-      <div className="flex items-baseline justify-between gap-3">
-        <a
-          href={trade.tickerUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="min-w-0 truncate text-slate-800 no-underline hover:text-teal-800"
-        >
-          <span className="font-semibold">{trade.ticker}</span>
-          {trade.watchlist ? (
+const BUY_RANK_GRID =
+  "grid grid-cols-[minmax(0,1fr)_3.25rem_4.5rem_6.75rem] items-baseline gap-x-3";
+const SELL_RANK_GRID =
+  "grid grid-cols-[minmax(0,1fr)_4.5rem_6.75rem] items-baseline gap-x-3";
+
+function clusterRoleLabel(row: InsiderCluster) {
+  if (row.titleSummary) return row.titleSummary;
+  return row.titles.slice(0, 2).join(", ");
+}
+
+function BuyTickerRow({ row }: { row: InsiderCluster }) {
+  const pill = TICKER_PILL[row.ticker] ?? "bg-slate-100 text-slate-600";
+  const recency = row.latestTradeDate
+    ? formatRelativeDay(row.latestTradeDate)
+    : "—";
+  const roleLabel = clusterRoleLabel(row);
+  const people = row.trades ?? [];
+  const canExpand = people.length > 0;
+
+  const headline = (
+    <span className={`${BUY_RANK_GRID} w-full`}>
+      <span className="min-w-0">
+        <span className="flex items-baseline gap-2">
+          <span
+            aria-hidden="true"
+            className={`inline-block w-3 shrink-0 text-center text-[10px] text-slate-400 transition-transform group-open:rotate-90 ${
+              canExpand ? "" : "invisible"
+            }`}
+          >
+            ▸
+          </span>
+          <span className="font-semibold text-slate-800">{row.ticker}</span>
+          <span className="hidden min-w-0 truncate text-slate-500 sm:inline">
+            {row.company}
+          </span>
+          {row.watchlist ? (
             <span
-              className={`ml-2 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-bold ${pill}`}
+              className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-bold ${pill}`}
             >
               Watchlist
             </span>
           ) : null}
-          <span className="ml-2 text-slate-500">{trade.company}</span>
-        </a>
-        <span
-          className={`shrink-0 tabular-nums font-semibold ${
-            trade.side === "buy" ? "text-emerald-700" : "text-red-700"
-          }`}
-        >
-          {signedInsiderUsd(trade)}
         </span>
-      </div>
-      <div className="mt-0.5 flex items-baseline justify-between gap-3 text-slate-600">
-        <span className="min-w-0 truncate">
-          {trade.insider}
-          {trade.title ? (
-            <span className="text-slate-400"> · {trade.title}</span>
-          ) : null}
-        </span>
-        <span className="shrink-0 tabular-nums text-slate-500">
-          {trade.ownChange}
-          {trade.price ? ` · $${trade.price.toFixed(2)}` : ""}
-        </span>
-      </div>
+        {roleLabel ? (
+          <span className="mt-0.5 block truncate pl-5 text-xs text-slate-400">
+            {roleLabel}
+          </span>
+        ) : null}
+      </span>
+      <span className="text-right font-semibold tabular-nums text-slate-800">
+        {row.insiderCount}
+      </span>
+      <span className="text-right tabular-nums font-semibold text-emerald-700">
+        {signedInsiderUsd(row.valueUsd, "buy")}
+      </span>
+      <span className="text-right tabular-nums text-slate-500">{recency}</span>
+    </span>
+  );
+
+  if (!canExpand) {
+    return <li className="px-5 py-3 text-sm">{headline}</li>;
+  }
+
+  return (
+    <li className="text-sm">
+      <details className="group">
+        <summary className="cursor-pointer list-none px-5 py-3 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+          {headline}
+        </summary>
+        <ul className="space-y-2 border-t border-slate-100 pb-3 pl-10 pr-5 pt-3">
+          {people.map((person, index) => (
+            <li
+              key={`${row.ticker}-${person.insider}-${person.tradeDate}-${index}`}
+              className="flex items-baseline justify-between gap-3 text-sm text-slate-600"
+            >
+              <span className="min-w-0 truncate">
+                {person.insider}
+                {person.title ? (
+                  <span className="text-slate-400"> · {person.title}</span>
+                ) : null}
+              </span>
+              <span className="shrink-0 tabular-nums text-slate-500">
+                {signedInsiderUsd(person.valueUsd, "buy")}
+                {person.tradeDate
+                  ? ` · ${formatRelativeDay(person.tradeDate)}`
+                  : ""}
+              </span>
+            </li>
+          ))}
+          <li>
+            <a
+              href={row.tickerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-medium text-teal-800 no-underline hover:underline"
+            >
+              OpenInsider
+            </a>
+          </li>
+        </ul>
+      </details>
     </li>
   );
 }
 
-function ClusterRow({ row }: { row: InsiderCluster }) {
+function CompactSellRow({ row }: { row: InsiderCluster }) {
+  const pill = TICKER_PILL[row.ticker] ?? "bg-slate-100 text-slate-600";
   return (
-    <li className="flex items-baseline justify-between gap-3 text-sm">
-      <a
-        href={row.tickerUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="min-w-0 truncate text-slate-800 no-underline hover:text-teal-800"
-      >
-        <span className="font-semibold">{row.ticker}</span>
-        <span className="ml-2 text-slate-500">{row.company}</span>
-        {row.titles.length > 0 ? (
-          <span className="ml-2 text-slate-400">{row.titles.join(", ")}</span>
+    <li className={`${SELL_RANK_GRID} px-5 py-2.5 text-sm`}>
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className="font-semibold text-slate-800">{row.ticker}</span>
+        <span className="hidden min-w-0 truncate text-slate-500 sm:inline">
+          {row.company}
+        </span>
+        {row.watchlist ? (
+          <span
+            className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-bold ${pill}`}
+          >
+            Watchlist
+          </span>
         ) : null}
-      </a>
-      <span className="shrink-0 tabular-nums text-slate-500">
-        {row.insiderCount} insiders · +{formatInsiderUsd(row.valueUsd)}
+        {row.insiderCount > 1 ? (
+          <span className="shrink-0 text-xs text-slate-400">
+            {row.insiderCount} sellers
+          </span>
+        ) : null}
+      </div>
+      <span className="text-right tabular-nums font-semibold text-red-700">
+        {signedInsiderUsd(row.valueUsd, "sell")}
+      </span>
+      <span className="text-right tabular-nums text-slate-500">
+        {row.latestTradeDate ? formatRelativeDay(row.latestTradeDate) : "—"}
       </span>
     </li>
   );
@@ -382,6 +453,18 @@ function InsiderTradesSection({ insiders }: { insiders?: InsiderBrief }) {
   ]
     .filter(Boolean)
     .join(" · ");
+  const rankedBuys =
+    (insiders.clusters?.length ?? 0) > 0
+      ? insiders.clusters
+      : rankBuyTickers([
+          ...insiders.buys,
+          ...insiders.watchlist.filter((trade) => trade.side === "buy"),
+        ]);
+  const notableSells =
+    (insiders.sellGroups?.length ?? 0) > 0
+      ? (insiders.sellGroups ?? [])
+      : rankSellTickers(insiders.sells);
+  if (rankedBuys.length === 0 && notableSells.length === 0) return null;
 
   return (
     <section className="mb-12">
@@ -412,75 +495,56 @@ function InsiderTradesSection({ insiders }: { insiders?: InsiderBrief }) {
       </div>
 
       <div className="market-surface overflow-hidden rounded-3xl border border-white/8 bg-[#0d1311]">
-        {insiders.watchlist.length > 0 ? (
-          <div className="border-b border-slate-100 px-5 py-4">
-            <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              Watchlist
+        {rankedBuys.length > 0 ? (
+          <div className={notableSells.length > 0 ? "border-b border-slate-100" : ""}>
+            <div className="px-5 pt-4">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Popular purchases
+              </div>
+              <p className="mt-1 text-xs text-slate-400">
+                Ranked by how many insiders bought · dates are trade dates
+              </p>
             </div>
-            <ul className="space-y-2.5">
-              {insiders.watchlist.map((trade) => (
-                <TradeRow
-                  key={`watch-${trade.ticker}-${trade.insider}-${trade.filingAt}`}
-                  trade={trade}
-                />
+            <div
+              className={`${BUY_RANK_GRID} px-5 pb-2 pt-3 font-mono text-[10px] uppercase tracking-[0.08em] text-slate-400`}
+            >
+              <span className="flex items-baseline gap-2">
+                <span className="inline-block w-3 shrink-0" />
+                Stock
+              </span>
+              <span className="text-right">Buyers</span>
+              <span className="text-right">Amount</span>
+              <span className="text-right">Last buy</span>
+            </div>
+            <ul className="divide-y divide-slate-100">
+              {rankedBuys.map((row) => (
+                <BuyTickerRow key={row.ticker} row={row} />
               ))}
             </ul>
           </div>
         ) : null}
 
-        {insiders.clusters.length > 0 ? (
-          <div className="border-b border-slate-100 px-5 py-4">
-            <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              Clustered buys
+        {notableSells.length > 0 ? (
+          <div>
+            <div className="px-5 pt-4">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Notable sells
+              </div>
             </div>
-            <ul className="space-y-2">
-              {insiders.clusters.map((row) => (
-                <ClusterRow key={row.ticker} row={row} />
+            <div
+              className={`${SELL_RANK_GRID} px-5 pb-2 pt-3 font-mono text-[10px] uppercase tracking-[0.08em] text-slate-400`}
+            >
+              <span>Stock</span>
+              <span className="text-right">Amount</span>
+              <span className="text-right">Last sale</span>
+            </div>
+            <ul className="divide-y divide-slate-100 pb-1">
+              {notableSells.map((row) => (
+                <CompactSellRow key={`sell-${row.ticker}`} row={row} />
               ))}
             </ul>
           </div>
         ) : null}
-
-        <div
-          className={`grid gap-px bg-slate-100 ${
-            insiders.buys.length > 0 && insiders.sells.length > 0
-              ? "lg:grid-cols-2"
-              : ""
-          }`}
-        >
-          {insiders.buys.length > 0 ? (
-            <div className="bg-white px-5 py-4">
-              <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                Open-market buys
-              </div>
-              <ul className="space-y-2.5">
-                {insiders.buys.map((trade) => (
-                  <TradeRow
-                    key={`buy-${trade.ticker}-${trade.insider}-${trade.filingAt}`}
-                    trade={trade}
-                  />
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {insiders.sells.length > 0 ? (
-            <div className="bg-white px-5 py-4">
-              <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                Open-market sells
-              </div>
-              <ul className="space-y-2.5">
-                {insiders.sells.map((trade) => (
-                  <TradeRow
-                    key={`sell-${trade.ticker}-${trade.insider}-${trade.filingAt}`}
-                    trade={trade}
-                  />
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-
       </div>
     </section>
   );

@@ -118,6 +118,14 @@ body {
   background-color: rgba(94, 234, 212, 0.09);
 }
 
+.markets-page summary {
+  list-style: none;
+}
+
+.markets-page summary::-webkit-details-marker {
+  display: none;
+}
+
 .markets-page article,
 .markets-page .market-surface {
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);

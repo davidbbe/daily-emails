@@ -12,7 +12,9 @@ const BUY_MIN_USD = 25_000;
 const SELL_MIN_USD = 100_000;
 const BUY_MIN_PRICE = 1;
 const DISPLAY_LIMIT = 8;
-const CLUSTER_LIMIT = 5;
+const SELL_DISPLAY_LIMIT = 5;
+const RANK_LIMIT = 10;
+const CLUSTER_TRADES_LIMIT = 8;
 const WINDOW_HOURS = 24;
 const FILING_LOOKBACK_DAYS = 3;
 
@@ -39,14 +41,24 @@ export type InsiderTrade = {
   watchlist: boolean;
 };
 
+export type InsiderClusterTrade = {
+  insider: string;
+  title: string;
+  valueUsd: number;
+  tradeDate: string;
+};
+
 export type InsiderCluster = {
   ticker: string;
   company: string;
   insiderCount: number;
   titles: string[];
+  titleSummary?: string;
   valueUsd: number;
   tickerUrl: string;
   watchlist: boolean;
+  latestTradeDate?: string;
+  trades?: InsiderClusterTrade[];
 };
 
 export type InsiderBrief = {
@@ -56,6 +68,7 @@ export type InsiderBrief = {
   buys: InsiderTrade[];
   sells: InsiderTrade[];
   clusters: InsiderCluster[];
+  sellGroups?: InsiderCluster[];
   watchlist: InsiderTrade[];
   buyCount: number;
   sellCount: number;
@@ -283,39 +296,134 @@ function compareTrades(a: InsiderTrade, b: InsiderTrade) {
   return ownChangeMagnitude(b.ownChange) - ownChangeMagnitude(a.ownChange);
 }
 
-function buildClusters(buys: InsiderTrade[]): InsiderCluster[] {
+function shortRole(title: string) {
+  const t = title.toUpperCase();
+  if (/\bCEO\b/.test(t)) return "CEO";
+  if (/\bCFO\b/.test(t)) return "CFO";
+  if (/\bCOO\b/.test(t)) return "COO";
+  if (/\bPRES\b/.test(t) || /PRESIDENT/.test(t)) return "Pres";
+  if (/\bCOB\b/.test(t) || /CHAIR/.test(t)) return "Chair";
+  if (/\bCTO\b/.test(t)) return "CTO";
+  if (/\bCMO\b/.test(t)) return "CMO";
+  if (/\bGC\b/.test(t)) return "GC";
+  if (/\b(EVP|SVP)\b/.test(t)) return "EVP";
+  if (/\b(VP|DIR|DIRECTOR)\b/.test(t)) return "Dir";
+  if (/10%/.test(t)) return "10%";
+  return title.split(",")[0]?.trim() || "Insider";
+}
+
+function uniquePeople(rows: InsiderTrade[]) {
+  const best = new Map<string, InsiderTrade>();
+  for (const row of rows) {
+    const prev = best.get(row.insider);
+    const rank = titleRank(row.title);
+    const prevRank = prev ? titleRank(prev.title) : -1;
+    if (
+      !prev ||
+      rank > prevRank ||
+      (rank === prevRank && row.valueUsd > prev.valueUsd)
+    ) {
+      best.set(row.insider, row);
+    }
+  }
+  return [...best.values()].sort(
+    (a, b) =>
+      titleRank(b.title) - titleRank(a.title) || b.valueUsd - a.valueUsd,
+  );
+}
+
+function summarizeInsiderRoles(rows: InsiderTrade[]) {
+  const shown: string[] = [];
+  const people = uniquePeople(rows);
+  for (const person of people) {
+    if (shown.length >= 2) break;
+    const role = shortRole(person.title);
+    if (!shown.includes(role)) shown.push(role);
+  }
+  if (shown.length === 0) return "";
+  const rest = people.length - shown.length;
+  return rest > 0 ? `${shown.join(", ")} + ${rest}` : shown.join(", ");
+}
+
+function latestTradeDate(rows: InsiderTrade[]) {
+  let best = "";
+  for (const row of rows) {
+    const day = row.tradeDate.slice(0, 10);
+    if (day > best) best = day;
+  }
+  return best;
+}
+
+export function groupTradesByTicker(trades: InsiderTrade[]): InsiderCluster[] {
   const byTicker = new Map<string, InsiderTrade[]>();
-  for (const buy of buys) {
-    const rows = byTicker.get(buy.ticker) ?? [];
-    rows.push(buy);
-    byTicker.set(buy.ticker, rows);
+  for (const trade of trades) {
+    const rows = byTicker.get(trade.ticker) ?? [];
+    rows.push(trade);
+    byTicker.set(trade.ticker, rows);
   }
 
-  const clusters: InsiderCluster[] = [];
+  const groups: InsiderCluster[] = [];
   for (const [ticker, rows] of byTicker) {
-    const uniqueInsiders = new Set(rows.map((row) => row.insider));
-    if (uniqueInsiders.size < 2) continue;
-    const titles = [
-      ...new Set(rows.map((row) => row.title).filter(Boolean)),
-    ].slice(0, 4);
-    clusters.push({
+    const people = uniquePeople(rows);
+    const dated = [...rows].sort(
+      (a, b) =>
+        b.tradeDate.localeCompare(a.tradeDate) || b.valueUsd - a.valueUsd,
+    );
+    groups.push({
       ticker,
       company: rows[0]?.company ?? ticker,
-      insiderCount: uniqueInsiders.size,
-      titles,
+      insiderCount: people.length,
+      titles: [...new Set(rows.map((row) => row.title).filter(Boolean))].slice(
+        0,
+        4,
+      ),
+      titleSummary: summarizeInsiderRoles(rows),
       valueUsd: rows.reduce((sum, row) => sum + row.valueUsd, 0),
       tickerUrl: tickerUrl(ticker),
       watchlist: WATCHLIST.has(ticker),
+      latestTradeDate: latestTradeDate(rows),
+      trades: dated.slice(0, CLUSTER_TRADES_LIMIT).map((row) => ({
+        insider: row.insider,
+        title: row.title,
+        valueUsd: row.valueUsd,
+        tradeDate: row.tradeDate,
+      })),
     });
   }
+  return groups;
+}
 
-  return clusters
+export function rankBuyTickers(buys: InsiderTrade[]): InsiderCluster[] {
+  const ranked = groupTradesByTicker(buys).sort((a, b) => {
+    if (b.insiderCount !== a.insiderCount) return b.insiderCount - a.insiderCount;
+    return b.valueUsd - a.valueUsd;
+  });
+
+  const top = ranked.slice(0, RANK_LIMIT);
+  const extraWatchlist = ranked.filter(
+    (row) => row.watchlist && !top.some((item) => item.ticker === row.ticker),
+  );
+  return [...top, ...extraWatchlist];
+}
+
+export function rankSellTickers(sells: InsiderTrade[]): InsiderCluster[] {
+  const ranked = groupTradesByTicker(sells)
+    .map((row) => ({
+      ...row,
+      titleSummary: undefined,
+      titles: [],
+      trades: undefined,
+    }))
     .sort((a, b) => {
       if (a.watchlist !== b.watchlist) return a.watchlist ? -1 : 1;
-      if (b.insiderCount !== a.insiderCount) return b.insiderCount - a.insiderCount;
       return b.valueUsd - a.valueUsd;
-    })
-    .slice(0, CLUSTER_LIMIT);
+    });
+
+  const top = ranked.slice(0, SELL_DISPLAY_LIMIT);
+  const extraWatchlist = ranked.filter(
+    (row) => row.watchlist && !top.some((item) => item.ticker === row.ticker),
+  );
+  return [...top, ...extraWatchlist];
 }
 
 function latestFilingDay(trades: InsiderTrade[]): string | null {
@@ -341,6 +449,7 @@ export function emptyInsiderBrief(error?: string): InsiderBrief {
     buys: [],
     sells: [],
     clusters: [],
+    sellGroups: [],
     watchlist: [],
     buyCount: 0,
     sellCount: 0,
@@ -360,7 +469,13 @@ export function formatInsiderUsd(n: number) {
 
 export function hasInsiderTrades(brief?: InsiderBrief | null) {
   if (!brief) return false;
-  return brief.buys.length > 0 || brief.sells.length > 0 || brief.watchlist.length > 0;
+  return (
+    brief.buys.length > 0 ||
+    brief.sells.length > 0 ||
+    brief.watchlist.length > 0 ||
+    (brief.clusters?.length ?? 0) > 0 ||
+    (brief.sellGroups?.length ?? 0) > 0
+  );
 }
 
 /**
@@ -413,8 +528,9 @@ export async function collectInsiderTrades(): Promise<InsiderBrief> {
       windowLabel: windowLabel(usedFallbackDay, fallbackDay),
       usedFallbackDay,
       buys: [...windowBuys].sort(compareTrades).slice(0, DISPLAY_LIMIT),
-      sells: [...windowSells].sort(compareTrades).slice(0, DISPLAY_LIMIT),
-      clusters: buildClusters(windowBuys),
+      sells: [...windowSells].sort(compareTrades).slice(0, SELL_DISPLAY_LIMIT),
+      clusters: rankBuyTickers(windowBuys),
+      sellGroups: rankSellTickers(windowSells),
       watchlist,
       buyCount: windowBuys.length,
       sellCount: windowSells.length,
