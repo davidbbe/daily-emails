@@ -187,7 +187,6 @@ async function main() {
   // This test intentionally omits trend/reddit sections.
   brief.reddit = [];
   brief.trends = { regions: [], crossRegion: [] };
-  brief.regionalPulse = "";
 
   await saveMarketsBrief(toMarketsBrief(brief)).catch((error) => {
     console.warn("markets-brief save failed", error);

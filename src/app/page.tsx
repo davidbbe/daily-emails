@@ -21,7 +21,7 @@ export default function Home() {
         </h1>
         <p style={{ fontSize: "1.1rem", lineHeight: 1.6, margin: 0 }}>
           A Vercel cron job researches markets, people, catalysts, and web
-          trends across the US, Thailand, and Bulgaria — then emails a noon-UTC
+          trends across the US and Thailand — then emails a noon-UTC
           digest with flags, quotes, day-over-day movers, and source links via
           Resend.
         </p>

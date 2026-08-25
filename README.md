@@ -14,12 +14,12 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
 6. Pulls **superinvestor 13F activity** from [Dataroma](https://www.dataroma.com/m/home.php) (clustered buys, notable adds, recent Form 4) and writes a short whale briefing
 7. Pulls Google Trends top searches (Trending Now) for:
    - **United States** — top 10 (with traffic + related news; non-English titles translated)
-   - **Thailand** and **Bulgaria** — top 3 each, summarized in English (what’s rising and why; no local-language text)
+   - **Thailand** — a pool of rising searches, then the **3 most important** items with English titles and 1–2 sentence descriptions (no local-language text)
    - Fetches **2×** each region’s limit, drops **Sports**-category rows, then keeps the configured top N
 8. Flags topics rising in **2+ regions**
 9. Pulls top Reddit posts (title, link, thumbnail when available) for configured subreddits
 10. Pulls **GA4** yesterday + 7-day trend + month-to-date overviews for configured sites (when a service account is set)
-11. Loads yesterday’s slim snapshot (when available) as synthesis context
+11. Loads yesterday’s slim snapshot (when available) for day-over-day history
 12. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
 13. Saves a **markets brief** payload for the secret hosted page (Blob when configured, otherwise `.data/markets-latest.json`)
 14. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest (Overnight stays in-email; full markets live on the hosted page)
@@ -56,22 +56,20 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 | **Markets + TradingView** _(hosted page)_                 | Google News RSS — last 24h; charts via TradingView embeds (`tradingViewSymbol` in config)                                                                          | Core brief: 3–5 bullets with **Watch / Noise / Actionable** flags, **source links**, **why it matters**                         |
 | **Earnings & catalysts** _(hosted page)_                  | Stock Analysis earnings calendar (prev + next report dates)                                                                                                        | **No LLM** — skips BTC / SPCX                                                                                                   |
 | **Speeches & announcements** _(email)_                    | Google News RSS — last 24h per person; **Elon Musk** via FxTwitter timeline, **Donald Trump** via trumpstruth.org RSS (own posts, last 24h)                         | Core brief: reviews all items; Musk/Trump keep **up to two** market/crypto-moving posts with original-post links; others keep **one** or are omitted |
-| **Regional pulse**                                        | Trends across US / TH / BG                                                                                                                                         | Synthesis call — 2–3 sentences comparing regions                                                                                |
 | **Web trends · United States**                            | Google Trends Trending Now (`geo=US`); Sports filtered                                                                                                             | Optional translation when non-English                                                                                           |
-| **Web trends · Thailand / Bulgaria**                      | Google Trends Trending Now (`geo=TH`, `geo=BG`); Sports filtered                                                                                                   | One English summary each of the **top 3** trends and why they are rising (no item list; no local-language text)                 |
+| **Web trends · Thailand**                                 | Google Trends Trending Now (`geo=TH`); Sports filtered                                                                                                             | English title + 1–2 sentence description for the **3 most important** items (no local-language text)                            |
 | **Also rising in 2+ regions**                             | —                                                                                                                                                                  | **No LLM** — string match on English titles                                                                                     |
 | **Reddit**                                                | Reddit Atom RSS — top 6 per sub (`pics`, `generativeAI`, `CursedAI`, `aiArt`); day → week → hot fallback | **No LLM** — subreddits in 2 columns; posts in a 3-column grid with larger thumbnails                                           |
 | **Google Analytics**                                      | GA4 Data API — yesterday KPIs (vs prior day), 7-day users bar chart, and month-to-date totals for `uwhmap.com`, `greetingcardfun.com`, `tvroulette.app`            | **No LLM** — skipped when `GOOGLE_CLIENT_EMAIL` / `GOOGLE_PRIVATE_KEY` are unset                                                |
 | **Usage watch**                                           | AI Gateway, Fast Data Transfer, Edge Requests, Blob size/ops, function invocations, Resend                                                                         | **No LLM** — flags anything ≥50% of its Hobby/free limit                                                                        |
 | **Delivery**                                              | —                                                                                                                                                                  | **Resend API** sends HTML + plain-text email                                                                                    |
 
-In practice that means **up to five** Gateway model calls per daily run:
+In practice that means **up to four** Gateway model calls per daily run:
 
 1. One structured core brief (markets, people, overnight, flags, quotes)
 2. One optional US translation pass if non-English strings appear
-3. One Thailand/Bulgaria English summary pass (top 3 each)
+3. One Thailand English pass (pick 3 most important items + descriptions)
 4. One whale-watch briefing (superinvestor 13F / Form 4 themes)
-5. One synthesis pass (regional pulse)
 
 Trend fetches, snapshot I/O, and email sending do not use AI credits.
 

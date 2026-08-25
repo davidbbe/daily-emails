@@ -41,7 +41,7 @@ This project’s emails are opened **only in Gmail** (web + mobile). Optimize fo
 
 - One clear visual hierarchy: hero → overnight → dense sections as cards
 - Section labels: small uppercase tracking; cards: white + `#e2e8f0` border + 12–16px radius
-- Multi-column rows (meters, earnings, Reddit, TH/BG trends): table cells with `%` widths; if adding mobile stacking, duplicate the stack rule in a head `<style>` `@media` and keep desktop table layout as default
+- Multi-column rows (meters, earnings, Reddit): table cells with `%` widths; if adding mobile stacking, duplicate the stack rule in a head `<style>` `@media` and keep desktop table layout as default
 - Links: visible, not underline-only grey; keep tap targets readable on mobile
 - Do not sacrifice scannability for decoration — this is a daily brief, not a marketing landing page
 

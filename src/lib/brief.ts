@@ -7,7 +7,6 @@ import {
   TICKERS,
   personPickCount,
   personSocial,
-  type TrendRegionId,
 } from "@/lib/config";
 import type { BriefSnapshot } from "@/lib/history";
 import type { SiteAnalytics } from "@/lib/analytics";
@@ -90,7 +89,6 @@ export type DailyBrief = {
   tickers: TickerBrief[];
   people: PersonBrief[];
   earningsCalendar: EarningsEvent[];
-  regionalPulse: string;
   trends: BriefTrends;
   /** Top Reddit posts — pass-through, no LLM */
   reddit: RedditSubFeed[];
@@ -148,10 +146,6 @@ const coreBriefSchema = z.object({
   ),
 });
 
-const synthesisSchema = z.object({
-  regionalPulse: z.string(),
-});
-
 function formatIndexedNews(items: NewsItem[], limit = 5) {
   if (items.length === 0) return "- (no headlines in window)";
   return items
@@ -203,107 +197,6 @@ function resolveSource(
   };
 }
 
-function formatPreviousForPrompt(previous: BriefSnapshot | null) {
-  if (!previous) return "(no previous brief available)";
-
-  const tickerLines = previous.tickers
-    .map((t) => {
-      const bullets = t.bullets.map((b) => `  - ${b}`).join("\n");
-      return `${t.id}:\n${bullets}\n  why: ${t.whyItMatters}`;
-    })
-    .join("\n");
-
-  const trendLines = (Object.entries(previous.trendTitles) as Array<
-    [TrendRegionId, string[] | undefined]
-  >)
-    .map(([id, titles]) => `${id}: ${(titles ?? []).join("; ") || "(none)"}`)
-    .join("\n");
-
-  return `Previous brief at ${previous.generatedAt}
-
-Tickers:
-${tickerLines}
-
-Trend titles:
-${trendLines}`;
-}
-
-function formatTodayForSynthesis(args: {
-  tickers: TickerBrief[];
-  people: PersonBrief[];
-  trends: BriefTrends;
-  sentiment: SentimentReport;
-}) {
-  const tickerLines = args.tickers
-    .map((t) => {
-      const bullets = t.bullets
-        .map((b) => `  - [${b.flag}] ${b.text}`)
-        .join("\n");
-      return `${t.id}:\n${bullets}\n  why: ${t.whyItMatters}\n  overnight: ${t.overnightOpener}`;
-    })
-    .join("\n");
-
-  const peopleLines = args.people
-    .map((p) => {
-      const items = materialPersonItems(p);
-      if (items.length === 0) return `${p.name}: (none)`;
-      return items
-        .map((item) => {
-          const quote = item.quote ? ` quote: ${item.quote}` : "";
-          const link = item.sourceUrl ? ` ${item.sourceUrl}` : "";
-          return `${p.name}: ${item.summary}${quote}${link}`;
-        })
-        .join("\n");
-    })
-    .join("\n");
-
-  const trendLines = args.trends.regions
-    .map((region) => {
-      if (region.summary?.trim()) {
-        return `${region.label}: ${region.summary.trim()}`;
-      }
-      const items = region.items
-        .map((item) => {
-          const title = item.titleEn || item.title;
-          const desc = item.descriptionEn ? ` — ${item.descriptionEn}` : "";
-          return `#${item.rank} ${title}${desc}`;
-        })
-        .join("; ");
-      return `${region.label}: ${items || "(none)"}`;
-    })
-    .join("\n");
-
-  const meterLines = args.sentiment.meters
-    .map((m) => {
-      if (m.value == null) return `${m.label}: unavailable`;
-      const band = m.band ? ` (${m.band})` : "";
-      return `${m.label}: ${m.value}${band}`;
-    })
-    .join("; ");
-
-  const proxyLines = args.sentiment.tickers
-    .map((t) => {
-      if (t.score == null) return `${t.tickerId}: n/a`;
-      return `${t.tickerId}: score ${t.score}${t.band ? ` ${t.band}` : ""}${t.stance ? ` → ${t.stance}` : ""}`;
-    })
-    .join("; ");
-
-  return `Today's tickers:
-${tickerLines}
-
-People:
-${peopleLines}
-
-Trends:
-${trendLines}
-Cross-region: ${args.trends.crossRegion.join(" · ") || "(none)"}
-
-Sentiment:
-Value dial: ${args.sentiment.valueDial}
-Meters: ${meterLines || "(none)"}
-Ticker greed proxies: ${proxyLines || "(none)"}`;
-}
-
 async function generateCoreBrief(bundle: ResearchBundle, model: string) {
   return generateObject({
     model,
@@ -345,39 +238,7 @@ Return ticker ids exactly: ${TICKERS.map((t) => t.id).join(", ")}.
 Return people ids exactly: ${PEOPLE.map((p) => p.id).join(", ")}.
 Labels: ${TICKERS.map((t) => `${t.id}=${t.label}`).join("; ")}.
 Names: ${PEOPLE.map((p) => `${p.id}=${p.name}`).join("; ")}.
-Person item limits: ${PEOPLE.map((p) => `${p.id}≤${personPickCount(p)}`).join("; ")}.`,
-  });
-}
-
-async function generateSynthesis(args: {
-  model: string;
-  previous: BriefSnapshot | null;
-  tickers: TickerBrief[];
-  people: PersonBrief[];
-  trends: BriefTrends;
-  sentiment: SentimentReport;
-}) {
-  return generateObject({
-    model: args.model,
-    schema: synthesisSchema,
-    maxOutputTokens: 4096,
-    providerOptions: {
-      google: { thinkingConfig: { thinkingBudget: 0 } },
-    },
-    system: `You write the cross-cutting synthesis for a daily market/tech email.
-Only use the provided today/previous brief material. Do not invent facts.
-
-regionalPulse: 2-3 short sentences comparing what is hot in the United States vs Thailand vs Bulgaria today. Mention concrete trend topics when available.`,
-    prompt: `${formatPreviousForPrompt(args.previous)}
-
----
-
-${formatTodayForSynthesis({
-  tickers: args.tickers,
-  people: args.people,
-  trends: args.trends,
-  sentiment: args.sentiment,
-})}`,
+    Person item limits: ${PEOPLE.map((p) => `${p.id}≤${personPickCount(p)}`).join("; ")}.`,
   });
 }
 
@@ -514,15 +375,6 @@ export async function generateDailyBrief(
       "Sentiment meters unavailable today — rely on valuation and catalysts.",
   };
 
-  const synthesisResult = await generateSynthesis({
-    model,
-    previous,
-    tickers: core.tickers,
-    people: core.people,
-    trends,
-    sentiment,
-  });
-
   return {
     model,
     windowHours: bundle.windowHours,
@@ -535,9 +387,6 @@ export async function generateDailyBrief(
     whales,
     valuation,
     hasPreviousBrief: Boolean(previous),
-    regionalPulse:
-      synthesisResult.object.regionalPulse.trim() ||
-      "Regional trend coverage was thin today.",
     tickers: core.tickers,
     people: core.people,
     earningsCalendar: mapEarningsCalendar(bundle),

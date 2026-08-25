@@ -20,14 +20,13 @@ export type BriefTrends = {
     id: TrendRegionId;
     label: string;
     items: BriefTrendItem[];
-    /** English prose summary for Thailand / Bulgaria (no item list in email) */
-    summary?: string;
   }>;
   crossRegion: string[];
 };
 
-/** Regions shown as an AI English summary of the top trends (not a list) */
-const SUMMARIZED_REGIONS = new Set<TrendRegionId>(["thailand", "bulgaria"]);
+/** Regions that get an English title + description for the top items */
+const LOCAL_REGIONS = new Set<TrendRegionId>(["thailand"]);
+const LOCAL_ITEM_COUNT = 3;
 
 const translationSchema = z.object({
   items: z.array(
@@ -39,15 +38,15 @@ const translationSchema = z.object({
   ),
 });
 
-const localSummarySchema = z.object({
+const localItemsSchema = z.object({
   regions: z.array(
     z.object({
       id: z.string(),
-      summary: z.string(),
       items: z.array(
         z.object({
           id: z.string(),
           titleEn: z.string(),
+          descriptionEn: z.string(),
         }),
       ),
     }),
@@ -128,44 +127,46 @@ ${jobs
   return map;
 }
 
-type LocalSummaryResult = {
+type LocalItemsResult = {
   enrichments: Map<string, Enrichment>;
-  summaries: Map<TrendRegionId, string>;
+  selectedIds: Map<TrendRegionId, string[]>;
 };
 
-async function summarizeLocalTrends(
+async function enrichLocalTrends(
   bundle: ResearchBundle,
-): Promise<LocalSummaryResult> {
+): Promise<LocalItemsResult> {
   const enrichments = new Map<string, Enrichment>();
-  const summaries = new Map<TrendRegionId, string>();
+  const selectedIds = new Map<TrendRegionId, string[]>();
 
-  const regionJobs = [...SUMMARIZED_REGIONS]
+  const regionJobs = [...LOCAL_REGIONS]
     .map((regionId) => {
-      const items = (bundle.trends[regionId] ?? []).slice(0, 3);
+      const items = bundle.trends[regionId] ?? [];
       return { regionId, items };
     })
     .filter((job) => job.items.length > 0);
 
-  if (regionJobs.length === 0) return { enrichments, summaries };
+  if (regionJobs.length === 0) return { enrichments, selectedIds };
 
   try {
     const { object } = await generateObject({
       model: getModel(),
-      schema: localSummarySchema,
+      schema: localItemsSchema,
       maxOutputTokens: 4096,
       providerOptions: {
         google: { thinkingConfig: { thinkingBudget: 0 } },
       },
-      system: `You write English-only trend summaries for a daily email brief.
+      system: `You select and describe Google Trends items for a daily email brief.
 For each country region:
-- summary: 2–4 short English sentences covering the top trends and why each is rising. Ground claims only in the provided titles, traffic, and news headlines. Do not invent facts. If news is missing, say the topic is searching highly without detailing a cause.
-- items: one English titleEn per trend id (translate the search query; keep proper nouns). Needed for matching across regions.
+- Choose the ${LOCAL_ITEM_COUNT} most important trends (news, civic, markets, culture, or widely discussed events). Skip leftover sports or trivial celebrity noise when better options exist.
+- Return exactly those items, most important first.
+- titleEn: English search-query translation; keep globally known proper nouns in Latin script.
+- descriptionEn: 1–2 English sentences — what the topic is and why it is rising. Ground claims only in the provided title, traffic, and news headline. Do not invent facts. If news is missing, say it is searching highly without inventing a cause.
 
 CRITICAL language rules:
 - Output MUST be entirely in English.
-- Never include Thai, Bulgarian, Cyrillic, or any non-English text — not even in parentheses.
+- Never include Thai or any non-English text — not even in parentheses.
 - Translate all local terms; keep globally known proper nouns in Latin script.`,
-      prompt: `Summarize the top trends for each region (English only):
+      prompt: `Pick and describe the ${LOCAL_ITEM_COUNT} most important trends for each region (English only):
 ${regionJobs
   .map((job) => {
     const lines = job.items
@@ -186,23 +187,27 @@ ${regionJobs
 
     for (const region of object.regions) {
       const regionId = region.id as TrendRegionId;
-      if (!SUMMARIZED_REGIONS.has(regionId)) continue;
-      const summary = region.summary.trim();
-      if (summary) summaries.set(regionId, summary);
-      for (const item of region.items) {
-        enrichments.set(item.id, {
-          titleEn: item.titleEn.trim() || item.id,
+      if (!LOCAL_REGIONS.has(regionId)) continue;
+      const ids: string[] = [];
+      for (const item of region.items.slice(0, LOCAL_ITEM_COUNT)) {
+        const id = item.id.trim();
+        if (!id) continue;
+        ids.push(id);
+        enrichments.set(id, {
+          titleEn: item.titleEn.trim() || id,
+          descriptionEn: item.descriptionEn.trim() || undefined,
         });
       }
+      if (ids.length > 0) selectedIds.set(regionId, ids);
     }
   } catch (error) {
     console.warn(
-      "trends: local summary failed; using original titles",
+      "trends: local item enrichment failed; using original titles",
       error,
     );
   }
 
-  return { enrichments, summaries };
+  return { enrichments, selectedIds };
 }
 
 function toBriefItem(
@@ -254,16 +259,37 @@ function computeCrossRegion(regions: BriefTrends["regions"]): string[] {
     .slice(0, 8);
 }
 
-function fallbackLocalSummary(items: BriefTrendItem[]): string {
-  if (items.length === 0) return "No trends available today.";
-  const topics = items
-    .slice(0, 3)
-    .map((item) => item.titleEn.trim() || item.title.trim())
-    .filter((t) => t && !looksNonEnglish(t));
-  if (topics.length === 0) {
-    return "Trend topics could not be translated to English today.";
+function parseLocalItemIndex(itemId: string, regionId: TrendRegionId) {
+  const prefix = `${regionId}:`;
+  if (!itemId.startsWith(prefix)) return null;
+  const index = Number.parseInt(itemId.slice(prefix.length), 10);
+  return Number.isInteger(index) && index >= 0 ? index : null;
+}
+
+function pickLocalItems(
+  sourceItems: TrendItem[],
+  selectedIds: string[] | undefined,
+  regionId: TrendRegionId,
+): TrendItem[] {
+  const picked: TrendItem[] = [];
+  const used = new Set<number>();
+
+  for (const id of selectedIds ?? []) {
+    const index = parseLocalItemIndex(id, regionId);
+    if (index == null || used.has(index) || !sourceItems[index]) continue;
+    used.add(index);
+    picked.push(sourceItems[index]);
+    if (picked.length >= LOCAL_ITEM_COUNT) return picked;
   }
-  return `Top searches today include ${topics.join(", ")}.`;
+
+  for (let index = 0; index < sourceItems.length; index++) {
+    if (used.has(index)) continue;
+    used.add(index);
+    picked.push(sourceItems[index]);
+    if (picked.length >= LOCAL_ITEM_COUNT) break;
+  }
+
+  return picked;
 }
 
 export async function buildBriefTrends(
@@ -271,29 +297,30 @@ export async function buildBriefTrends(
 ): Promise<BriefTrends> {
   const [usMap, local] = await Promise.all([
     translateUsItems(bundle),
-    summarizeLocalTrends(bundle),
+    enrichLocalTrends(bundle),
   ]);
 
   const regions = TREND_REGIONS.map((region) => {
-    const isSummarized = SUMMARIZED_REGIONS.has(region.id);
-    const source = isSummarized ? local.enrichments : usMap;
-    const rawItems = (bundle.trends[region.id] ?? []).slice(
-      0,
-      isSummarized ? 3 : undefined,
-    );
-    const items = rawItems.map((item, index) =>
-      toBriefItem(item, index + 1, source.get(`${region.id}:${index}`)),
-    );
+    const isLocal = LOCAL_REGIONS.has(region.id);
+    const sourceItems = bundle.trends[region.id] ?? [];
+    const rawItems = isLocal
+      ? pickLocalItems(sourceItems, local.selectedIds.get(region.id), region.id)
+      : sourceItems;
 
-    const summary = isSummarized
-      ? local.summaries.get(region.id)?.trim() || fallbackLocalSummary(items)
-      : undefined;
+    const items = rawItems.map((item, index) => {
+      const sourceIndex = isLocal
+        ? sourceItems.indexOf(item)
+        : index;
+      const enrichment = isLocal
+        ? local.enrichments.get(`${region.id}:${sourceIndex}`)
+        : usMap.get(`${region.id}:${index}`);
+      return toBriefItem(item, index + 1, enrichment);
+    });
 
     return {
       id: region.id,
       label: region.label,
       items,
-      ...(summary ? { summary } : {}),
     };
   });
 

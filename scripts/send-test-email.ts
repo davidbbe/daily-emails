@@ -248,9 +248,51 @@ const brief: DailyBrief = {
       nextConfirmed: false,
     },
   ],
-  regionalPulse: "",
   trends: {
-    regions: [],
+    regions: [
+      {
+        id: "thailand",
+        label: "Thailand",
+        items: [
+          {
+            rank: 1,
+            title: "ค่าไฟฟ้า",
+            titleEn: "Electricity bills",
+            approxTraffic: "200K+",
+            descriptionEn:
+              "Household power rates are searching highly after a planned tariff adjustment. Coverage points to summer demand and the next utility review.",
+            newsTitle: "EGAT flags summer tariff review",
+            newsTitleEn: "EGAT flags summer tariff review",
+            newsUrl: "https://example.com/thai-power",
+            newsSource: "Bangkok Post",
+          },
+          {
+            rank: 2,
+            title: "เลือกตั้ง",
+            titleEn: "Election",
+            approxTraffic: "100K+",
+            descriptionEn:
+              "Election-related searches jumped on fresh campaign and coalition headlines. The story is political, not a market catalyst by itself.",
+            newsTitle: "Coalition talks resume in Bangkok",
+            newsTitleEn: "Coalition talks resume in Bangkok",
+            newsUrl: "https://example.com/thai-election",
+            newsSource: "Reuters",
+          },
+          {
+            rank: 3,
+            title: "ทองคำ",
+            titleEn: "Gold",
+            approxTraffic: "50K+",
+            descriptionEn:
+              "Gold is a top local search as retail buyers watch the baht and global bullion prices. News ties the spike to a fresh local price board move.",
+            newsTitle: "Local gold shops raise buy-sell quotes",
+            newsTitleEn: "Local gold shops raise buy-sell quotes",
+            newsUrl: "https://example.com/thai-gold",
+            newsSource: "The Nation",
+          },
+        ],
+      },
+    ],
     crossRegion: [],
   },
   reddit: [],

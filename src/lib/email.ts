@@ -15,7 +15,7 @@ import {
 } from "@/lib/config";
 import { formatHumanDate } from "@/lib/dates";
 import type { RedditSubFeed, RedditWindow } from "@/lib/reddit";
-import type { BriefTrendItem } from "@/lib/trends";
+import { looksNonEnglish, type BriefTrendItem } from "@/lib/trends";
 import {
   formatMetricLimit,
   formatMetricUsed,
@@ -46,7 +46,6 @@ const TICKER_COLORS: Record<string, { bg: string; text: string; accent: string }
 const TREND_ACCENTS: Record<string, string> = {
   us: "#1d4ed8",
   thailand: "#c2410c",
-  bulgaria: "#7c3aed",
 };
 
 function escapeHtml(value: string) {
@@ -75,22 +74,6 @@ function sectionLabel(text: string, opts?: { first?: boolean }) {
   </tr>`;
 }
 
-function calloutBox(title: string, body: string, accent = "#0f766e", topPad = "0") {
-  return `<tr>
-    <td style="padding:${topPad} 0 14px 0;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
-        <tr>
-          <td style="width:5px;background:${accent};"></td>
-          <td style="padding:14px 16px;">
-            <div style="font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${accent};margin:0 0 6px 0;">${escapeHtml(title)}</div>
-            <div style="font-size:15px;line-height:1.55;color:#1e293b;">${escapeHtml(body)}</div>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>`;
-}
-
 function postLinkLabel(sourceName?: string) {
   if (sourceName === "X") return "X post";
   if (sourceName === "Truth Social") return "Truth Social";
@@ -109,14 +92,19 @@ function sourceLink(url?: string, name?: string) {
 function trendDisplayTitle(item: BriefTrendItem) {
   const en = item.titleEn.trim();
   const original = item.title.trim();
-  if (en && original && en.toLowerCase() !== original.toLowerCase()) {
+  if (
+    en &&
+    original &&
+    en.toLowerCase() !== original.toLowerCase() &&
+    !looksNonEnglish(original)
+  ) {
     return `${escapeHtml(en)} <span style="color:#94a3b8;font-weight:500;">(${escapeHtml(original)})</span>`;
   }
   return escapeHtml(en || original);
 }
 
 function trendNewsLine(item: BriefTrendItem) {
-  const headline = (item.newsTitleEn || item.newsTitle || item.descriptionEn || "").trim();
+  const headline = (item.newsTitleEn || item.newsTitle || "").trim();
   if (!headline) return "";
   const source = item.newsSource ? `${escapeHtml(item.newsSource)} — ` : "";
   const text = `${source}${escapeHtml(headline)}`;
@@ -137,6 +125,7 @@ function renderTrendRows(items: BriefTrendItem[]) {
 
   return items
     .map((item) => {
+      const description = item.descriptionEn?.trim();
       const news = trendNewsLine(item);
       return `<tr>
         <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
@@ -148,6 +137,7 @@ function renderTrendRows(items: BriefTrendItem[]) {
                   ${trendDisplayTitle(item)}
                   ${trafficBadge(item.approxTraffic)}
                 </div>
+                ${description ? `<div style="margin-top:4px;font-size:13px;line-height:1.5;color:#334155;">${escapeHtml(description)}</div>` : ""}
                 ${news ? `<div style="margin-top:4px;font-size:13px;line-height:1.45;color:#64748b;">${news}</div>` : ""}
               </td>
             </tr>
@@ -183,36 +173,6 @@ function renderFullTrendSection(region: {
           </table>
         </td>
       </tr>`;
-}
-
-/** Side-by-side Thailand / Bulgaria — English AI summary of top trends */
-function renderTrendSummaryColumn(region: {
-  id: string;
-  label: string;
-  items: BriefTrendItem[];
-  summary?: string;
-}) {
-  const accent = TREND_ACCENTS[region.id] ?? "#475569";
-  const summary = region.summary?.trim();
-  const body = summary
-    ? `<div style="font-size:13px;line-height:1.55;color:#334155;">${escapeHtml(summary)}</div>`
-    : `<div style="font-size:12px;color:#94a3b8;font-style:italic;">No trends available.</div>`;
-
-  return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
-      <tr>
-        <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">
-          <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${accent};margin-right:6px;vertical-align:middle;"></span>
-          <span style="font-size:13px;font-weight:700;color:#0f172a;vertical-align:middle;">${escapeHtml(region.label)}</span>
-          <span style="margin-left:6px;font-size:11px;color:#94a3b8;vertical-align:middle;">Top ${region.items.length || 3} · summary</span>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:12px;">
-          ${body}
-        </td>
-      </tr>
-    </table>`;
 }
 
 function renderOvernightOpeners(brief: DailyBrief) {
@@ -851,26 +811,10 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
   const regions = brief.trends?.regions ?? [];
   const usRegion = regions.find((r) => r.id === "us");
   const thailandRegion = regions.find((r) => r.id === "thailand");
-  const bulgariaRegion = regions.find((r) => r.id === "bulgaria");
 
   const trendSections = [
     usRegion ? renderFullTrendSection(usRegion) : "",
-    thailandRegion || bulgariaRegion
-      ? `<tr>
-        <td style="padding:0 0 14px 0;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-              <td class="stack-col" width="50%" style="width:50%;padding:0 6px 0 0;vertical-align:top;">
-                ${thailandRegion ? renderTrendSummaryColumn(thailandRegion) : ""}
-              </td>
-              <td class="stack-col" width="50%" style="width:50%;padding:0 0 0 6px;vertical-align:top;">
-                ${bulgariaRegion ? renderTrendSummaryColumn(bulgariaRegion) : ""}
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>`
-      : "",
+    thailandRegion ? renderFullTrendSection(thailandRegion) : "",
   ].join("");
 
   const crossRegion =
@@ -951,15 +895,8 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             }
 
             ${
-              brief.regionalPulse?.trim()
-                ? `${sectionDivider()}${calloutBox("Regional pulse", brief.regionalPulse, "#c2410c", "22px")}`
-                : ""
-            }
-
-            ${
               (brief.trends?.regions ?? []).some(
-                (region) =>
-                  region.items.length > 0 || Boolean(region.summary?.trim()),
+                (region) => region.items.length > 0,
               ) || (brief.trends?.crossRegion?.length ?? 0) > 0
                 ? `${sectionLabel("Web trends")}${trendSections}${crossRegion}`
                 : ""
@@ -1031,23 +968,14 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     }
   }
 
-  if (brief.regionalPulse?.trim()) {
-    lines.push("", "REGIONAL PULSE", brief.regionalPulse);
-  }
-
   const trendRegions = brief.trends?.regions ?? [];
   const hasTrendContent =
-    trendRegions.some(
-      (region) => region.items.length > 0 || Boolean(region.summary?.trim()),
-    ) || (brief.trends?.crossRegion?.length ?? 0) > 0;
+    trendRegions.some((region) => region.items.length > 0) ||
+    (brief.trends?.crossRegion?.length ?? 0) > 0;
   if (hasTrendContent) {
     lines.push("", "WEB TRENDS");
     for (const region of trendRegions) {
       lines.push("", region.label);
-      if (region.summary?.trim()) {
-        lines.push(region.summary.trim());
-        continue;
-      }
       if (region.items.length === 0) {
         lines.push("- No trends available.");
         continue;
@@ -1056,16 +984,17 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
         const en = item.titleEn.trim();
         const original = item.title.trim();
         const title =
-          en && original && en.toLowerCase() !== original.toLowerCase()
+          en &&
+          original &&
+          en.toLowerCase() !== original.toLowerCase() &&
+          !looksNonEnglish(original)
             ? `${en} (${original})`
             : en || original;
         lines.push(`#${item.rank} ${title} · ${item.approxTraffic}`);
-        const headline = (
-          item.descriptionEn ||
-          item.newsTitleEn ||
-          item.newsTitle ||
-          ""
-        ).trim();
+        if (item.descriptionEn?.trim()) {
+          lines.push(`  ${item.descriptionEn.trim()}`);
+        }
+        const headline = (item.newsTitleEn || item.newsTitle || "").trim();
         if (headline) {
           const source = item.newsSource ? `${item.newsSource} — ` : "";
           const url = item.newsUrl ? ` (${item.newsUrl})` : "";
