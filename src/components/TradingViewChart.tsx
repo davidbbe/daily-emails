@@ -63,43 +63,57 @@ export function TradingViewChart({
   useEffect(() => {
     let cancelled = false;
     const container = containerRef.current;
+    if (!container) return;
 
-    loadTradingViewScript()
-      .then(() => {
-        if (cancelled || !container || !window.TradingView) return;
-        container.innerHTML = "";
-        const widget = new window.TradingView.widget({
-          autosize: true,
-          symbol,
-          interval: "D",
-          timezone: "Etc/UTC",
-          theme: "dark",
-          style: "2",
-          locale: "en",
-          toolbar_bg: "#0d1311",
-          enable_publishing: false,
-          allow_symbol_change: false,
-          hide_side_toolbar: false,
-          hide_volume: false,
-          container_id: containerId,
-          // Avoid restoring a prior layout that omitted custom studies.
-          disabled_features: ["use_localstorage_for_settings"],
-          studies: DEFAULT_STUDIES,
-          studies_overrides: {
-            "relative strength index.length": 14,
-            "relative strength index.rsi.color": "#a3e635",
-            "relative strength index.rsi.linewidth": 2,
-          },
+    const mount = () => {
+      loadTradingViewScript()
+        .then(() => {
+          if (cancelled || !container || !window.TradingView) return;
+          container.innerHTML = "";
+          const widget = new window.TradingView.widget({
+            autosize: true,
+            symbol,
+            interval: "D",
+            timezone: "Etc/UTC",
+            theme: "dark",
+            style: "2",
+            locale: "en",
+            toolbar_bg: "#0d1311",
+            enable_publishing: false,
+            allow_symbol_change: false,
+            hide_side_toolbar: false,
+            hide_volume: false,
+            container_id: containerId,
+            // Avoid restoring a prior layout that omitted custom studies.
+            disabled_features: ["use_localstorage_for_settings"],
+            studies: DEFAULT_STUDIES,
+            studies_overrides: {
+              "relative strength index.length": 14,
+              "relative strength index.rsi.color": "#a3e635",
+              "relative strength index.rsi.linewidth": 2,
+            },
+          });
+          void widget;
+        })
+        .catch((error) => {
+          console.warn("TradingView chart failed to load", error);
         });
-        void widget;
-      })
-      .catch((error) => {
-        console.warn("TradingView chart failed to load", error);
-      });
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        observer.disconnect();
+        mount();
+      },
+      { rootMargin: "360px" },
+    );
+    observer.observe(container);
 
     return () => {
       cancelled = true;
-      if (container) container.innerHTML = "";
+      observer.disconnect();
+      container.innerHTML = "";
     };
   }, [symbol, containerId]);
 

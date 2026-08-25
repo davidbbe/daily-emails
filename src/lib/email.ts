@@ -41,7 +41,6 @@ const TICKER_COLORS: Record<string, { bg: string; text: string; accent: string }
   CRCL: { bg: "#f0f9ff", text: "#026aa2", accent: "#0ba5ec" },
   SPCX: { bg: "#f8fafc", text: "#334155", accent: "#64748b" },
   MSFT: { bg: "#eff8ff", text: "#1849a9", accent: "#1570ef" },
-  WQTM: { bg: "#eef2ff", text: "#3730a3", accent: "#6366f1" },
 };
 
 const TREND_ACCENTS: Record<string, string> = {

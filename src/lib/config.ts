@@ -63,22 +63,78 @@ export const TICKERS = [
     quoteSymbol: "MSFT",
     tradingViewSymbol: "NASDAQ:MSFT",
   },
-  {
-    id: "WQTM",
-    label: "WisdomTree Quantum (WQTM)",
-    query: "WQTM OR WisdomTree Quantum Computing ETF",
-    earningsSymbol: null,
-    quoteSymbol: "WQTM",
-    tradingViewSymbol: "CBOE:WQTM",
-    inOvernight: false,
-  },
 ] as const;
 
 export type TickerConfig = (typeof TICKERS)[number];
 
+/**
+ * Sector / theme ETFs on the markets page (charts only).
+ * Ordered as comparison pairs: thematic tech, then rate-sensitive, then risk-on/off.
+ */
+export const SECTORS = [
+  {
+    id: "WQTM",
+    label: "Quantum",
+    name: "WisdomTree Quantum Computing",
+    tradingViewSymbol: "CBOE:WQTM",
+  },
+  {
+    id: "SMH",
+    label: "Semiconductors",
+    name: "VanEck Semiconductor ETF",
+    tradingViewSymbol: "NASDAQ:SMH",
+  },
+  {
+    id: "IGV",
+    label: "Software",
+    name: "iShares Expanded Tech-Software",
+    tradingViewSymbol: "CBOE:IGV",
+  },
+  {
+    id: "XLE",
+    label: "Energy",
+    name: "Energy Select Sector SPDR",
+    tradingViewSymbol: "AMEX:XLE",
+  },
+  {
+    id: "XLF",
+    label: "Financials",
+    name: "Financial Select Sector SPDR",
+    tradingViewSymbol: "AMEX:XLF",
+  },
+  {
+    id: "XLU",
+    label: "Utilities",
+    name: "Utilities Select Sector SPDR",
+    tradingViewSymbol: "AMEX:XLU",
+  },
+  {
+    id: "XLY",
+    label: "Discretionary",
+    name: "Consumer Discretionary Select Sector SPDR",
+    tradingViewSymbol: "AMEX:XLY",
+  },
+  {
+    id: "XLP",
+    label: "Staples",
+    name: "Consumer Staples Select Sector SPDR",
+    tradingViewSymbol: "AMEX:XLP",
+  },
+  {
+    id: "IWM",
+    label: "Small caps",
+    name: "iShares Russell 2000",
+    tradingViewSymbol: "AMEX:IWM",
+  },
+] as const;
+
+export type SectorConfig = (typeof SECTORS)[number];
+
 /** Email overnight section. Omitted tickers still appear on the markets page. */
-export function isOvernightTicker(ticker: TickerConfig): boolean {
-  return !("inOvernight" in ticker) || ticker.inOvernight !== false;
+export function isOvernightTicker(
+  ticker: TickerConfig & { inOvernight?: boolean },
+): boolean {
+  return ticker.inOvernight !== false;
 }
 
 /** Local/dev fallback when MARKETS_PAGE_SECRET is unset (never used in production). */
