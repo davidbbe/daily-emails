@@ -22,7 +22,7 @@ import {
   type SiteAnalytics,
 } from "@/lib/analytics";
 import {
-  fetchPersonNews,
+  collectPersonFeed,
   fetchRecentNews,
   type NewsItem,
   type ResearchBundle,
@@ -85,7 +85,7 @@ async function collectResearchWithoutTrendsOrReddit(
     ),
     Promise.all(
       PEOPLE.map(async (person) => {
-        people[person.id] = await fetchPersonNews(person.query, hours).catch(
+        people[person.id] = await collectPersonFeed(person, hours).catch(
           (error) => {
             console.warn(`news failed for ${person.id}`, error);
             return [] as NewsItem[];

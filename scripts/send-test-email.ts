@@ -159,7 +159,7 @@ const brief: DailyBrief = {
     },
   ],
   people: [
-    { id: "karpathy", name: "Andrej Karpathy", summary: "None found" },
+    { id: "karpathy", name: "Andrej Karpathy", summary: "None found", items: [] },
     {
       id: "huang",
       name: "Jensen Huang",
@@ -167,24 +167,62 @@ const brief: DailyBrief = {
         "Huang said NVIDIA is seeing stronger-than-expected data-center demand, a remark that could lift AI-chip names.",
       quote: "Demand for AI infrastructure continues to exceed supply.",
       sourceUrl: "https://example.com/huang",
+      items: [
+        {
+          summary:
+            "Huang said NVIDIA is seeing stronger-than-expected data-center demand, a remark that could lift AI-chip names.",
+          quote: "Demand for AI infrastructure continues to exceed supply.",
+          sourceUrl: "https://example.com/huang",
+        },
+      ],
     },
-    { id: "karp", name: "Alex Karp", summary: "None found" },
-    { id: "altman", name: "Sam Altman", summary: "None found" },
+    { id: "karp", name: "Alex Karp", summary: "None found", items: [] },
+    { id: "altman", name: "Sam Altman", summary: "None found", items: [] },
     {
       id: "musk",
       name: "Elon Musk",
       summary:
         "Musk said Tesla will expand robotaxi service next month, which could reprice TSLA and related autonomy names.",
-      quote: "Robotaxi will be in more cities next month.",
-      sourceUrl: "https://example.com/musk",
+      sourceUrl: "https://x.com/elonmusk/status/1",
+      items: [
+        {
+          summary:
+            "Musk said Tesla will expand robotaxi service next month, which could reprice TSLA and related autonomy names.",
+          quote: "Robotaxi will be in more cities next month.",
+          sourceUrl: "https://x.com/elonmusk/status/1",
+          sourceName: "X",
+        },
+        {
+          summary:
+            "Musk said xAI compute demand is rising faster than expected, a comment that could move TSLA, space, and AI-chip names.",
+          quote: "We need a lot more compute.",
+          sourceUrl: "https://x.com/elonmusk/status/2",
+          sourceName: "X",
+        },
+      ],
     },
     {
       id: "trump",
       name: "Donald Trump",
       summary:
         "Trump said he would raise auto tariffs, a statement that could move auto, steel, and import-sensitive stocks.",
-      quote: "We're putting a very big tariff on cars.",
-      sourceUrl: "https://example.com/trump",
+      sourceUrl: "https://truthsocial.com/@realDonaldTrump/1",
+      items: [
+        {
+          summary:
+            "Trump said he would raise auto tariffs, a statement that could move auto, steel, and import-sensitive stocks.",
+          quote: "We're putting a very big tariff on cars.",
+          sourceUrl: "https://truthsocial.com/@realDonaldTrump/1",
+          sourceName: "Truth Social",
+        },
+        {
+          summary:
+            "Trump said he wants the Fed to cut rates immediately, which could lift risk assets and pressure the dollar.",
+          quote: "Interest rates should be cut now.",
+          sourceUrl: "https://truthsocial.com/@realDonaldTrump/2",
+          sourceName: "Truth Social",
+        },
+      ],
     },
   ],
   earningsCalendar: [

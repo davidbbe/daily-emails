@@ -14,8 +14,11 @@ import {
   PERSON_NEWS_LIMIT,
   TICKERS,
   TREND_REGIONS,
+  personSocial,
+  type PersonConfig,
   type TrendRegionId,
 } from "@/lib/config";
+import { fetchSocialPosts } from "@/lib/social-posts";
 import {
   collectEarningsCalendar,
   type EarningsDates,
@@ -227,6 +230,25 @@ export async function fetchPersonNews(query: string, hours = 24) {
   return fetchRecentNews(`${query} when:1d`, hours, PERSON_NEWS_LIMIT);
 }
 
+export async function collectPersonFeed(
+  person: PersonConfig,
+  hours = 24,
+): Promise<NewsItem[]> {
+  if (personSocial(person)) {
+    try {
+      const posts = await fetchSocialPosts(person, hours);
+      if (posts.length > 0) return posts;
+      console.warn(
+        `social posts empty for ${person.id}; falling back to Google News`,
+      );
+    } catch (error) {
+      console.warn(`social posts failed for ${person.id}`, error);
+    }
+  }
+
+  return fetchPersonNews(person.query, hours);
+}
+
 export async function collectResearch(hours = 24): Promise<ResearchBundle> {
   const tickers: Record<string, NewsItem[]> = {};
   const people: Record<string, NewsItem[]> = {};
@@ -241,7 +263,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
     ),
     Promise.all(
       PEOPLE.map(async (person) => {
-        people[person.id] = await fetchPersonNews(person.query, hours);
+        people[person.id] = await collectPersonFeed(person, hours);
       }),
     ),
     collectEarningsCalendar(),

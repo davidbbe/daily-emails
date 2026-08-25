@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { get, put } from "@vercel/blob";
-import type { DailyBrief } from "@/lib/brief";
+import { materialPersonItems, type DailyBrief } from "@/lib/brief";
 import type { TrendRegionId } from "@/lib/config";
 
 const BLOB_PATHNAME = "daily-emails/previous-brief.json";
@@ -38,7 +38,9 @@ export function toSnapshot(brief: DailyBrief): BriefSnapshot {
     })),
     people: brief.people.map((p) => ({
       id: p.id,
-      summary: p.summary,
+      summary: materialPersonItems(p)
+        .map((item) => item.summary)
+        .join(" | "),
     })),
     trendTitles,
   };

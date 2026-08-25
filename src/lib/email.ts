@@ -5,7 +5,7 @@ import {
   percentChange,
   type SiteAnalytics,
 } from "@/lib/analytics";
-import { isMaterialPersonSummary, type DailyBrief } from "@/lib/brief";
+import { materialPersonItems, type DailyBrief } from "@/lib/brief";
 import {
   getEmailFrom,
   getEmailTo,
@@ -89,6 +89,12 @@ function calloutBox(title: string, body: string, accent = "#0f766e", topPad = "0
       </table>
     </td>
   </tr>`;
+}
+
+function postLinkLabel(sourceName?: string) {
+  if (sourceName === "X") return "X post";
+  if (sourceName === "Truth Social") return "Truth Social";
+  return sourceName?.trim() || "Source";
 }
 
 function sourceLink(url?: string, name?: string) {
@@ -802,13 +808,27 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
 
   const peopleSections = PEOPLE.flatMap((person, index) => {
     const section = brief.people.find((p) => p.id === person.id);
-    const summary = section?.summary?.trim() ?? "";
-    if (!isMaterialPersonSummary(summary)) return [];
+    const items = materialPersonItems(section);
+    if (items.length === 0) return [];
 
     const accents = ["#0d9488", "#2563eb", "#db2777", "#ca8a04"];
     const accent = accents[index % accents.length];
-    const quote = section?.quote?.trim();
-    const link = section?.sourceUrl ? sourceLink(section.sourceUrl) : "";
+    const itemHtml = items
+      .map((item, itemIndex) => {
+        const link = item.sourceUrl
+          ? sourceLink(item.sourceUrl, postLinkLabel(item.sourceName))
+          : "";
+        const quote = item.quote?.trim();
+        const top = itemIndex === 0 ? "0" : "10px";
+        return `
+                <div style="margin-top:${top};font-size:14px;line-height:1.55;color:#334155;">${escapeHtml(item.summary)}${link}</div>
+                ${
+                  quote
+                    ? `<div style="margin-top:8px;font-size:13px;line-height:1.5;color:#475569;border-left:3px solid ${accent};padding-left:10px;font-style:italic;">“${escapeHtml(quote)}”</div>`
+                    : ""
+                }`;
+      })
+      .join("");
 
     return [
       `
@@ -819,12 +839,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
               <td style="width:5px;background:${accent};border-radius:12px 0 0 12px;"></td>
               <td style="padding:14px 16px;">
                 <div style="font-size:15px;font-weight:700;color:#0f172a;margin:0 0 6px 0;">${escapeHtml(person.name)}</div>
-                <div style="font-size:14px;line-height:1.55;color:#334155;">${escapeHtml(summary)}${link}</div>
-                ${
-                  quote
-                    ? `<div style="margin-top:8px;font-size:13px;line-height:1.5;color:#475569;border-left:3px solid ${accent};padding-left:10px;font-style:italic;">“${escapeHtml(quote)}”</div>`
-                    : ""
-                }
+                ${itemHtml}
               </td>
             </tr>
           </table>
@@ -998,18 +1013,21 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     );
   }
 
-  const spokenPeople = PEOPLE.filter((person) =>
-    isMaterialPersonSummary(
-      brief.people.find((p) => p.id === person.id)?.summary,
-    ),
+  const spokenPeople = PEOPLE.filter(
+    (person) =>
+      materialPersonItems(brief.people.find((p) => p.id === person.id)).length >
+      0,
   );
   if (spokenPeople.length > 0) {
     lines.push("", "SPEECHES & ANNOUNCEMENTS");
     for (const person of spokenPeople) {
       const section = brief.people.find((p) => p.id === person.id);
-      lines.push("", person.name, section?.summary?.trim() ?? "");
-      if (section?.quote) lines.push(`  “${section.quote}”`);
-      if (section?.sourceUrl) lines.push(`  ${section.sourceUrl}`);
+      lines.push("", person.name);
+      for (const item of materialPersonItems(section)) {
+        lines.push(item.summary);
+        if (item.quote) lines.push(`  “${item.quote}”`);
+        if (item.sourceUrl) lines.push(`  ${item.sourceUrl}`);
+      }
     }
   }
 

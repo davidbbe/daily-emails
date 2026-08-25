@@ -118,16 +118,55 @@ export function getMarketsPageUrl(): string | null {
 }
 
 export const PEOPLE = [
-  { id: "karpathy", name: "Andrej Karpathy", query: "Andrej Karpathy" },
-  { id: "huang", name: "Jensen Huang", query: "Jensen Huang NVIDIA" },
-  { id: "karp", name: "Alex Karp", query: "Alex Karp Palantir" },
-  { id: "altman", name: "Sam Altman", query: "Sam Altman OpenAI" },
-  { id: "musk", name: "Elon Musk", query: "Elon Musk" },
-  { id: "trump", name: "Donald Trump", query: "Donald Trump" },
+  { id: "karpathy", name: "Andrej Karpathy", query: "Andrej Karpathy", pickCount: 1 },
+  { id: "huang", name: "Jensen Huang", query: "Jensen Huang NVIDIA", pickCount: 1 },
+  { id: "karp", name: "Alex Karp", query: "Alex Karp Palantir", pickCount: 1 },
+  { id: "altman", name: "Sam Altman", query: "Sam Altman OpenAI", pickCount: 1 },
+  {
+    id: "musk",
+    name: "Elon Musk",
+    query: "Elon Musk",
+    pickCount: 2,
+    social: "x",
+    handle: "elonmusk",
+  },
+  {
+    id: "trump",
+    name: "Donald Trump",
+    query: "Donald Trump",
+    pickCount: 2,
+    social: "truth",
+    handle: "realDonaldTrump",
+  },
 ] as const;
+
+export type PersonConfig = (typeof PEOPLE)[number];
 
 /** Headlines kept per person so the model can pick one market-moving remark */
 export const PERSON_NEWS_LIMIT = 24;
+
+/** Own posts kept per social account for the model to choose from */
+export const SOCIAL_POST_LIMIT = 40;
+
+export function personPickCount(person: PersonConfig): number {
+  return person.pickCount;
+}
+
+export function personSocial(
+  person: PersonConfig,
+): "x" | "truth" | undefined {
+  if ("social" in person && (person.social === "x" || person.social === "truth")) {
+    return person.social;
+  }
+  return undefined;
+}
+
+export function personHandle(person: PersonConfig): string | undefined {
+  if ("handle" in person && typeof person.handle === "string") {
+    return person.handle;
+  }
+  return undefined;
+}
 
 /** Google Trends RSS regions shown in the daily brief */
 export const TREND_REGIONS = [

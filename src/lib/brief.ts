@@ -5,6 +5,8 @@ import {
   PEOPLE,
   PERSON_NEWS_LIMIT,
   TICKERS,
+  personPickCount,
+  personSocial,
   type TrendRegionId,
 } from "@/lib/config";
 import type { BriefSnapshot } from "@/lib/history";
@@ -37,9 +39,17 @@ export type TickerBrief = {
   overnightOpener: string;
 };
 
+export type PersonItem = {
+  summary: string;
+  quote?: string;
+  sourceUrl?: string;
+  sourceName?: string;
+};
+
 export type PersonBrief = {
   id: string;
   name: string;
+  items: PersonItem[];
   summary: string;
   quote?: string;
   sourceUrl?: string;
@@ -48,6 +58,24 @@ export type PersonBrief = {
 export function isMaterialPersonSummary(summary: string | undefined): boolean {
   const text = summary?.trim() ?? "";
   return text.length > 0 && text.toLowerCase() !== "none found";
+}
+
+export function materialPersonItems(
+  person: PersonBrief | undefined,
+): PersonItem[] {
+  if (!person) return [];
+  const fromItems = (person.items ?? []).filter((item) =>
+    isMaterialPersonSummary(item.summary),
+  );
+  if (fromItems.length > 0) return fromItems;
+  if (!isMaterialPersonSummary(person.summary)) return [];
+  return [
+    {
+      summary: person.summary.trim(),
+      quote: person.quote,
+      sourceUrl: person.sourceUrl,
+    },
+  ];
 }
 
 export type EarningsEvent = {
@@ -104,9 +132,18 @@ const coreBriefSchema = z.object({
     z.object({
       id: z.string(),
       name: z.string(),
-      summary: z.string(),
+      summary: z.string().optional(),
       quote: z.string().optional(),
       sourceIndex: z.number().int().optional(),
+      items: z
+        .array(
+          z.object({
+            summary: z.string(),
+            quote: z.string().optional(),
+            sourceIndex: z.number().int().optional(),
+          }),
+        )
+        .optional(),
     }),
   ),
 });
@@ -135,13 +172,18 @@ function formatSources(bundle: ResearchBundle) {
   }
 
   for (const person of PEOPLE) {
-    lines.push(`\n## ${person.name} (id=${person.id})`);
+    const social = personSocial(person);
+    const kind =
+      social === "x"
+        ? "own X posts from the last 24 hours"
+        : social === "truth"
+          ? "own Truth Social posts from the last 24 hours"
+          : "headlines";
     lines.push(
-      formatIndexedNews(
-        bundle.people[person.id] ?? [],
-        PERSON_NEWS_LIMIT,
-      ),
+      `\n## ${person.name} (id=${person.id}) — ${kind}; pick up to ${personPickCount(person)}`,
     );
+    const items = bundle.people[person.id] ?? [];
+    lines.push(formatIndexedNews(items, Math.max(PERSON_NEWS_LIMIT, items.length)));
   }
 
   return lines.join("\n");
@@ -203,8 +245,15 @@ function formatTodayForSynthesis(args: {
 
   const peopleLines = args.people
     .map((p) => {
-      const quote = p.quote ? `\n  quote: ${p.quote}` : "";
-      return `${p.name}: ${p.summary}${quote}`;
+      const items = materialPersonItems(p);
+      if (items.length === 0) return `${p.name}: (none)`;
+      return items
+        .map((item) => {
+          const quote = item.quote ? ` quote: ${item.quote}` : "";
+          const link = item.sourceUrl ? ` ${item.sourceUrl}` : "";
+          return `${p.name}: ${item.summary}${quote}${link}`;
+        })
+        .join("\n");
     })
     .join("\n");
 
@@ -279,22 +328,24 @@ For each ticker:
 - overnightOpener: one sentence (≤28 words) on overnight / pre-market / after-hours / crypto-session context from the headlines. If quiet, say so plainly. For BTC, treat it as a 24/7 session.
 
 For each person:
-- Read every headline in that person's list before choosing. High-volume speakers (Elon Musk, Donald Trump, and similar) often have many items — do not stop at the first one.
-- Include a person only if they themselves said, posted, or announced something in this window.
-- Choose exactly ONE item: the statement most likely to move stock or crypto prices (policy, regulation, tariffs, rates, company guidance, products, deals, Tesla/SpaceX/OpenAI, Bitcoin, etc.).
-- One short sentence on that chosen statement (what they said and why it could matter for markets). Do not round up several remarks.
-- If nothing they said is market-significant, return exactly "None found". Do not stretch gossip, campaign color, or coverage that is merely about them.
-- quote: a short attributed quote of the chosen statement when it appears in the headlines; otherwise omit.
-- sourceIndex: the [n] index of the chosen headline.
+- Read every item in that person's list before choosing. High-volume speakers often have many items — do not stop at the first one.
+- Elon Musk and Donald Trump lists are THEIR OWN posts (X / Truth Social) from the last 24 hours. Choose up to TWO posts most likely to move stock or crypto prices (policy, regulation, tariffs, rates, company guidance, products, deals, Tesla/SpaceX/xAI, Bitcoin, etc.). Prefer two distinct topics. Always set sourceIndex so the original post can be linked.
+- Everyone else: include them only if they themselves said, posted, or announced something in this window. Choose at most ONE item.
+- Each item: one short sentence (what they said and why it could matter for markets). Do not round up several remarks into one item.
+- If nothing they said is market-significant, return items: [] and summary exactly "None found". Do not stretch gossip, campaign color, or coverage that is merely about them.
+- quote: a short attributed quote of that chosen post/statement when the text is available; otherwise omit.
+- sourceIndex: the [n] index of the chosen post/headline.
 
-Always include every requested ticker and person id.`,
+Always include every requested ticker and person id.
+Return each person as { id, name, items: [{ summary, quote, sourceIndex }] }.`,
     prompt: `Create today's brief from these sources collected at ${bundle.collectedAt}:
 ${formatSources(bundle)}
 
 Return ticker ids exactly: ${TICKERS.map((t) => t.id).join(", ")}.
 Return people ids exactly: ${PEOPLE.map((p) => p.id).join(", ")}.
 Labels: ${TICKERS.map((t) => `${t.id}=${t.label}`).join("; ")}.
-Names: ${PEOPLE.map((p) => `${p.id}=${p.name}`).join("; ")}.`,
+Names: ${PEOPLE.map((p) => `${p.id}=${p.name}`).join("; ")}.
+Person item limits: ${PEOPLE.map((p) => `${p.id}≤${personPickCount(p)}`).join("; ")}.`,
   });
 }
 
@@ -376,21 +427,46 @@ function normalizeCore(
 
   const people = PEOPLE.flatMap((person) => {
     const found = object.people.find((p) => p.id === person.id);
-    const summary = found?.summary?.trim() || "";
-    if (!isMaterialPersonSummary(summary)) return [];
+    const rawItems =
+      found?.items && found.items.length > 0
+        ? found.items
+        : found?.summary
+          ? [
+              {
+                summary: found.summary,
+                quote: found.quote,
+                sourceIndex: found.sourceIndex,
+              },
+            ]
+          : [];
 
-    const source = resolveSource(
-      bundle.people[person.id],
-      found?.sourceIndex,
-    );
-    const quote = found?.quote?.trim() || undefined;
+    const items = rawItems
+      .flatMap((item) => {
+        const summary = item.summary?.trim() || "";
+        if (!isMaterialPersonSummary(summary)) return [];
+        const source = resolveSource(
+          bundle.people[person.id],
+          item.sourceIndex,
+        );
+        const next: PersonItem = { summary };
+        const quote = item.quote?.trim();
+        if (quote) next.quote = quote;
+        if (source.sourceUrl) next.sourceUrl = source.sourceUrl;
+        if (source.sourceName) next.sourceName = source.sourceName;
+        return [next];
+      })
+      .slice(0, personPickCount(person));
+
+    if (items.length === 0) return [];
+
     return [
       {
         id: person.id,
         name: person.name,
-        summary,
-        quote,
-        sourceUrl: source.sourceUrl,
+        items,
+        summary: items[0].summary,
+        quote: items[0].quote,
+        sourceUrl: items[0].sourceUrl,
       } satisfies PersonBrief,
     ];
   });
