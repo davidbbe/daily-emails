@@ -19,42 +19,42 @@ const BAND_STYLE: Record<
   { idleFill: string; activeFill: string; activeStroke: string; activeText: string }
 > = {
   "Extreme Fear": {
-    idleFill: "#FECACA",
-    activeFill: "#FCA5A5",
-    activeStroke: "#DC2626",
-    activeText: "#991B1B",
+    idleFill: "#3f1721",
+    activeFill: "#881337",
+    activeStroke: "#fb7185",
+    activeText: "#fecdd3",
   },
   Fear: {
-    idleFill: "#FEE2E2",
-    activeFill: "#FECACA",
-    activeStroke: "#EF4444",
-    activeText: "#B91C1C",
+    idleFill: "#3f1721",
+    activeFill: "#9f1239",
+    activeStroke: "#fb7185",
+    activeText: "#fecdd3",
   },
   Neutral: {
-    idleFill: "#F3F4F6",
-    activeFill: "#E5E7EB",
-    activeStroke: "#9CA3AF",
-    activeText: "#374151",
+    idleFill: "#17201d",
+    activeFill: "#33413c",
+    activeStroke: "#94a3b8",
+    activeText: "#e2e8f0",
   },
   Greed: {
-    idleFill: "#D1FAE5",
-    activeFill: "#A7F3D0",
-    activeStroke: "#34D399",
-    activeText: "#065F46",
+    idleFill: "#10291f",
+    activeFill: "#14532d",
+    activeStroke: "#4ade80",
+    activeText: "#bbf7d0",
   },
   "Extreme Greed": {
-    idleFill: "#A7F3D0",
-    activeFill: "#6EE7B7",
-    activeStroke: "#059669",
-    activeText: "#064E3B",
+    idleFill: "#10291f",
+    activeFill: "#166534",
+    activeStroke: "#a3e635",
+    activeText: "#d9f99d",
   },
 };
 
-const IDLE_TEXT = "#9CA3AF";
+const IDLE_TEXT = "#64736d";
 /** Neutral track for inactive segments when only the active band is colored. */
-const IDLE_FILL_NEUTRAL = "#F3F4F6";
-const SCALE_COLOR = "#A8B0BC";
-const NEEDLE_COLOR = "#1F2937";
+const IDLE_FILL_NEUTRAL = "#17201d";
+const SCALE_COLOR = "#46534e";
+const NEEDLE_COLOR = "#f4f7f5";
 /** Angular gap between segments (score units). */
 const SEGMENT_GAP = 0.9;
 
@@ -190,18 +190,18 @@ export function buildFearGreedGaugeSvg(args: {
   const scaleLabels = [0, 25, 50, 75, 100]
     .map((n) => {
       const p = polar(cx, cy, rScaleLabel, scoreToAngle(n));
-      return `<text x="${p.x.toFixed(2)}" y="${p.y.toFixed(2)}" text-anchor="middle" dominant-baseline="central" fill="#8B95A5" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:600">${n}</text>`;
+      return `<text x="${p.x.toFixed(2)}" y="${p.y.toFixed(2)}" text-anchor="middle" dominant-baseline="central" fill="#64736d" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:600">${n}</text>`;
     })
     .join("");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Fear and greed score ${hubValue}, ${escapeXml(activeBand)}">
-  <rect width="${width}" height="${height}" fill="#ffffff"/>
+  <rect width="${width}" height="${height}" fill="#0d1311"/>
   ${segmentPaths}
   ${scaleDots.join("")}
   ${scaleLabels}
   <polygon points="${tip.x.toFixed(2)},${tip.y.toFixed(2)} ${left.x.toFixed(2)},${left.y.toFixed(2)} ${right.x.toFixed(2)},${right.y.toFixed(2)}" fill="${NEEDLE_COLOR}"/>
-  <circle cx="${cx}" cy="${cy}" r="38" fill="#ffffff"/>
-  <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" fill="#111827" style="font-family:Arial,Helvetica,sans-serif;font-size:36px;font-weight:700">${hubValue}</text>
+  <circle cx="${cx}" cy="${cy}" r="38" fill="#0d1311"/>
+  <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" fill="#f4f7f5" style="font-family:Arial,Helvetica,sans-serif;font-size:36px;font-weight:700">${hubValue}</text>
 </svg>`;
 }

@@ -31,7 +31,7 @@ export function FearGreedDial({
   return (
     <div className={className}>
       {label ? (
-        <div className="mb-1 text-center text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">
+        <div className="mb-1 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[#718079]">
           {label}
         </div>
       ) : null}

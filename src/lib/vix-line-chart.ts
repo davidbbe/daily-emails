@@ -84,8 +84,8 @@ export function buildVixLineChartSvg(args: VixLineChartArgs): string {
   if (history.length < 2) {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="VIX history unavailable">
-  <rect width="${width}" height="${height}" fill="#ffffff"/>
-  <text x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="#94a3b8" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;">No VIX history</text>
+  <rect width="${width}" height="${height}" fill="#0d1311"/>
+  <text x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="#64736d" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;">No VIX history</text>
 </svg>`;
   }
 
@@ -132,8 +132,8 @@ export function buildVixLineChartSvg(args: VixLineChartArgs): string {
     .map((tick) => {
       const y = yAt(tick);
       return `
-  <line x1="${padL}" y1="${y.toFixed(2)}" x2="${(padL + plotW).toFixed(2)}" y2="${y.toFixed(2)}" stroke="#e2e8f0" stroke-width="1"/>
-  <text x="${padL - 8}" y="${y.toFixed(2)}" text-anchor="end" dominant-baseline="central" fill="#94a3b8" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:600">${tick}</text>`;
+  <line x1="${padL}" y1="${y.toFixed(2)}" x2="${(padL + plotW).toFixed(2)}" y2="${y.toFixed(2)}" stroke="#25302c" stroke-width="1"/>
+  <text x="${padL - 8}" y="${y.toFixed(2)}" text-anchor="end" dominant-baseline="central" fill="#64736d" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:600">${tick}</text>`;
     })
     .join("");
 
@@ -143,8 +143,8 @@ export function buildVixLineChartSvg(args: VixLineChartArgs): string {
     .map((p, idx, arr) => {
       const isLast = idx === arr.length - 1 && p === points[points.length - 1];
       const r = isLast ? 4.5 : 2.75;
-      const fill = isLast ? "#0f766e" : "#64748b";
-      return `<circle cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="${r}" fill="${fill}"${isLast ? ' stroke="#ffffff" stroke-width="2"' : ""}/>`;
+      const fill = isLast ? "#a3e635" : "#477b69";
+      return `<circle cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="${r}" fill="${fill}"${isLast ? ' stroke="#0d1311" stroke-width="2"' : ""}/>`;
     })
     .join("");
 
@@ -163,7 +163,7 @@ export function buildVixLineChartSvg(args: VixLineChartArgs): string {
     .map((i) => {
       const p = points[i]!;
       const anchor = i === 0 ? "start" : i === points.length - 1 ? "end" : "middle";
-      return `<text x="${p.x.toFixed(2)}" y="${(height - 12).toFixed(2)}" text-anchor="${anchor}" fill="#94a3b8" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:600">${escapeXml(formatAxisDate(p.date))}</text>`;
+      return `<text x="${p.x.toFixed(2)}" y="${(height - 12).toFixed(2)}" text-anchor="${anchor}" fill="#64736d" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:600">${escapeXml(formatAxisDate(p.date))}</text>`;
     })
     .join("");
 
@@ -171,12 +171,12 @@ export function buildVixLineChartSvg(args: VixLineChartArgs): string {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeXml(aria)}">
-  <rect width="${width}" height="${height}" fill="#ffffff"/>
+  <rect width="${width}" height="${height}" fill="#0d1311"/>
   ${grid}
-  <path d="${areaD}" fill="#0f766e" fill-opacity="0.08"/>
-  <path d="${lineD}" fill="none" stroke="#0f766e" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="${areaD}" fill="#a3e635" fill-opacity="0.09"/>
+  <path d="${lineD}" fill="none" stroke="#5eead4" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round"/>
   ${dots}
-  <text x="${labelDrawX.toFixed(2)}" y="${(latest.y - 12).toFixed(2)}" text-anchor="${labelAnchor}" fill="#0f172a" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700">${latest.v.toFixed(2)}</text>
+  <text x="${labelDrawX.toFixed(2)}" y="${(latest.y - 12).toFixed(2)}" text-anchor="${labelAnchor}" fill="#f4f7f5" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700">${latest.v.toFixed(2)}</text>
   ${xLabels}
 </svg>`;
 }

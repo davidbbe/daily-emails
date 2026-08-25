@@ -24,3 +24,101 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.markets-page {
+  color-scheme: dark;
+  background-color: #070b0a;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    radial-gradient(circle at 12% 0%, rgba(163, 230, 53, 0.1), transparent 28rem),
+    radial-gradient(circle at 88% 8%, rgba(45, 212, 191, 0.08), transparent 30rem);
+  background-size: 64px 64px, 64px 64px, auto, auto;
+}
+
+.markets-page ::selection {
+  background: rgba(163, 230, 53, 0.28);
+  color: #ffffff;
+}
+
+.markets-page .bg-white {
+  background-color: #0d1311;
+}
+
+.markets-page .bg-slate-50,
+.markets-page .bg-slate-100 {
+  background-color: #121a17;
+}
+
+.markets-page .border-slate-100,
+.markets-page .border-slate-200 {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.markets-page .text-slate-900 {
+  color: #f4f7f5;
+}
+
+.markets-page .text-slate-800 {
+  color: #dce4df;
+}
+
+.markets-page .text-slate-700 {
+  color: #bdc9c2;
+}
+
+.markets-page .text-slate-600 {
+  color: #9aa9a1;
+}
+
+.markets-page .text-slate-500 {
+  color: #7f8e87;
+}
+
+.markets-page .text-slate-400 {
+  color: #65736d;
+}
+
+.markets-page .text-teal-800,
+.markets-page .text-emerald-700,
+.markets-page .text-emerald-800 {
+  color: #6ee7b7;
+}
+
+.markets-page .text-red-700,
+.markets-page .text-red-800 {
+  color: #fb7185;
+}
+
+.markets-page .text-amber-700,
+.markets-page .text-amber-800 {
+  color: #fbbf24;
+}
+
+.markets-page .bg-emerald-50,
+.markets-page .bg-emerald-100 {
+  background-color: rgba(74, 222, 128, 0.1);
+}
+
+.markets-page .bg-red-50,
+.markets-page .bg-red-100 {
+  background-color: rgba(251, 113, 133, 0.1);
+}
+
+.markets-page .bg-amber-50 {
+  background-color: rgba(251, 191, 36, 0.1);
+}
+
+.markets-page .bg-sky-50,
+.markets-page .bg-violet-50,
+.markets-page .bg-orange-50,
+.markets-page .bg-cyan-50,
+.markets-page .bg-blue-50,
+.markets-page .bg-indigo-50 {
+  background-color: rgba(94, 234, 212, 0.09);
+}
+
+.markets-page article,
+.markets-page .market-surface {
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);
+}

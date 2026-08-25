@@ -49,36 +49,37 @@ export const metadata: Metadata = {
 };
 
 const BAND_STYLES: Record<SentimentBand, string> = {
-  "Extreme Fear": "bg-red-100 text-red-800",
-  Fear: "bg-red-50 text-red-700",
-  Neutral: "bg-slate-100 text-slate-600",
-  Greed: "bg-emerald-50 text-emerald-700",
-  "Extreme Greed": "bg-emerald-100 text-emerald-800",
+  "Extreme Fear": "border border-rose-400/20 bg-rose-400/10 text-rose-300",
+  Fear: "border border-rose-400/20 bg-rose-400/10 text-rose-300",
+  Neutral: "border border-white/10 bg-white/5 text-[#a5b2ac]",
+  Greed: "border border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
+  "Extreme Greed":
+    "border border-lime-400/20 bg-lime-400/10 text-lime-300",
 };
 
 const FLAG_STYLES: Record<BriefBullet["flag"], string> = {
-  Actionable: "bg-emerald-50 text-emerald-700",
-  Watch: "bg-amber-50 text-amber-700",
-  Noise: "bg-slate-100 text-slate-500",
+  Actionable: "border border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
+  Watch: "border border-amber-400/20 bg-amber-400/10 text-amber-300",
+  Noise: "border border-white/10 bg-white/5 text-[#89968f]",
 };
 
 const VALUE_STANCE_STYLES: Record<ValueStance, string> = {
-  Cheap: "bg-emerald-50 text-emerald-700",
-  Fair: "bg-slate-100 text-slate-600",
-  Rich: "bg-amber-50 text-amber-800",
-  Trap: "bg-red-50 text-red-700",
+  Cheap: "border border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
+  Fair: "border border-white/10 bg-white/5 text-[#a5b2ac]",
+  Rich: "border border-amber-400/20 bg-amber-400/10 text-amber-300",
+  Trap: "border border-rose-400/20 bg-rose-400/10 text-rose-300",
 };
 
 const TICKER_PILL: Record<string, string> = {
-  TSLA: "bg-red-50 text-red-700",
-  MU: "bg-sky-50 text-sky-700",
-  META: "bg-violet-50 text-violet-700",
-  BTC: "bg-orange-50 text-orange-700",
-  AVGO: "bg-emerald-50 text-emerald-700",
-  CRCL: "bg-cyan-50 text-cyan-700",
-  SPCX: "bg-slate-100 text-slate-600",
-  MSFT: "bg-blue-50 text-blue-700",
-  WQTM: "bg-indigo-50 text-indigo-700",
+  TSLA: "border border-rose-400/20 bg-rose-400/10 text-rose-300",
+  MU: "border border-sky-400/20 bg-sky-400/10 text-sky-300",
+  META: "border border-violet-400/20 bg-violet-400/10 text-violet-300",
+  BTC: "border border-orange-400/20 bg-orange-400/10 text-orange-300",
+  AVGO: "border border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
+  CRCL: "border border-cyan-400/20 bg-cyan-400/10 text-cyan-300",
+  SPCX: "border border-white/10 bg-white/5 text-[#a5b2ac]",
+  MSFT: "border border-blue-400/20 bg-blue-400/10 text-blue-300",
+  WQTM: "border border-indigo-400/20 bg-indigo-400/10 text-indigo-300",
 };
 
 function formatSigned(n: number | undefined, digits = 1) {
@@ -111,7 +112,7 @@ function BandBadge({ band }: { band?: SentimentBand | null }) {
   if (!band) return null;
   return (
     <span
-      className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${BAND_STYLES[band]}`}
+      className={`inline-block rounded-full px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] ${BAND_STYLES[band]}`}
     >
       {band}
     </span>
@@ -138,12 +139,12 @@ function MeterCard({ meter }: { meter: FearGreedMeter }) {
         : String(Math.round(meter.value));
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <article className="group rounded-3xl border border-white/8 bg-[#0d1311] p-5 transition-colors hover:border-white/14">
       <a
         href={meter.sourceUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-[11px] font-bold uppercase tracking-wide text-slate-500 no-underline hover:text-slate-800"
+        className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[#718079] no-underline transition-colors hover:text-lime-300"
       >
         {shortLabel}
       </a>
@@ -161,10 +162,10 @@ function MeterCard({ meter }: { meter: FearGreedMeter }) {
           svg={buildFearGreedGaugeSvg({ score, activeColorOnly: true })}
         />
       ) : (
-        <div className="py-10 text-center text-2xl font-bold text-slate-900">
+        <div className="py-10 text-center text-2xl font-semibold text-[#f4f7f5]">
           {rawValueLabel}
           {meter.error ? (
-            <p className="mt-2 text-sm font-normal italic text-slate-400">
+            <p className="mt-2 text-sm font-normal italic text-[#65736d]">
               {meter.error}
             </p>
           ) : null}
@@ -172,18 +173,18 @@ function MeterCard({ meter }: { meter: FearGreedMeter }) {
       )}
       <div className="mt-2 flex flex-col items-center gap-1">
         {isVix && meter.value != null ? (
-          <p className="text-center text-2xl font-bold tabular-nums text-slate-900">
+          <p className="text-center font-mono text-2xl font-semibold tabular-nums text-[#f4f7f5]">
             {meter.value.toFixed(2)}
           </p>
         ) : null}
         <BandBadge band={dialBand} />
         {isVix ? (
-          <p className="text-center text-xs text-slate-400">
+          <p className="text-center font-mono text-[10px] text-[#65736d]">
             Last ~3 months · daily closes
           </p>
         ) : null}
         {deltas ? (
-          <p className="text-center text-xs text-slate-400">{deltas}</p>
+          <p className="text-center font-mono text-[10px] text-[#65736d]">{deltas}</p>
         ) : null}
       </div>
     </article>
@@ -193,11 +194,11 @@ function MeterCard({ meter }: { meter: FearGreedMeter }) {
 function ProxyBlock({ proxy }: { proxy: TickerGreedProxy }) {
   if (proxy.error || proxy.score == null) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-center shadow-sm">
-        <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+      <div className="rounded-2xl border border-white/8 bg-white/2.5 px-4 py-6 text-center">
+        <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[#65736d]">
           Greed proxy
         </div>
-        <p className="mt-2 text-sm italic text-slate-400">
+        <p className="mt-2 text-sm italic text-[#65736d]">
           {proxy.error || "Unavailable"}
         </p>
       </div>
@@ -205,7 +206,7 @@ function ProxyBlock({ proxy }: { proxy: TickerGreedProxy }) {
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm">
+    <div className="rounded-2xl border border-white/8 bg-white/2.5 px-4 py-5">
       <FearGreedDial
         score={proxy.score}
         band={proxy.band}
@@ -361,9 +362,13 @@ function InsiderTradesSection({ insiders }: { insiders?: InsiderBrief }) {
     if (insiders?.error) {
       return (
         <section className="mb-12">
-          <h2 className="mb-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-            Insider trades
-          </h2>
+          <div className="mb-5 flex items-center gap-3">
+            <span className="font-mono text-[10px] text-lime-300">02</span>
+            <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-[#9aa9a1]">
+              Insider flow
+            </h2>
+            <span className="h-px flex-1 bg-white/8" />
+          </div>
           <p className="italic text-slate-400">{insiders.error}</p>
         </section>
       );
@@ -382,10 +387,13 @@ function InsiderTradesSection({ insiders }: { insiders?: InsiderBrief }) {
     <section className="mb-12">
       <div className="mb-4">
         <div className="flex flex-wrap items-end justify-between gap-2">
-          <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-            Insider trades
-          </h2>
-          <p className="text-xs text-slate-400">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-[10px] text-lime-300">02</span>
+            <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-[#9aa9a1]">
+              Insider flow
+            </h2>
+          </div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-[#65736d]">
             {[insiders.windowLabel, countNote].filter(Boolean).join(" · ")}
           </p>
         </div>
@@ -403,7 +411,7 @@ function InsiderTradesSection({ insiders }: { insiders?: InsiderBrief }) {
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="market-surface overflow-hidden rounded-3xl border border-white/8 bg-[#0d1311]">
         {insiders.watchlist.length > 0 ? (
           <div className="border-b border-slate-100 px-5 py-4">
             <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">
@@ -508,10 +516,13 @@ function WhaleWatchSection({ whales }: { whales?: WhaleBrief }) {
     <section className="mb-12">
       <div className="mb-4">
         <div className="flex flex-wrap items-end justify-between gap-2">
-          <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-            Whale watch
-          </h2>
-          <p className="text-xs text-slate-400">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-[10px] text-lime-300">03</span>
+            <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-[#9aa9a1]">
+              Institutional flow
+            </h2>
+          </div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-[#65736d]">
             {[whales.quarterLabel, filingNote].filter(Boolean).join(" · ")}
           </p>
         </div>
@@ -529,7 +540,7 @@ function WhaleWatchSection({ whales }: { whales?: WhaleBrief }) {
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="market-surface overflow-hidden rounded-3xl border border-white/8 bg-[#0d1311]">
         {whales.briefing?.trim() ? (
           <div className="border-b border-slate-100 px-5 py-5">
             <p className="text-[15px] leading-relaxed text-slate-800">
@@ -649,15 +660,15 @@ export default async function MarketsPage({
   const brief = await loadMarketsBrief();
   if (!brief) {
     return (
-      <main className="min-h-screen bg-[linear-gradient(160deg,#f7f4ef,#dfe8e3)] px-4 py-16 text-[#1a1f1c]">
-        <div className="mx-auto max-w-2xl rounded-2xl border border-black/5 bg-white/80 p-8 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+      <main className="markets-page min-h-screen px-4 py-16 text-[#f4f7f5]">
+        <div className="market-surface mx-auto max-w-2xl rounded-3xl border border-white/8 bg-[#0d1311] p-8">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-lime-300">
             Daily Emails
           </p>
-          <h1 className="mt-2 font-serif text-3xl tracking-tight">
+          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em]">
             Markets brief
           </h1>
-          <p className="mt-4 text-base leading-relaxed text-slate-600">
+          <p className="mt-4 text-base leading-relaxed text-[#9aa9a1]">
             No markets brief has been saved yet. Run the daily brief once, then
             refresh this page.
           </p>
@@ -724,22 +735,41 @@ export default async function MarketsPage({
   const dateLabel = formatTitleDate(brief.generatedAt);
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#e8f0ea,transparent_45%),linear-gradient(160deg,#f7f4ef,#dfe8e3)] text-[#1a1f1c]">
-      <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
-        <header className="mb-10">
-          <h1 className="mt-2 font-serif text-4xl tracking-tight sm:text-5xl">
-            Markets brief - {dateLabel}
-          </h1>
-          <p className="mt-3 text-base leading-relaxed text-slate-600">
-            Fear &amp; greed, insider trades, whale watch, valuation, watchlist
-            charts, and earnings for the latest daily run.
-          </p>
+    <main className="markets-page min-h-screen text-[#f4f7f5]">
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+        <header className="relative mb-12 overflow-hidden rounded-4xl border border-white/8 bg-[#0d1311]/90 px-6 py-8 sm:px-9 sm:py-10">
+          <div className="pointer-events-none absolute -right-20 -top-32 h-80 w-80 rounded-full bg-lime-300/8 blur-3xl" />
+          <div className="relative">
+            <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-lime-300">
+                <span className="h-1.5 w-1.5 rounded-full bg-lime-300 shadow-[0_0_12px_rgba(190,242,100,0.8)]" />
+                Daily market intelligence
+              </div>
+              <div className="rounded-full border border-white/8 bg-white/3 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[#718079]">
+                Stocks · Crypto · Macro
+              </div>
+            </div>
+            <p className="font-mono text-xs uppercase tracking-[0.14em] text-[#718079]">
+              {dateLabel}
+            </p>
+            <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-[-0.055em] sm:text-6xl">
+              Markets brief
+            </h1>
+            <p className="mt-5 max-w-2xl text-sm leading-7 text-[#9aa9a1] sm:text-base">
+              A signal-first view of sentiment, insider activity, institutional
+              moves, valuation, charts, and earnings.
+            </p>
+          </div>
         </header>
 
         <section className="mb-12">
-          <h2 className="mb-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-            Fear &amp; greed
-          </h2>
+          <div className="mb-5 flex items-center gap-3">
+            <span className="font-mono text-[10px] text-lime-300">01</span>
+            <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-[#9aa9a1]">
+              Market pulse
+            </h2>
+            <span className="h-px flex-1 bg-white/8" />
+          </div>
           {meters.length === 0 ? (
             <p className="italic text-slate-400">No market meters available.</p>
           ) : (
@@ -750,7 +780,7 @@ export default async function MarketsPage({
             </div>
           )}
           {brief.sentiment?.valueDial?.trim() ? (
-            <p className="mt-4 text-sm leading-relaxed text-slate-600">
+            <p className="mt-4 rounded-2xl border border-white/6 bg-white/2.5 px-5 py-4 text-sm leading-relaxed text-[#9aa9a1]">
               {brief.sentiment.valueDial}
             </p>
           ) : null}
@@ -761,9 +791,13 @@ export default async function MarketsPage({
         <WhaleWatchSection whales={brief.whales} />
 
         <section className="mb-12">
-          <h2 className="mb-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-            Markets
-          </h2>
+          <div className="mb-5 flex items-center gap-3">
+            <span className="font-mono text-[10px] text-lime-300">04</span>
+            <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-[#9aa9a1]">
+              Watchlist
+            </h2>
+            <span className="h-px flex-1 bg-white/8" />
+          </div>
           <div className="space-y-8">
             {TICKERS.map((ticker) => {
               const section = brief.tickers.find((t) => t.id === ticker.id);
@@ -776,7 +810,7 @@ export default async function MarketsPage({
               return (
                 <article
                   key={ticker.id}
-                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                  className="overflow-hidden rounded-3xl border border-white/8 bg-[#0d1311] transition-colors hover:border-white/14"
                 >
                   <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
                     <div className="min-w-0">
@@ -785,7 +819,7 @@ export default async function MarketsPage({
                       >
                         {ticker.id}
                       </span>
-                      <span className="ml-2 text-lg font-semibold text-slate-900">
+                      <span className="ml-2 text-lg font-semibold tracking-[-0.02em] text-[#f4f7f5]">
                         {ticker.label}
                       </span>
                     </div>
@@ -832,8 +866,8 @@ export default async function MarketsPage({
                           )}
                         </ul>
 
-                        <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
-                          <span className="font-bold text-slate-900">
+                        <div className="rounded-2xl border border-white/6 bg-white/2.5 px-4 py-3 text-sm leading-relaxed text-[#bdc9c2]">
+                          <span className="font-semibold text-[#f4f7f5]">
                             Why it matters:{" "}
                           </span>
                           {section?.whyItMatters || "Limited coverage today."}
@@ -850,7 +884,7 @@ export default async function MarketsPage({
                     {ticker.tradingViewSymbol ? (
                       <TradingViewChart symbol={ticker.tradingViewSymbol} />
                     ) : (
-                      <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm italic text-slate-400">
+                      <p className="rounded-2xl border border-white/6 bg-white/2.5 px-4 py-3 text-sm italic text-[#65736d]">
                         No public TradingView chart (private company).
                       </p>
                     )}
@@ -861,7 +895,7 @@ export default async function MarketsPage({
           </div>
         </section>
 
-        <footer className="border-t border-black/5 pt-6 text-center text-xs text-slate-400">
+        <footer className="border-t border-white/8 pt-6 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-[#65736d]">
           Charts by TradingView · Generated by Daily Emails
         </footer>
       </div>

@@ -73,10 +73,10 @@ export function TradingViewChart({
           symbol,
           interval: "D",
           timezone: "Etc/UTC",
-          theme: "light",
+          theme: "dark",
           style: "2",
           locale: "en",
-          toolbar_bg: "#f8fafc",
+          toolbar_bg: "#0d1311",
           enable_publishing: false,
           allow_symbol_change: false,
           hide_side_toolbar: false,
@@ -87,7 +87,7 @@ export function TradingViewChart({
           studies: DEFAULT_STUDIES,
           studies_overrides: {
             "relative strength index.length": 14,
-            "relative strength index.rsi.color": "#7c3aed",
+            "relative strength index.rsi.color": "#a3e635",
             "relative strength index.rsi.linewidth": 2,
           },
         });
@@ -105,7 +105,7 @@ export function TradingViewChart({
 
   return (
     <div
-      className="tradingview-widget-container overflow-hidden rounded-xl border border-slate-200 bg-white"
+      className="tradingview-widget-container overflow-hidden rounded-2xl border border-white/8 bg-[#0d1311]"
       style={{ height }}
     >
       <div
