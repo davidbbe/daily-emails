@@ -11,6 +11,7 @@ import {
 } from "@/lib/analytics";
 import {
   PEOPLE,
+  PERSON_NEWS_LIMIT,
   TICKERS,
   TREND_REGIONS,
   type TrendRegionId,
@@ -193,11 +194,17 @@ async function fetchCountryTrends(geo: string, limit = 10): Promise<TrendItem[]>
   });
 }
 
-async function fetchRecentNews(query: string, hours = 24): Promise<NewsItem[]> {
+export async function fetchRecentNews(
+  query: string,
+  hours = 24,
+  maxItems = 8,
+): Promise<NewsItem[]> {
   const feed = await parser.parseURL(googleNewsRssUrl(query));
   const items: NewsItem[] = [];
 
-  for (const item of feed.items.slice(0, 20)) {
+  for (const item of feed.items) {
+    if (items.length >= maxItems) break;
+
     const published = item.isoDate || item.pubDate;
     if (!published || !item.title || !item.link) continue;
 
@@ -212,7 +219,12 @@ async function fetchRecentNews(query: string, hours = 24): Promise<NewsItem[]> {
     });
   }
 
-  return items.slice(0, 8);
+  return items;
+}
+
+export async function fetchPersonNews(query: string, hours = 24) {
+  // when:1d ranks last-day stories so high-volume names aren't drowned out.
+  return fetchRecentNews(`${query} when:1d`, hours, PERSON_NEWS_LIMIT);
 }
 
 export async function collectResearch(hours = 24): Promise<ResearchBundle> {
@@ -229,7 +241,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
     ),
     Promise.all(
       PEOPLE.map(async (person) => {
-        people[person.id] = await fetchRecentNews(person.query, hours);
+        people[person.id] = await fetchPersonNews(person.query, hours);
       }),
     ),
     collectEarningsCalendar(),

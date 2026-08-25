@@ -160,9 +160,32 @@ const brief: DailyBrief = {
   ],
   people: [
     { id: "karpathy", name: "Andrej Karpathy", summary: "None found" },
-    { id: "huang", name: "Jensen Huang", summary: "None found" },
+    {
+      id: "huang",
+      name: "Jensen Huang",
+      summary:
+        "Huang said NVIDIA is seeing stronger-than-expected data-center demand, a remark that could lift AI-chip names.",
+      quote: "Demand for AI infrastructure continues to exceed supply.",
+      sourceUrl: "https://example.com/huang",
+    },
     { id: "karp", name: "Alex Karp", summary: "None found" },
     { id: "altman", name: "Sam Altman", summary: "None found" },
+    {
+      id: "musk",
+      name: "Elon Musk",
+      summary:
+        "Musk said Tesla will expand robotaxi service next month, which could reprice TSLA and related autonomy names.",
+      quote: "Robotaxi will be in more cities next month.",
+      sourceUrl: "https://example.com/musk",
+    },
+    {
+      id: "trump",
+      name: "Donald Trump",
+      summary:
+        "Trump said he would raise auto tariffs, a statement that could move auto, steel, and import-sensitive stocks.",
+      quote: "We're putting a very big tariff on cars.",
+      sourceUrl: "https://example.com/trump",
+    },
   ],
   earningsCalendar: [
     {

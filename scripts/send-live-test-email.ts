@@ -21,13 +21,18 @@ import {
   collectSiteAnalytics,
   type SiteAnalytics,
 } from "@/lib/analytics";
-import type { NewsItem, ResearchBundle, TrendItem } from "@/lib/research";
+import {
+  fetchPersonNews,
+  fetchRecentNews,
+  type NewsItem,
+  type ResearchBundle,
+  type TrendItem,
+} from "@/lib/research";
 import { collectSentiment } from "@/lib/sentiment";
 import { collectUsageReport } from "@/lib/usage";
 import { collectValuation, type TickerValuation } from "@/lib/valuation";
 import { collectInsiderTrades, emptyInsiderBrief } from "@/lib/openinsider";
 import { collectWhaleActivity, emptyWhaleResearch } from "@/lib/whales";
-import Parser from "rss-parser";
 
 function loadEnvFile(filename: string) {
   try {
@@ -57,41 +62,6 @@ function loadEnvFile(filename: string) {
 loadEnvFile(".env");
 loadEnvFile(".env.local");
 
-const parser = new Parser({
-  timeout: 15000,
-  headers: { "User-Agent": "daily-emails-brief/1.0" },
-});
-
-function googleNewsRssUrl(query: string) {
-  const q = encodeURIComponent(query);
-  return `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
-}
-
-function isWithinHours(date: Date, hours: number) {
-  const cutoff = Date.now() - hours * 60 * 60 * 1000;
-  return date.getTime() >= cutoff;
-}
-
-async function fetchRecentNews(query: string, hours = 24): Promise<NewsItem[]> {
-  const feed = await parser.parseURL(googleNewsRssUrl(query));
-  const items: NewsItem[] = [];
-
-  for (const item of feed.items.slice(0, 20)) {
-    const published = item.isoDate || item.pubDate;
-    if (!published || !item.title || !item.link) continue;
-    const date = new Date(published);
-    if (Number.isNaN(date.getTime()) || !isWithinHours(date, hours)) continue;
-    items.push({
-      title: item.title,
-      link: item.link,
-      publishedAt: date.toISOString(),
-      source: item.source?.name || item.creator || undefined,
-    });
-  }
-
-  return items.slice(0, 8);
-}
-
 async function collectResearchWithoutTrendsOrReddit(
   hours = 24,
 ): Promise<ResearchBundle> {
@@ -115,7 +85,7 @@ async function collectResearchWithoutTrendsOrReddit(
     ),
     Promise.all(
       PEOPLE.map(async (person) => {
-        people[person.id] = await fetchRecentNews(person.query, hours).catch(
+        people[person.id] = await fetchPersonNews(person.query, hours).catch(
           (error) => {
             console.warn(`news failed for ${person.id}`, error);
             return [] as NewsItem[];

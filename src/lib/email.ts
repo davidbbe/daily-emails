@@ -5,7 +5,7 @@ import {
   percentChange,
   type SiteAnalytics,
 } from "@/lib/analytics";
-import type { DailyBrief } from "@/lib/brief";
+import { isMaterialPersonSummary, type DailyBrief } from "@/lib/brief";
 import {
   getEmailFrom,
   getEmailTo,
@@ -800,18 +800,18 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
     );
   }
 
-  const peopleSections = PEOPLE.map((person, index) => {
+  const peopleSections = PEOPLE.flatMap((person, index) => {
     const section = brief.people.find((p) => p.id === person.id);
-    const summary = section?.summary?.trim() || "None found";
-    const isNone = summary.toLowerCase() === "none found";
+    const summary = section?.summary?.trim() ?? "";
+    if (!isMaterialPersonSummary(summary)) return [];
+
     const accents = ["#0d9488", "#2563eb", "#db2777", "#ca8a04"];
     const accent = accents[index % accents.length];
     const quote = section?.quote?.trim();
-    const link = !isNone && section?.sourceUrl
-      ? sourceLink(section.sourceUrl)
-      : "";
+    const link = section?.sourceUrl ? sourceLink(section.sourceUrl) : "";
 
-    return `
+    return [
+      `
       <tr>
         <td style="padding:0 0 12px 0;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;">
@@ -819,7 +819,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
               <td style="width:5px;background:${accent};border-radius:12px 0 0 12px;"></td>
               <td style="padding:14px 16px;">
                 <div style="font-size:15px;font-weight:700;color:#0f172a;margin:0 0 6px 0;">${escapeHtml(person.name)}</div>
-                <div style="font-size:14px;line-height:1.55;color:${isNone ? "#94a3b8" : "#334155"};font-style:${isNone ? "italic" : "normal"};">${escapeHtml(summary)}${link}</div>
+                <div style="font-size:14px;line-height:1.55;color:#334155;">${escapeHtml(summary)}${link}</div>
                 ${
                   quote
                     ? `<div style="margin-top:8px;font-size:13px;line-height:1.5;color:#475569;border-left:3px solid ${accent};padding-left:10px;font-style:italic;">“${escapeHtml(quote)}”</div>`
@@ -829,7 +829,8 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             </tr>
           </table>
         </td>
-      </tr>`;
+      </tr>`,
+    ];
   }).join("");
 
   const regions = brief.trends?.regions ?? [];
@@ -928,8 +929,11 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             ${renderOvernightOpeners(brief)}
             ${renderMarketsCta(marketsUrl)}
 
-            ${sectionLabel("Speeches &amp; announcements")}
-            ${peopleSections}
+            ${
+              peopleSections
+                ? `${sectionLabel("Speeches &amp; announcements")}${peopleSections}`
+                : ""
+            }
 
             ${
               brief.regionalPulse?.trim()
@@ -994,12 +998,19 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     );
   }
 
-  lines.push("", "SPEECHES & ANNOUNCEMENTS");
-  for (const person of PEOPLE) {
-    const section = brief.people.find((p) => p.id === person.id);
-    lines.push("", person.name, section?.summary?.trim() || "None found");
-    if (section?.quote) lines.push(`  “${section.quote}”`);
-    if (section?.sourceUrl) lines.push(`  ${section.sourceUrl}`);
+  const spokenPeople = PEOPLE.filter((person) =>
+    isMaterialPersonSummary(
+      brief.people.find((p) => p.id === person.id)?.summary,
+    ),
+  );
+  if (spokenPeople.length > 0) {
+    lines.push("", "SPEECHES & ANNOUNCEMENTS");
+    for (const person of spokenPeople) {
+      const section = brief.people.find((p) => p.id === person.id);
+      lines.push("", person.name, section?.summary?.trim() ?? "");
+      if (section?.quote) lines.push(`  “${section.quote}”`);
+      if (section?.sourceUrl) lines.push(`  ${section.sourceUrl}`);
+    }
   }
 
   if (brief.regionalPulse?.trim()) {

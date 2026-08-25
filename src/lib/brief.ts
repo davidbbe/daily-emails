@@ -1,6 +1,12 @@
 import { generateObject } from "ai";
 import { z } from "zod";
-import { getModel, PEOPLE, TICKERS, type TrendRegionId } from "@/lib/config";
+import {
+  getModel,
+  PEOPLE,
+  PERSON_NEWS_LIMIT,
+  TICKERS,
+  type TrendRegionId,
+} from "@/lib/config";
 import type { BriefSnapshot } from "@/lib/history";
 import type { SiteAnalytics } from "@/lib/analytics";
 import type { NewsItem, ResearchBundle } from "@/lib/research";
@@ -38,6 +44,11 @@ export type PersonBrief = {
   quote?: string;
   sourceUrl?: string;
 };
+
+export function isMaterialPersonSummary(summary: string | undefined): boolean {
+  const text = summary?.trim() ?? "";
+  return text.length > 0 && text.toLowerCase() !== "none found";
+}
 
 export type EarningsEvent = {
   tickerId: string;
@@ -125,7 +136,12 @@ function formatSources(bundle: ResearchBundle) {
 
   for (const person of PEOPLE) {
     lines.push(`\n## ${person.name} (id=${person.id})`);
-    lines.push(formatIndexedNews(bundle.people[person.id] ?? []));
+    lines.push(
+      formatIndexedNews(
+        bundle.people[person.id] ?? [],
+        PERSON_NEWS_LIMIT,
+      ),
+    );
   }
 
   return lines.join("\n");
@@ -263,9 +279,13 @@ For each ticker:
 - overnightOpener: one sentence (≤28 words) on overnight / pre-market / after-hours / crypto-session context from the headlines. If quiet, say so plainly. For BTC, treat it as a 24/7 session.
 
 For each person:
-- One short sentence about speeches/announcements, or exactly "None found".
-- quote: only if a short attributed quote appears in the headlines; otherwise omit.
-- sourceIndex: best supporting headline index when there is material news.
+- Read every headline in that person's list before choosing. High-volume speakers (Elon Musk, Donald Trump, and similar) often have many items — do not stop at the first one.
+- Include a person only if they themselves said, posted, or announced something in this window.
+- Choose exactly ONE item: the statement most likely to move stock or crypto prices (policy, regulation, tariffs, rates, company guidance, products, deals, Tesla/SpaceX/OpenAI, Bitcoin, etc.).
+- One short sentence on that chosen statement (what they said and why it could matter for markets). Do not round up several remarks.
+- If nothing they said is market-significant, return exactly "None found". Do not stretch gossip, campaign color, or coverage that is merely about them.
+- quote: a short attributed quote of the chosen statement when it appears in the headlines; otherwise omit.
+- sourceIndex: the [n] index of the chosen headline.
 
 Always include every requested ticker and person id.`,
     prompt: `Create today's brief from these sources collected at ${bundle.collectedAt}:
@@ -354,22 +374,25 @@ function normalizeCore(
     };
   });
 
-  const people = PEOPLE.map((person) => {
+  const people = PEOPLE.flatMap((person) => {
     const found = object.people.find((p) => p.id === person.id);
-    const summary = found?.summary?.trim() || "None found";
+    const summary = found?.summary?.trim() || "";
+    if (!isMaterialPersonSummary(summary)) return [];
+
     const source = resolveSource(
       bundle.people[person.id],
       found?.sourceIndex,
     );
     const quote = found?.quote?.trim() || undefined;
-    return {
-      id: person.id,
-      name: person.name,
-      summary,
-      quote: quote && summary.toLowerCase() !== "none found" ? quote : undefined,
-      sourceUrl:
-        summary.toLowerCase() === "none found" ? undefined : source.sourceUrl,
-    };
+    return [
+      {
+        id: person.id,
+        name: person.name,
+        summary,
+        quote,
+        sourceUrl: source.sourceUrl,
+      } satisfies PersonBrief,
+    ];
   });
 
   return { tickers, people };

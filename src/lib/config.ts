@@ -122,7 +122,12 @@ export const PEOPLE = [
   { id: "huang", name: "Jensen Huang", query: "Jensen Huang NVIDIA" },
   { id: "karp", name: "Alex Karp", query: "Alex Karp Palantir" },
   { id: "altman", name: "Sam Altman", query: "Sam Altman OpenAI" },
+  { id: "musk", name: "Elon Musk", query: "Elon Musk" },
+  { id: "trump", name: "Donald Trump", query: "Donald Trump" },
 ] as const;
+
+/** Headlines kept per person so the model can pick one market-moving remark */
+export const PERSON_NEWS_LIMIT = 24;
 
 /** Google Trends RSS regions shown in the daily brief */
 export const TREND_REGIONS = [
