@@ -12,6 +12,7 @@ import {
   getMarketsPageUrl,
   PEOPLE,
   TICKERS,
+  isOvernightTicker,
 } from "@/lib/config";
 import { formatHumanDate } from "@/lib/dates";
 import type { RedditSubFeed, RedditWindow } from "@/lib/reddit";
@@ -176,7 +177,7 @@ function renderFullTrendSection(region: {
 }
 
 function renderOvernightOpeners(brief: DailyBrief) {
-  const rows = TICKERS.map((ticker) => {
+  const rows = TICKERS.filter(isOvernightTicker).map((ticker) => {
     const section = brief.tickers.find((t) => t.id === ticker.id);
     const colors = TICKER_COLORS[ticker.id] ?? {
       bg: "#f8fafc",
@@ -830,9 +831,11 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
       : "";
 
   const firstOpener =
-    TICKERS.map((ticker) =>
-      brief.tickers.find((t) => t.id === ticker.id)?.overnightOpener?.trim(),
-    ).find(Boolean) ?? briefWindowLabel(brief);
+    TICKERS.filter(isOvernightTicker)
+      .map((ticker) =>
+        brief.tickers.find((t) => t.id === ticker.id)?.overnightOpener?.trim(),
+      )
+      .find(Boolean) ?? briefWindowLabel(brief);
   const preheader = `${firstOpener} · ${dateShort}`;
 
   return `<!DOCTYPE html>
@@ -935,7 +938,7 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
 
   lines.push("", "OVERNIGHT OPENERS");
 
-  for (const ticker of TICKERS) {
+  for (const ticker of TICKERS.filter(isOvernightTicker)) {
     const section = brief.tickers.find((t) => t.id === ticker.id);
     lines.push(`${ticker.id}: ${section?.overnightOpener || "Quiet overnight."}`);
   }

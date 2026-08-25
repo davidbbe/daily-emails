@@ -70,8 +70,16 @@ export const TICKERS = [
     earningsSymbol: null,
     quoteSymbol: "WQTM",
     tradingViewSymbol: "CBOE:WQTM",
+    inOvernight: false,
   },
 ] as const;
+
+export type TickerConfig = (typeof TICKERS)[number];
+
+/** Email overnight section. Omitted tickers still appear on the markets page. */
+export function isOvernightTicker(ticker: TickerConfig): boolean {
+  return !("inOvernight" in ticker) || ticker.inOvernight !== false;
+}
 
 /** Local/dev fallback when MARKETS_PAGE_SECRET is unset (never used in production). */
 export const DEV_MARKETS_PAGE_SECRET = "dev-markets-secret";

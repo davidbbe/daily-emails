@@ -5,6 +5,7 @@ import {
   PEOPLE,
   PERSON_NEWS_LIMIT,
   TICKERS,
+  isOvernightTicker,
   personPickCount,
   personSocial,
 } from "@/lib/config";
@@ -123,7 +124,7 @@ const coreBriefSchema = z.object({
         }),
       ),
       whyItMatters: z.string(),
-      overnightOpener: z.string(),
+      overnightOpener: z.string().optional(),
     }),
   ),
   people: z.array(
@@ -218,7 +219,7 @@ For each ticker:
   - Noise: soft coverage, rumor, or low-signal chatter
 - Set sourceIndex to the [n] index of the best supporting headline for that ticker when possible.
 - whyItMatters: one sentence (≤28 words) synthesizing why today's coverage matters for that name.
-- overnightOpener: one sentence (≤28 words) on overnight / pre-market / after-hours / crypto-session context from the headlines. If quiet, say so plainly. For BTC, treat it as a 24/7 session.
+- overnightOpener: one sentence (≤28 words) on overnight / pre-market / after-hours / crypto-session context from the headlines. If quiet, say so plainly. For BTC, treat it as a 24/7 session. Only set overnightOpener for overnight tickers.
 
 For each person:
 - Read every item in that person's list before choosing. High-volume speakers often have many items — do not stop at the first one.
@@ -235,6 +236,8 @@ Return each person as { id, name, items: [{ summary, quote, sourceIndex }] }.`,
 ${formatSources(bundle)}
 
 Return ticker ids exactly: ${TICKERS.map((t) => t.id).join(", ")}.
+Overnight tickers (overnightOpener required): ${TICKERS.filter(isOvernightTicker).map((t) => t.id).join(", ")}.
+Skip overnightOpener for: ${TICKERS.filter((t) => !isOvernightTicker(t)).map((t) => t.id).join(", ") || "(none)"}.
 Return people ids exactly: ${PEOPLE.map((p) => p.id).join(", ")}.
 Labels: ${TICKERS.map((t) => `${t.id}=${t.label}`).join("; ")}.
 Names: ${PEOPLE.map((p) => `${p.id}=${p.name}`).join("; ")}.
@@ -280,9 +283,10 @@ function normalizeCore(
             ],
       whyItMatters:
         found?.whyItMatters?.trim() || "Limited coverage in the last 24 hours.",
-      overnightOpener:
-        found?.overnightOpener?.trim() ||
-        "Quiet overnight — no notable session headlines.",
+      overnightOpener: isOvernightTicker(ticker)
+        ? found?.overnightOpener?.trim() ||
+          "Quiet overnight — no notable session headlines."
+        : "",
     };
   });
 
