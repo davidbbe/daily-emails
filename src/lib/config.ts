@@ -68,8 +68,9 @@ export const TICKERS = [
 export type TickerConfig = (typeof TICKERS)[number];
 
 /**
- * Sector / theme ETFs on the markets page (charts only).
+ * Sector / theme ETFs on the markets page.
  * Ordered as comparison pairs: thematic tech, then rate-sensitive, then risk-on/off.
+ * `names` are well-known constituents or stand-ins for the sleeve — holdings change.
  */
 export const SECTORS = [
   {
@@ -77,54 +78,72 @@ export const SECTORS = [
     label: "Quantum",
     name: "WisdomTree Quantum Computing",
     tradingViewSymbol: "CBOE:WQTM",
+    blurb: "Hardware and software for quantum computers, plus large tech firms with a quantum program.",
+    names: ["IonQ", "D-Wave", "IBM", "Microsoft"],
   },
   {
     id: "SMH",
     label: "Semiconductors",
     name: "VanEck Semiconductor ETF",
     tradingViewSymbol: "NASDAQ:SMH",
+    blurb: "Chip designers, foundries, and equipment makers under AI, phones, and data centers.",
+    names: ["Nvidia", "TSMC", "Broadcom", "AMD"],
   },
   {
     id: "IGV",
     label: "Software",
     name: "iShares Expanded Tech-Software",
     tradingViewSymbol: "CBOE:IGV",
+    blurb: "Cloud apps, cybersecurity, and developer tools — software platforms, not the chipmakers.",
+    names: ["Microsoft", "Palantir", "Palo Alto", "Salesforce"],
   },
   {
     id: "XLE",
     label: "Energy",
     name: "Energy Select Sector SPDR",
     tradingViewSymbol: "AMEX:XLE",
+    blurb: "S&P 500 oil, gas, and energy infrastructure — producers, refiners, and drillers.",
+    names: ["ExxonMobil", "Chevron", "ConocoPhillips", "SLB"],
   },
   {
     id: "XLF",
     label: "Financials",
     name: "Financial Select Sector SPDR",
     tradingViewSymbol: "AMEX:XLF",
+    blurb: "Money-center banks, payment networks, and insurers in the S&P 500 financials sleeve.",
+    names: ["JPMorgan", "Berkshire", "Visa", "Bank of America"],
   },
   {
     id: "XLU",
     label: "Utilities",
     name: "Utilities Select Sector SPDR",
     tradingViewSymbol: "AMEX:XLU",
+    blurb: "Regulated electric and gas utilities, plus power producers tied to data-center demand.",
+    names: ["NextEra", "Southern Co.", "Duke", "Constellation"],
   },
   {
     id: "XLY",
     label: "Discretionary",
     name: "Consumer Discretionary Select Sector SPDR",
     tradingViewSymbol: "AMEX:XLY",
+    blurb: "What households spend when they feel flush: retail, cars, restaurants, and travel.",
+    names: ["Amazon", "Tesla", "Home Depot", "McDonald's"],
   },
   {
     id: "XLP",
     label: "Staples",
     name: "Consumer Staples Select Sector SPDR",
     tradingViewSymbol: "AMEX:XLP",
+    blurb: "Food, household goods, and discount retail that tend to hold up when consumers trade down.",
+    names: ["Walmart", "Costco", "Coca-Cola", "P&G"],
   },
   {
     id: "IWM",
     label: "Small caps",
     name: "iShares Russell 2000",
     tradingViewSymbol: "AMEX:IWM",
+    blurb: "About 2,000 smaller US companies. No mega-caps; weights stay tiny and names rotate.",
+    names: ["Brinker (Chili's)", "Compass", "JFrog", "Moog"],
   },
 ] as const;
 

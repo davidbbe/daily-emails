@@ -574,20 +574,33 @@ function SectorCard({ sector }: { sector: SectorConfig }) {
   const pill = TICKER_PILL[sector.id] ?? "border border-white/10 bg-white/5 text-[#a5b2ac]";
 
   return (
-    <article className="overflow-hidden rounded-3xl border border-white/8 bg-[#0d1311] transition-colors hover:border-white/14">
-      <div className="flex items-baseline gap-2 border-b border-slate-100 px-5 py-4">
+    <article className="min-w-0 overflow-hidden rounded-3xl border border-white/8 bg-[#0d1311] transition-colors hover:border-white/14">
+      <div className="flex min-w-0 items-baseline gap-2 border-b border-slate-100 px-5 py-4">
         <span
-          className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold ${pill}`}
+          className={`inline-block shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${pill}`}
         >
           {sector.id}
         </span>
-        <span className="text-lg font-semibold tracking-[-0.02em] text-[#f4f7f5]">
+        <span className="shrink-0 text-lg font-semibold tracking-[-0.02em] text-[#f4f7f5]">
           {sector.label}
         </span>
         <span className="min-w-0 truncate text-sm text-[#65736d]">{sector.name}</span>
       </div>
-      <div className="px-5 py-5">
-        <TradingViewChart symbol={sector.tradingViewSymbol} />
+      <div className="space-y-2.5 border-b border-white/8 px-5 py-3">
+        <p className="text-sm leading-relaxed text-[#9aa9a1]">{sector.blurb}</p>
+        <ul className="flex flex-wrap gap-1.5">
+          {sector.names.map((name) => (
+            <li
+              key={name}
+              className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] font-medium text-[#c5d0cb]"
+            >
+              {name}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="min-w-0">
+        <TradingViewChart compact symbol={sector.tradingViewSymbol} />
       </div>
     </article>
   );
@@ -609,7 +622,7 @@ function SectorsSection() {
           shifts and RSI extremes — no headlines.
         </p>
       </div>
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {SECTORS.map((sector) => (
           <SectorCard key={sector.id} sector={sector} />
         ))}

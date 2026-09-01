@@ -5,6 +5,8 @@ import { useEffect, useId, useRef } from "react";
 type TradingViewChartProps = {
   symbol: string;
   height?: number;
+  /** Strip chrome so the plot fits a narrow sector card. */
+  compact?: boolean;
 };
 
 declare global {
@@ -55,45 +57,66 @@ const DEFAULT_STUDIES = [
 export function TradingViewChart({
   symbol,
   height = 360,
+  compact = false,
 }: TradingViewChartProps) {
+  const frameRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const reactId = useId().replace(/:/g, "");
   const containerId = `tv_${reactId}`;
 
   useEffect(() => {
     let cancelled = false;
+    let mounted = false;
+    let lastWidth = 0;
+    let lastHeight = 0;
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+    const frame = frameRef.current;
     const container = containerRef.current;
-    if (!container) return;
+    if (!frame || !container) return;
+
+    const createWidget = () => {
+      if (cancelled || !window.TradingView) return;
+      const width = Math.floor(frame.clientWidth);
+      const heightPx = Math.floor(frame.clientHeight);
+      if (width < 2 || heightPx < 2) return;
+      lastWidth = width;
+      lastHeight = heightPx;
+      container.innerHTML = "";
+      new window.TradingView.widget({
+        autosize: false,
+        width,
+        height: heightPx,
+        symbol,
+        interval: "D",
+        timezone: "Etc/UTC",
+        theme: "dark",
+        style: "2",
+        locale: "en",
+        toolbar_bg: "#0d1311",
+        enable_publishing: false,
+        allow_symbol_change: false,
+        hide_side_toolbar: compact,
+        hide_top_toolbar: compact,
+        hide_legend: compact,
+        hide_volume: false,
+        container_id: containerId,
+        // Avoid restoring a prior layout that omitted custom studies.
+        disabled_features: ["use_localstorage_for_settings"],
+        studies: DEFAULT_STUDIES,
+        studies_overrides: {
+          "relative strength index.length": 14,
+          "relative strength index.rsi.color": "#a3e635",
+          "relative strength index.rsi.linewidth": 2,
+        },
+      });
+      mounted = true;
+    };
 
     const mount = () => {
       loadTradingViewScript()
         .then(() => {
-          if (cancelled || !container || !window.TradingView) return;
-          container.innerHTML = "";
-          const widget = new window.TradingView.widget({
-            autosize: true,
-            symbol,
-            interval: "D",
-            timezone: "Etc/UTC",
-            theme: "dark",
-            style: "2",
-            locale: "en",
-            toolbar_bg: "#0d1311",
-            enable_publishing: false,
-            allow_symbol_change: false,
-            hide_side_toolbar: false,
-            hide_volume: false,
-            container_id: containerId,
-            // Avoid restoring a prior layout that omitted custom studies.
-            disabled_features: ["use_localstorage_for_settings"],
-            studies: DEFAULT_STUDIES,
-            studies_overrides: {
-              "relative strength index.length": 14,
-              "relative strength index.rsi.color": "#a3e635",
-              "relative strength index.rsi.linewidth": 2,
-            },
-          });
-          void widget;
+          if (cancelled) return;
+          createWidget();
         })
         .catch((error) => {
           console.warn("TradingView chart failed to load", error);
@@ -108,24 +131,49 @@ export function TradingViewChart({
       },
       { rootMargin: "360px" },
     );
-    observer.observe(container);
+    observer.observe(frame);
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (!mounted || cancelled) return;
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (cancelled || !mounted) return;
+        const width = Math.floor(frame.clientWidth);
+        const heightPx = Math.floor(frame.clientHeight);
+        if (
+          Math.abs(width - lastWidth) < 4 &&
+          Math.abs(heightPx - lastHeight) < 4
+        ) {
+          return;
+        }
+        createWidget();
+      }, 200);
+    });
+    resizeObserver.observe(frame);
 
     return () => {
       cancelled = true;
       observer.disconnect();
+      resizeObserver.disconnect();
+      clearTimeout(resizeTimer);
       container.innerHTML = "";
     };
-  }, [symbol, containerId]);
+  }, [symbol, containerId, compact]);
 
   return (
     <div
-      className="tradingview-widget-container overflow-hidden rounded-2xl border border-white/8 bg-[#0d1311]"
+      ref={frameRef}
+      className={
+        compact
+          ? "tradingview-widget-container w-full min-w-0 overflow-hidden bg-[#0d1311]"
+          : "tradingview-widget-container w-full min-w-0 overflow-hidden rounded-2xl border border-white/8 bg-[#0d1311]"
+      }
       style={{ height }}
     >
       <div
         id={containerId}
         ref={containerRef}
-        style={{ height: "100%", width: "100%" }}
+        className="h-full min-h-0 w-full min-w-0"
       />
     </div>
   );
