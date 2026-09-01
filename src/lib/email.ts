@@ -58,18 +58,25 @@ function escapeHtml(value: string) {
 
 function sectionDivider() {
   return `<tr>
-    <td style="padding:16px 0 0 0;">
-      <div style="height:1px;background:#cbd5e1;line-height:1px;font-size:1px;">&nbsp;</div>
+    <td style="padding:18px 0 0 0;">
+      <div style="height:1px;background:#e2e8f0;line-height:1px;font-size:1px;">&nbsp;</div>
     </td>
   </tr>`;
 }
 
 function sectionLabel(text: string, opts?: { first?: boolean }) {
-  const topPad = opts?.first ? "4px" : "22px";
+  const topPad = opts?.first ? "2px" : "24px";
   return `${opts?.first ? "" : sectionDivider()}
   <tr>
-    <td style="padding:${topPad} 4px 12px 4px;">
-      <div style="font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#475569;">${text}</div>
+    <td style="padding:${topPad} 2px 12px 2px;">
+      <table role="presentation" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="width:4px;background:#0f766e;border-radius:999px;line-height:1px;font-size:1px;">&nbsp;</td>
+          <td style="padding-left:10px;">
+            <div style="font-size:12px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#334155;">${text}</div>
+          </td>
+        </tr>
+      </table>
     </td>
   </tr>`;
 }
@@ -128,17 +135,17 @@ function renderTrendRows(items: BriefTrendItem[]) {
       const description = item.descriptionEn?.trim();
       const news = trendNewsLine(item);
       return `<tr>
-        <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
+        <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             <tr>
-              <td style="width:28px;vertical-align:top;font-size:13px;font-weight:700;color:#94a3b8;padding-top:2px;">#${item.rank}</td>
+              <td style="width:34px;vertical-align:top;font-size:12px;font-weight:800;color:#64748b;padding-top:3px;">#${item.rank}</td>
               <td style="vertical-align:top;">
-                <div style="font-size:15px;line-height:1.4;font-weight:600;color:#0f172a;">
+                <div style="font-size:15px;line-height:1.45;font-weight:700;color:#0f172a;">
                   ${trendDisplayTitle(item)}
                   ${trafficBadge(item.approxTraffic)}
                 </div>
-                ${description ? `<div style="margin-top:4px;font-size:13px;line-height:1.5;color:#334155;">${escapeHtml(description)}</div>` : ""}
-                ${news ? `<div style="margin-top:4px;font-size:13px;line-height:1.45;color:#64748b;">${news}</div>` : ""}
+                ${description ? `<div style="margin-top:5px;font-size:14px;line-height:1.55;color:#334155;">${escapeHtml(description)}</div>` : ""}
+                ${news ? `<div style="margin-top:5px;font-size:13px;line-height:1.5;color:#64748b;">${news}</div>` : ""}
               </td>
             </tr>
           </table>
@@ -157,16 +164,16 @@ function renderFullTrendSection(region: {
   return `
       <tr>
         <td style="padding:0 0 14px 0;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #dbe3ec;border-radius:16px;overflow:hidden;">
             <tr>
-              <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
+              <td style="padding:14px 18px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
                 <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${accent};margin-right:8px;vertical-align:middle;"></span>
                 <span style="font-size:15px;font-weight:700;color:#0f172a;vertical-align:middle;">${escapeHtml(region.label)}</span>
                 <span style="margin-left:8px;font-size:12px;color:#94a3b8;vertical-align:middle;">Top ${region.items.length || 10}</span>
               </td>
             </tr>
             <tr>
-              <td style="padding:4px 16px 8px 16px;">
+              <td style="padding:2px 18px 8px 18px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${renderTrendRows(region.items)}</table>
               </td>
             </tr>
@@ -215,14 +222,14 @@ function renderMarketsCta(url: string | null) {
 
   return `<tr>
     <td style="padding:0 0 14px 0;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#ecfdf5 0%,#eff6ff 100%);border:1px solid #99f6e4;border-radius:14px;overflow:hidden;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#ecfdf5 0%,#eff6ff 100%);border:1px solid #99f6e4;border-radius:16px;overflow:hidden;">
         <tr>
-          <td style="padding:18px 20px;">
-            <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0f766e;margin:0 0 6px 0;">Full markets brief</div>
-            <div style="font-size:15px;line-height:1.5;color:#334155;margin:0 0 14px 0;">
+          <td style="padding:20px 22px;">
+            <div style="font-size:11px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#0f766e;margin:0 0 7px 0;">Full markets brief</div>
+            <div style="font-size:15px;line-height:1.6;color:#334155;margin:0 0 15px 0;">
               Fear &amp; greed, insider trades, whale watch, TradingView charts, ticker notes, and earnings — open the hosted page.
             </div>
-            <a href="${escapeHtml(url)}" style="display:inline-block;background:#0f766e;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:999px;padding:10px 18px;">
+            <a href="${escapeHtml(url)}" style="display:inline-block;background:#0f766e;color:#ffffff;font-size:14px;font-weight:800;text-decoration:none;border-radius:10px;padding:11px 18px;">
               Open full markets brief →
             </a>
           </td>
@@ -781,10 +788,10 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
         const quote = item.quote?.trim();
         const top = itemIndex === 0 ? "0" : "10px";
         return `
-                <div style="margin-top:${top};font-size:14px;line-height:1.55;color:#334155;">${escapeHtml(item.summary)}${link}</div>
+                <div style="margin-top:${top};font-size:15px;line-height:1.6;color:#334155;">${escapeHtml(item.summary)}${link}</div>
                 ${
                   quote
-                    ? `<div style="margin-top:8px;font-size:13px;line-height:1.5;color:#475569;border-left:3px solid ${accent};padding-left:10px;font-style:italic;">“${escapeHtml(quote)}”</div>`
+                    ? `<div style="margin-top:9px;font-size:14px;line-height:1.55;color:#475569;border-left:3px solid ${accent};padding:2px 0 2px 12px;font-style:italic;">“${escapeHtml(quote)}”</div>`
                     : ""
                 }`;
       })
@@ -794,11 +801,11 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
       `
       <tr>
         <td style="padding:0 0 12px 0;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #dbe3ec;border-radius:16px;">
             <tr>
-              <td style="width:5px;background:${accent};border-radius:12px 0 0 12px;"></td>
-              <td style="padding:14px 16px;">
-                <div style="font-size:15px;font-weight:700;color:#0f172a;margin:0 0 6px 0;">${escapeHtml(person.name)}</div>
+              <td style="width:5px;background:${accent};border-radius:16px 0 0 16px;"></td>
+              <td style="padding:17px 18px;">
+                <div style="font-size:16px;font-weight:750;color:#0f172a;margin:0 0 7px 0;">${escapeHtml(person.name)}</div>
                 ${itemHtml}
               </td>
             </tr>
@@ -862,22 +869,22 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
       }
     </style>
   </head>
-  <body style="margin:0;padding:0;background:#eef2ff;font-family:${FONT};">
+  <body style="margin:0;padding:0;background:#f1f5f9;font-family:${FONT};">
     <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
       ${escapeHtml(preheader)}
     </div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(180deg,#dbeafe 0%,#eef2ff 180px,#f8fafc 180px);padding:28px 12px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(180deg,#dbeafe 0%,#eff6ff 190px,#f1f5f9 190px);padding:32px 12px;">
       <tr>
         <td align="center">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:820px;margin:0 auto;">
             <tr>
-              <td style="padding:0 0 18px 0;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#0f766e 0%,#1d4ed8 55%,#7c3aed 100%);border-radius:18px;overflow:hidden;">
+              <td style="padding:0 0 22px 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#0f172a 0%,#164e63 52%,#1d4ed8 100%);border-radius:20px;overflow:hidden;">
                   <tr>
-                    <td style="padding:28px 28px 24px 28px;">
-                      <div style="font-size:12px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#ccfbf1;margin:0 0 8px 0;">Daily Emails</div>
-                      <div style="font-size:28px;line-height:1.2;font-weight:700;color:#ffffff;margin:0 0 10px 0;">Daily Market &amp; Tech Brief</div>
-                      <div style="font-size:13px;line-height:1.5;color:#e0e7ff;">
+                    <td style="padding:30px 30px 27px 30px;">
+                      <div style="font-size:11px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:#99f6e4;margin:0 0 9px 0;">Daily Emails</div>
+                      <div style="font-size:30px;line-height:1.18;font-weight:750;letter-spacing:-0.02em;color:#ffffff;margin:0 0 12px 0;">Daily Market &amp; Tech Brief</div>
+                      <div style="font-size:14px;line-height:1.5;color:#dbeafe;">
                         ${briefWindowLabel(brief)} · ${escapeHtml(date)}
                       </div>
                     </td>
@@ -915,8 +922,8 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
             ${usage ? `${sectionLabel("Usage")}${renderUsageReport(usage)}` : ""}
 
             <tr>
-              <td style="padding:18px 8px 8px 8px;text-align:center;">
-                <div style="font-size:12px;line-height:1.5;color:#94a3b8;">
+              <td style="padding:22px 8px 10px 8px;text-align:center;">
+                <div style="font-size:12px;line-height:1.6;color:#94a3b8;">
                   Generated by Daily Emails · ${escapeHtml(brief.model)}
                 </div>
               </td>
