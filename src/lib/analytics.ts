@@ -35,7 +35,7 @@ export type SiteAnalytics = {
   label: string;
   date: string;
   previousDate: string;
-  /** First day of the current UTC month (YYYY-MM-DD) */
+  /** First day of the UTC month that contains the report day (YYYY-MM-DD) */
   monthStart: string;
   metrics: SiteDayMetrics;
   previous: SiteDayMetrics;
@@ -137,12 +137,10 @@ function utcDateDaysAgo(daysAgo: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** First day of the current UTC month as YYYY-MM-DD. */
+/** First day of the UTC month that contains yesterday (the report day). */
 function utcMonthStart(): string {
-  const d = new Date();
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  return `${y}-${m}-01`;
+  const reportDay = utcDateDaysAgo(1);
+  return `${reportDay.slice(0, 8)}01`;
 }
 
 async function resolvePropertyId(
@@ -223,6 +221,8 @@ async function fetchOverviewReport(
   monthToDate: SiteDayMetrics;
 }> {
   const rangeNames = ["yesterday", "previous", "mtd"] as const;
+  const reportDay = utcDateDaysAgo(1);
+  const previousDay = utcDateDaysAgo(2);
   const response = await fetch(
     `${DATA_API}/properties/${propertyId}:runReport`,
     {
@@ -233,9 +233,9 @@ async function fetchOverviewReport(
       },
       body: JSON.stringify({
         dateRanges: [
-          { startDate: "yesterday", endDate: "yesterday", name: "yesterday" },
-          { startDate: "2daysAgo", endDate: "2daysAgo", name: "previous" },
-          { startDate: monthStart, endDate: "yesterday", name: "mtd" },
+          { startDate: reportDay, endDate: reportDay, name: "yesterday" },
+          { startDate: previousDay, endDate: previousDay, name: "previous" },
+          { startDate: monthStart, endDate: reportDay, name: "mtd" },
         ],
         metrics: [...OVERVIEW_METRICS],
         keepEmptyRows: true,
@@ -282,7 +282,8 @@ async function fetchDailySeries(
   propertyId: string,
   days = 7,
 ): Promise<SiteDayPoint[]> {
-  const startDate = `${days}daysAgo`;
+  const startDate = utcDateDaysAgo(days);
+  const endDate = utcDateDaysAgo(1);
   const response = await fetch(
     `${DATA_API}/properties/${propertyId}:runReport`,
     {
@@ -292,7 +293,7 @@ async function fetchDailySeries(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        dateRanges: [{ startDate, endDate: "yesterday" }],
+        dateRanges: [{ startDate, endDate }],
         dimensions: [{ name: "date" }],
         metrics: [
           { name: "activeUsers" },
