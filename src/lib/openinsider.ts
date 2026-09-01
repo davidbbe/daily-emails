@@ -1,5 +1,12 @@
 import { TICKERS } from "@/lib/config";
 import { formatTitleDate } from "@/lib/dates";
+import {
+  fetchCompanyProfiles,
+  fetchLargeCompanyUniverse,
+  normalizeStockTicker,
+  type LargeCompany,
+  type LargeCompanyTier,
+} from "@/lib/stock-universe";
 
 const OPENINSIDER_ORIGIN = "http://openinsider.com";
 const BROWSER_UA =
@@ -12,8 +19,8 @@ const BUY_MIN_USD = 25_000;
 const SELL_MIN_USD = 100_000;
 const BUY_MIN_PRICE = 1;
 const DISPLAY_LIMIT = 8;
-const SELL_DISPLAY_LIMIT = 5;
-const RANK_LIMIT = 10;
+const SELL_DISPLAY_LIMIT = 3;
+const RANK_LIMIT = 6;
 const CLUSTER_TRADES_LIMIT = 8;
 const WINDOW_HOURS = 24;
 const FILING_LOOKBACK_DAYS = 3;
@@ -51,6 +58,12 @@ export type InsiderClusterTrade = {
 export type InsiderCluster = {
   ticker: string;
   company: string;
+  companyTier?: LargeCompanyTier;
+  marketCap?: number;
+  sector?: string;
+  industry?: string;
+  companySummary?: string;
+  companyProfileUrl?: string;
   insiderCount: number;
   titles: string[];
   titleSummary?: string;
@@ -72,6 +85,8 @@ export type InsiderBrief = {
   watchlist: InsiderTrade[];
   buyCount: number;
   sellCount: number;
+  screenedOutTickerCount?: number;
+  universeLabel?: string;
   sourceUrl: string;
   sourceName: string;
   error?: string;
@@ -453,6 +468,8 @@ export function emptyInsiderBrief(error?: string): InsiderBrief {
     watchlist: [],
     buyCount: 0,
     sellCount: 0,
+    screenedOutTickerCount: 0,
+    universeLabel: "S&P 500 + $10B large caps",
     sourceUrl: INSIDER_SOURCE_URL,
     sourceName: INSIDER_SOURCE_NAME,
     error,
@@ -517,11 +534,51 @@ export async function collectInsiderTrades(): Promise<InsiderBrief> {
       ? parsed.filter((trade) => trade.filingDay === fallbackDay)
       : last24h;
 
-    const windowBuys = windowTrades.filter((trade) => trade.side === "buy");
-    const windowSells = windowTrades.filter((trade) => trade.side === "sell");
-    const watchlist = windowTrades
+    const universe = await fetchLargeCompanyUniverse();
+    const eligibleTrades = windowTrades.filter((trade) =>
+      universe.has(normalizeStockTicker(trade.ticker)),
+    );
+    const allTickers = new Set(
+      windowTrades.map((trade) => normalizeStockTicker(trade.ticker)),
+    );
+    const eligibleTickers = new Set(
+      eligibleTrades.map((trade) => normalizeStockTicker(trade.ticker)),
+    );
+    const screenedOutTickerCount = [...allTickers].filter(
+      (ticker) => !eligibleTickers.has(ticker),
+    ).length;
+
+    const windowBuys = eligibleTrades.filter((trade) => trade.side === "buy");
+    const windowSells = eligibleTrades.filter((trade) => trade.side === "sell");
+    const watchlist = eligibleTrades
       .filter((trade) => trade.watchlist)
       .sort(compareTrades);
+    const buyGroups = rankBuyTickers(windowBuys);
+    const sellGroups = rankSellTickers(windowSells);
+    const displayedTickers = [
+      ...new Set(
+        [...buyGroups, ...sellGroups].map((group) =>
+          normalizeStockTicker(group.ticker),
+        ),
+      ),
+    ];
+    const profiles = await fetchCompanyProfiles(displayedTickers);
+
+    function enrichGroup(group: InsiderCluster): InsiderCluster {
+      const normalizedTicker = normalizeStockTicker(group.ticker);
+      const company: LargeCompany | undefined = universe.get(normalizedTicker);
+      const profile = profiles.get(normalizedTicker);
+      return {
+        ...group,
+        company: profile?.name || company?.name || group.company,
+        companyTier: company?.tier,
+        marketCap: company?.marketCap,
+        sector: profile?.sector,
+        industry: profile?.industry,
+        companySummary: profile?.summary,
+        companyProfileUrl: profile?.sourceUrl,
+      };
+    }
 
     return {
       collectedAt,
@@ -529,11 +586,13 @@ export async function collectInsiderTrades(): Promise<InsiderBrief> {
       usedFallbackDay,
       buys: [...windowBuys].sort(compareTrades).slice(0, DISPLAY_LIMIT),
       sells: [...windowSells].sort(compareTrades).slice(0, SELL_DISPLAY_LIMIT),
-      clusters: rankBuyTickers(windowBuys),
-      sellGroups: rankSellTickers(windowSells),
+      clusters: buyGroups.map(enrichGroup),
+      sellGroups: sellGroups.map(enrichGroup),
       watchlist,
       buyCount: windowBuys.length,
       sellCount: windowSells.length,
+      screenedOutTickerCount,
+      universeLabel: "S&P 500 + $10B large caps",
       sourceUrl: INSIDER_SOURCE_URL,
       sourceName: INSIDER_SOURCE_NAME,
     };
