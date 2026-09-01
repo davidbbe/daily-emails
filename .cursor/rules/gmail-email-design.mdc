@@ -13,7 +13,7 @@ This project’s emails are opened **only in Gmail** (web + mobile). Optimize fo
 - Build HTML as strings in `src/lib/email.ts` with nested `<table role="presentation">` for structure.
 - Critical styles must be **inline** on elements (Gmail may strip or limit `<style>`).
 - Escape all dynamic text with `escapeHtml`.
-- Markets charts (Fear & greed, insider trades, whale watch, ticker notes, earnings, TradingView) live on the secret hosted page (`/markets/<token>`), not in the email. Keep Overnight + a CTA link in the email body.
+- Market details (session context, Fear & greed, insider trades, whale watch, ticker notes, earnings, TradingView) live on the secret hosted page (`/markets/<token>`), not in the email. Keep only the CTA link in the email body.
 - Always ship a plain-text part (`renderBriefText`) alongside HTML.
 
 ## Prefer (Gmail-supported polish)
@@ -39,7 +39,7 @@ This project’s emails are opened **only in Gmail** (web + mobile). Optimize fo
 
 ## Visual / UX bar
 
-- One clear visual hierarchy: hero → overnight → dense sections as cards
+- One clear visual hierarchy: hero → markets CTA → dense sections as cards
 - Section labels: small uppercase tracking; cards: white + `#e2e8f0` border + 12–16px radius
 - Multi-column rows (meters, earnings, Reddit): table cells with `%` widths; if adding mobile stacking, duplicate the stack rule in a head `<style>` `@media` and keep desktop table layout as default
 - Links: visible, not underline-only grey; keep tap targets readable on mobile

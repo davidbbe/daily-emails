@@ -1014,6 +1014,7 @@ export default async function MarketsPage({
               const proxy = proxyByTicker.get(ticker.id);
               const earnings = earningsByTicker.get(ticker.id);
               const valuation = valuationByTicker.get(ticker.id);
+              const sessionContext = section?.overnightOpener?.trim();
               const pill =
                 TICKER_PILL[ticker.id] ?? "bg-slate-100 text-slate-600";
 
@@ -1042,6 +1043,14 @@ export default async function MarketsPage({
                     <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_11rem] sm:items-start">
                       <div className="min-w-0 space-y-3">
                         <ul className="space-y-3">
+                          {sessionContext ? (
+                            <li className="text-[15px] leading-relaxed text-slate-800">
+                              <span className="mr-2 inline-block rounded-full border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-300">
+                                Session
+                              </span>
+                              {sessionContext}
+                            </li>
+                          ) : null}
                           {section?.bullets?.length ? (
                             section.bullets.map((bullet, index) => (
                               <li

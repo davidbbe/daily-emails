@@ -11,8 +11,6 @@ import {
   getEmailTo,
   getMarketsPageUrl,
   PEOPLE,
-  TICKERS,
-  isOvernightTicker,
 } from "@/lib/config";
 import { formatHumanDate } from "@/lib/dates";
 import type { RedditSubFeed, RedditWindow } from "@/lib/reddit";
@@ -31,17 +29,6 @@ const FONT =
 function briefWindowLabel(brief: DailyBrief) {
   return `Past ${brief.windowHours} hours`;
 }
-
-const TICKER_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
-  TSLA: { bg: "#fff1f0", text: "#b42318", accent: "#f04438" },
-  MU: { bg: "#eff8ff", text: "#175cd3", accent: "#2e90fa" },
-  META: { bg: "#f4f3ff", text: "#5925dc", accent: "#7a5af8" },
-  BTC: { bg: "#fff6ed", text: "#b54708", accent: "#f79009" },
-  AVGO: { bg: "#ecfdf3", text: "#067647", accent: "#12b76a" },
-  CRCL: { bg: "#f0f9ff", text: "#026aa2", accent: "#0ba5ec" },
-  SPCX: { bg: "#f8fafc", text: "#334155", accent: "#64748b" },
-  MSFT: { bg: "#eff8ff", text: "#1849a9", accent: "#1570ef" },
-};
 
 const TREND_ACCENTS: Record<string, string> = {
   us: "#1d4ed8",
@@ -180,41 +167,6 @@ function renderFullTrendSection(region: {
           </table>
         </td>
       </tr>`;
-}
-
-function renderOvernightOpeners(brief: DailyBrief) {
-  const rows = TICKERS.filter(isOvernightTicker).map((ticker) => {
-    const section = brief.tickers.find((t) => t.id === ticker.id);
-    const colors = TICKER_COLORS[ticker.id] ?? {
-      bg: "#f8fafc",
-      text: "#334155",
-      accent: "#64748b",
-    };
-    return `<tr>
-      <td style="padding:8px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
-        <span style="display:inline-block;font-size:11px;font-weight:700;color:${colors.text};background:${colors.bg};border-radius:999px;padding:2px 8px;margin-right:8px;">${escapeHtml(ticker.id)}</span>
-        <span style="font-size:14px;line-height:1.5;color:#334155;">${escapeHtml(section?.overnightOpener || "Quiet overnight.")}</span>
-      </td>
-    </tr>`;
-  }).join("");
-
-  return `<tr>
-    <td style="padding:0 0 14px 0;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
-        <tr>
-          <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
-            <span style="font-size:15px;font-weight:700;color:#0f172a;">Overnight openers</span>
-            <span style="margin-left:8px;font-size:12px;color:#94a3b8;">Pre-market / session context</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:4px 16px 8px 16px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>`;
 }
 
 function renderMarketsCta(url: string | null) {
@@ -836,13 +788,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
       </tr>`
       : "";
 
-  const firstOpener =
-    TICKERS.filter(isOvernightTicker)
-      .map((ticker) =>
-        brief.tickers.find((t) => t.id === ticker.id)?.overnightOpener?.trim(),
-      )
-      .find(Boolean) ?? briefWindowLabel(brief);
-  const preheader = `${firstOpener} · ${dateShort}`;
+  const preheader = `${briefWindowLabel(brief)} · ${dateShort}`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -893,8 +839,6 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
               </td>
             </tr>
 
-            ${sectionLabel("Overnight", { first: true })}
-            ${renderOvernightOpeners(brief)}
             ${renderMarketsCta(marketsUrl)}
 
             ${
@@ -941,13 +885,6 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     "Daily Market & Tech Brief",
     `${briefWindowLabel(brief)} · ${formatHumanDate(brief.generatedAt)} · ${brief.model}`,
   ];
-
-  lines.push("", "OVERNIGHT OPENERS");
-
-  for (const ticker of TICKERS.filter(isOvernightTicker)) {
-    const section = brief.tickers.find((t) => t.id === ticker.id);
-    lines.push(`${ticker.id}: ${section?.overnightOpener || "Quiet overnight."}`);
-  }
 
   const marketsUrl = getMarketsPageUrl();
   if (marketsUrl) {

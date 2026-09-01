@@ -22,7 +22,7 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
 11. Loads yesterday’s slim snapshot (when available) for day-over-day history
 12. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
 13. Saves a **markets brief** payload for the secret hosted page (Blob when configured, otherwise `.data/markets-latest.json`)
-14. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest (Overnight stays in-email; full markets live on the hosted page)
+14. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest with a CTA to the full hosted markets page
 15. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
 16. Saves a slim day-over-day snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
 
@@ -30,7 +30,7 @@ Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGI
 
 ## Hosted markets page
 
-Fear & greed, insider trades, whale watch, watchlist notes, greed proxies, **TradingView** charts, and earnings render at a **secret URL**:
+Fear & greed, insider trades, whale watch, watchlist notes with session context, greed proxies, **TradingView** charts, and earnings render at a **secret URL**:
 
 ```
 https://your-app.vercel.app/markets/<MARKETS_PAGE_SECRET>
@@ -48,7 +48,7 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 
 | Email / page section                                      | Data source (no AI)                                                                                                                                                | LLM / API used                                                                                                                  |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Overnight openers** _(email)_                           | Google News RSS — last 24h per ticker                                                                                                                              | Same core brief call — one session-context line each                                                                            |
+| **Session context** _(hosted watchlist)_                  | Google News RSS — last 24h per ticker                                                                                                                              | Same core brief call — one pre-market / after-hours / crypto-session line inside each related ticker card                       |
 | **Full markets brief CTA** _(email → hosted page)_        | Link built from `APP_BASE_URL` + `MARKETS_PAGE_SECRET`                                                                                                             | **No LLM**                                                                                                                      |
 | **Fear & greed** _(hosted page)_                          | CNN F&G, Alternative.me Crypto F&G, VIX via feargreedchart; equities via Stock Analysis (52w + RSI14); BTC via CoinGecko                                           | **No LLM** — value dial + Lean buy / Neutral / Patience stance per ticker (SPCX skipped — private)                              |
 | **Insider trades** _(hosted page)_                        | [OpenInsider](http://openinsider.com/) SEC Form 4 open-market P/S filed in the last 24 hours (buys $25k+, sells $100k+; clusters + watchlist)                      | **No LLM** — tables stay data-backed. Falls back to the latest filing day on weekends / Monday 09:00 UTC.                       |

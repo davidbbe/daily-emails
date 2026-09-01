@@ -149,7 +149,7 @@ export const SECTORS = [
 
 export type SectorConfig = (typeof SECTORS)[number];
 
-/** Email overnight section. Omitted tickers still appear on the markets page. */
+/** Tickers that receive session context on the hosted markets page. */
 export function isOvernightTicker(
   ticker: TickerConfig & { inOvernight?: boolean },
 ): boolean {
