@@ -1,5 +1,5 @@
-import { JWT } from "google-auth-library";
 import { GA_ACCOUNTS } from "@/lib/config";
+import { getGoogleAccessToken } from "@/lib/google-auth";
 
 const ANALYTICS_SCOPE = "https://www.googleapis.com/auth/analytics.readonly";
 const ADMIN_API = "https://analyticsadmin.googleapis.com/v1beta";
@@ -61,38 +61,8 @@ type RunReportResponse = {
   metricHeaders?: Array<{ name?: string }>;
 };
 
-function stripWrappingQuotes(value: string) {
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
-  }
-  return value;
-}
-
-function getServiceAccountCredentials() {
-  const clientEmail = process.env.GOOGLE_CLIENT_EMAIL?.trim();
-  let privateKey = process.env.GOOGLE_PRIVATE_KEY?.trim();
-  if (!clientEmail || !privateKey) return null;
-
-  // Vercel UI / dotenv may wrap the PEM in quotes and store literal \n.
-  privateKey = stripWrappingQuotes(privateKey).replace(/\\n/g, "\n");
-  return { clientEmail: stripWrappingQuotes(clientEmail), privateKey };
-}
-
 async function getAccessToken(): Promise<string | null> {
-  const creds = getServiceAccountCredentials();
-  if (!creds) return null;
-
-  const client = new JWT({
-    email: creds.clientEmail,
-    key: creds.privateKey,
-    scopes: [ANALYTICS_SCOPE],
-  });
-
-  const token = await client.getAccessToken();
-  return token.token ?? null;
+  return getGoogleAccessToken([ANALYTICS_SCOPE]);
 }
 
 function parseMetricNumber(value: string | undefined): number {

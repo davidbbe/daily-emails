@@ -31,6 +31,7 @@ import {
 import { collectSentiment } from "@/lib/sentiment";
 import { collectUsageReport } from "@/lib/usage";
 import { collectValuation, type TickerValuation } from "@/lib/valuation";
+import { collectGcpBilling, type GcpBillingReport } from "@/lib/gcp-billing";
 import { collectInsiderTrades, emptyInsiderBrief } from "@/lib/openinsider";
 import { collectWhaleActivity, emptyWhaleResearch } from "@/lib/whales";
 
@@ -72,7 +73,7 @@ async function collectResearchWithoutTrendsOrReddit(
     trends[region.id] = [];
   }
 
-  const [, , earnings, sites, sentiment, insiders, whales, valuation] = await Promise.all([
+  const [, , earnings, sites, sentiment, insiders, whales, valuation, gcpBilling] = await Promise.all([
     Promise.all(
       TICKERS.map(async (ticker) => {
         tickers[ticker.id] = await fetchRecentNews(ticker.query, hours).catch(
@@ -115,6 +116,10 @@ async function collectResearchWithoutTrendsOrReddit(
       console.warn("valuation fetch failed", error);
       return [] as TickerValuation[];
     }),
+    collectGcpBilling().catch((error) => {
+      console.warn("gcp billing fetch failed", error);
+      return null as GcpBillingReport | null;
+    }),
   ]);
 
   return {
@@ -126,6 +131,7 @@ async function collectResearchWithoutTrendsOrReddit(
     trends,
     reddit: [],
     sites,
+    gcpBilling,
     sentiment,
     insiders,
     whales,

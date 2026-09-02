@@ -75,6 +75,18 @@ export async function GET(request: Request) {
           site.error ? "error" : site.metrics.activeUsers,
         ]),
       ),
+      gcpBilling: brief.gcpBilling
+        ? {
+            range: `${brief.gcpBilling.startDate} – ${brief.gcpBilling.endDate}`,
+            total: brief.gcpBilling.total,
+            source: brief.gcpBilling.source,
+            services: brief.gcpBilling.services.map((s) => ({
+              name: s.name,
+              cost: s.usageCost,
+            })),
+            error: brief.gcpBilling.error ?? null,
+          }
+        : null,
       sentiment: {
         valueDial: brief.sentiment?.valueDial ?? null,
         meters: (brief.sentiment?.meters ?? []).map((m) => ({

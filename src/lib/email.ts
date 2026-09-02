@@ -13,6 +13,13 @@ import {
   PEOPLE,
 } from "@/lib/config";
 import { formatHumanDate } from "@/lib/dates";
+import {
+  formatChangePercent,
+  formatHeroChangePercent,
+  formatUsd,
+  percentChange as billingPercentChange,
+  type GcpBillingReport,
+} from "@/lib/gcp-billing";
 import type { RedditSubFeed, RedditWindow } from "@/lib/reddit";
 import { looksNonEnglish, type BriefTrendItem } from "@/lib/trends";
 import {
@@ -36,7 +43,7 @@ const TREND_ACCENTS: Record<string, string> = {
 };
 
 function escapeHtml(value: string) {
-  return value
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -571,6 +578,304 @@ function renderSitesSection(sites: SiteAnalytics[]) {
     ${sites.map(renderSiteCard).join("")}`;
 }
 
+function formatBillingRange(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T12:00:00.000Z`);
+  const end = new Date(`${endDate}T12:00:00.000Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return `${startDate} – ${endDate}`;
+  }
+  const sameMonth =
+    start.getUTCMonth() === end.getUTCMonth() &&
+    start.getUTCFullYear() === end.getUTCFullYear();
+  const month = start.toLocaleDateString("en-US", {
+    month: "short",
+    timeZone: "UTC",
+  });
+  if (sameMonth) {
+    return `${month} ${start.getUTCDate()} – ${end.getUTCDate()}, ${start.getUTCFullYear()}`;
+  }
+  return `${formatHumanDate(startDate, { withTime: false })} – ${formatHumanDate(endDate, { withTime: false })}`;
+}
+
+function billingChangeColor(delta: number | null) {
+  if (delta === null) return "#b45309";
+  if (delta > 0) return "#b42318";
+  if (delta < 0) return "#047857";
+  return "#64748b";
+}
+
+function niceCostTicks(maxCost: number): number[] {
+  const padded = Math.max(0.5, maxCost * 1.05);
+  if (padded <= 2.2) return [0, 0.5, 1, 1.5, 2];
+  if (padded <= 5) return [0, 1, 2, 3, 4, 5].filter((n) => n <= Math.ceil(padded));
+  const rawStep = padded / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const residual = rawStep / magnitude;
+  const step =
+    residual <= 1.5
+      ? magnitude
+      : residual <= 3
+        ? 2 * magnitude
+        : residual <= 7
+          ? 5 * magnitude
+          : 10 * magnitude;
+  const top = Math.ceil(padded / step) * step;
+  const ticks: number[] = [];
+  for (let v = 0; v <= top + step / 2; v += step) {
+    ticks.push(Math.round(v * 100) / 100);
+  }
+  return ticks;
+}
+
+function formatAxisUsd(value: number) {
+  if (value === 0) return "$0";
+  const decimals = value >= 10 && Number.isInteger(value) ? 0 : 1;
+  return `$${value.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function serviceMarker(service: GcpBillingReport["services"][number]) {
+  const radius = service.marker === "circle" ? "999px" : "2px";
+  return `<span style="display:inline-block;width:10px;height:10px;border-radius:${radius};background:${service.color};vertical-align:middle;margin-right:8px;"></span>`;
+}
+
+function dayTotal(day: GcpBillingReport["days"][number]) {
+  return Object.values(day.costs ?? {}).reduce((sum, n) => sum + n, 0);
+}
+
+function renderGcpBillingChart(report: GcpBillingReport) {
+  const days = report.days ?? [];
+  if (days.length === 0) {
+    return `<div style="font-size:12px;color:#94a3b8;font-style:italic;">No daily cost data.</div>`;
+  }
+
+  const maxDay = Math.max(...days.map(dayTotal), 0);
+  const ticks = niceCostTicks(maxDay);
+  const axisMax = ticks[ticks.length - 1] ?? 2;
+  const chartH = 148;
+  const yTicksTopFirst = [...ticks].reverse();
+
+  const yLabels = yTicksTopFirst
+    .map((tick, index) => {
+      const isLast = index === yTicksTopFirst.length - 1;
+      return `<tr>
+        <td style="height:${Math.floor(chartH / yTicksTopFirst.length)}px;vertical-align:${isLast ? "bottom" : "top"};font-size:10px;font-weight:600;color:#94a3b8;text-align:right;padding:0 8px 0 0;white-space:nowrap;">${formatAxisUsd(tick)}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const labelEvery = days.length > 20 ? 3 : 1;
+  const colWidth = `${(100 / days.length).toFixed(2)}%`;
+  const bars = days
+    .map((day) => {
+      const visible = (report.services ?? []).filter(
+        (service) => (day.costs?.[service.name] ?? 0) > 0,
+      );
+      const segments = visible
+        .map((service, segmentIndex) => {
+          const cost = day.costs[service.name] ?? 0;
+          const height = Math.max(3, Math.round((cost / axisMax) * chartH));
+          const radius =
+            segmentIndex === 0 ? "3px 3px 0 0" : "0";
+          return `<div style="height:${height}px;background:${service.color};border-radius:${radius};line-height:1px;font-size:1px;">&nbsp;</div>`;
+        })
+        .join("");
+      return `<td style="padding:0 1px;vertical-align:bottom;width:${colWidth};">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="height:${chartH}px;">
+          <tr>
+            <td style="vertical-align:bottom;height:${chartH}px;">${segments}</td>
+          </tr>
+        </table>
+      </td>`;
+    })
+    .join("");
+  const xLabels = days
+    .map((day, index) => {
+      const showLabel =
+        index % labelEvery === 0 || index === days.length - 1;
+      const dayNum = Number(day.date.slice(8, 10));
+      return `<td style="padding:6px 1px 0 1px;width:${colWidth};font-size:9px;font-weight:600;color:#94a3b8;text-align:center;line-height:1;">${showLabel ? dayNum : "&nbsp;"}</td>`;
+    })
+    .join("");
+
+  const legend = (report.services ?? [])
+    .map(
+      (service) =>
+        `<span style="display:inline-block;margin:0 12px 0 0;font-size:12px;font-weight:600;color:#334155;">${serviceMarker(service)}${escapeHtml(service.name)}</span>`,
+    )
+    .join("");
+
+  const intervalPct = 100 / Math.max(1, ticks.length - 1);
+
+  return `<div style="margin-top:4px;">
+    <div style="margin:0 0 10px 0;">${legend}</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="width:36px;vertical-align:top;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="height:${chartH}px;">${yLabels}</table>
+        </td>
+        <td style="vertical-align:bottom;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="height:${chartH}px;background-color:#f8fafc;background-image:linear-gradient(to top, #e2e8f0 1px, transparent 1px);background-size:100% ${intervalPct}%;border:1px solid #e2e8f0;border-radius:8px;">
+            <tr>${bars}</tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="width:36px;"></td>
+        <td>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>${xLabels}</tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </div>`;
+}
+
+function renderGcpBillingServices(report: GcpBillingReport) {
+  if ((report.services ?? []).length === 0) {
+    return `<div style="font-size:13px;color:#94a3b8;font-style:italic;">No service charges this month.</div>`;
+  }
+
+  const rows = (report.services ?? [])
+    .map((service) => {
+      const delta = billingPercentChange(service.usageCost, service.previousCost);
+      const color = billingChangeColor(delta);
+      return `<tr>
+        <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:middle;">
+          <div style="font-size:14px;font-weight:600;color:#0f172a;">${serviceMarker(service)}${escapeHtml(service.name)}</div>
+        </td>
+        <td style="padding:10px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;text-align:right;white-space:nowrap;">
+          <div style="font-size:14px;font-weight:700;color:#0f172a;">${formatUsd(service.usageCost)}</div>
+        </td>
+        <td style="padding:10px 0 10px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;text-align:right;white-space:nowrap;">
+          <div style="font-size:13px;font-weight:700;color:${color};">${formatChangePercent(delta)}</div>
+        </td>
+      </tr>`;
+    })
+    .join("");
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="padding:0 0 8px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;">Service</td>
+      <td style="padding:0 8px 8px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;text-align:right;">Usage cost</td>
+      <td style="padding:0 0 8px 8px;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;text-align:right;">% Change</td>
+    </tr>
+    ${rows}
+  </table>`;
+}
+
+function renderGcpBillingSection(report: GcpBillingReport | null | undefined) {
+  if (!report) return "";
+  try {
+    return renderGcpBillingSectionInner(report);
+  } catch (error) {
+    console.warn("gcp-billing: email section failed; omitting", error);
+    return "";
+  }
+}
+
+function renderGcpBillingSectionInner(report: GcpBillingReport) {
+
+  if (report.error) {
+    return `${sectionLabel("Google Cloud Billing")}
+    <tr>
+      <td style="padding:0 0 14px 0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="height:4px;background:#4285f4;line-height:1px;font-size:1px;">&nbsp;</td>
+          </tr>
+          <tr>
+            <td style="padding:16px 18px;">
+              <div style="font-size:16px;font-weight:700;color:#0f172a;">${escapeHtml(report.accountLabel)}</div>
+              <div style="margin-top:8px;font-size:13px;line-height:1.45;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;">${escapeHtml(report.error)}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`;
+  }
+
+  const delta = billingPercentChange(report.total, report.previousTotal);
+  const deltaColorValue = billingChangeColor(delta);
+  const deltaAbs =
+    report.previousTotal > 0 ? formatUsd(report.total - report.previousTotal) : "";
+  const range = formatBillingRange(report.startDate, report.endDate);
+  const previousRange = formatBillingRange(
+    report.previousStartDate,
+    report.previousEndDate,
+  );
+  const heroChange =
+    delta === null
+      ? "New"
+      : `${formatHeroChangePercent(delta)}${deltaAbs ? ` (${delta > 0 ? "+" : ""}${deltaAbs})` : ""}`;
+
+  return `${sectionLabel("Google Cloud Billing")}
+    <tr>
+      <td style="padding:0 4px 12px 4px;">
+        <div style="font-size:13px;line-height:1.5;color:#64748b;">
+          Month to date for ${escapeHtml(report.accountLabel)}, grouped by service (same days last month).
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:0 0 14px 0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="height:4px;background:#4285f4;line-height:1px;font-size:1px;">&nbsp;</td>
+          </tr>
+          <tr>
+            <td style="padding:16px 18px 8px 18px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="vertical-align:middle;">
+                    <div style="font-size:17px;font-weight:700;color:#0f172a;">${escapeHtml(report.accountLabel)}</div>
+                    <div style="margin-top:3px;font-size:12px;color:#64748b;">${escapeHtml(range)}</div>
+                  </td>
+                  <td style="vertical-align:middle;text-align:right;">
+                    <a href="${escapeHtml(report.reportsUrl)}" style="display:inline-block;font-size:12px;font-weight:700;color:#1a73e8;text-decoration:none;">Open report →</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 18px 4px 18px;">
+              <div style="font-size:32px;line-height:1.1;font-weight:750;letter-spacing:-0.03em;color:#0f172a;">${formatUsd(report.total)}</div>
+              <div style="margin-top:8px;font-size:14px;font-weight:700;color:${deltaColorValue};">
+                ${escapeHtml(heroChange)}
+                <span style="margin-left:6px;font-size:12px;font-weight:600;color:#64748b;">vs ${escapeHtml(previousRange)}</span>
+              </div>
+            </td>
+          </tr>
+          ${
+            report.insight
+              ? `<tr>
+            <td style="padding:10px 18px 4px 18px;">
+              <div style="font-size:13px;line-height:1.5;color:#334155;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 12px;">
+                ${escapeHtml(report.insight)}
+              </div>
+            </td>
+          </tr>`
+              : ""
+          }
+          <tr>
+            <td style="padding:14px 14px 8px 14px;">
+              ${renderGcpBillingChart(report)}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 18px 16px 18px;">
+              ${renderGcpBillingServices(report)}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`;
+}
+
 function renderUsageWatch(usage: UsageReport) {
   if (usage.watch.length === 0) {
     return `<tr>
@@ -863,6 +1168,8 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
 
             ${renderSitesSection(brief.sites ?? [])}
 
+            ${renderGcpBillingSection(brief.gcpBilling)}
+
             ${usage ? `${sectionLabel("Usage")}${renderUsageReport(usage)}` : ""}
 
             <tr>
@@ -1026,6 +1333,38 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     }
   }
 
+  if (brief.gcpBilling) {
+    const billing = brief.gcpBilling;
+    lines.push("", "GOOGLE CLOUD BILLING");
+    lines.push(
+      `${billing.accountLabel} · month to date ${formatBillingRange(billing.startDate, billing.endDate)}`,
+    );
+    if (billing.error) {
+      lines.push(`  Error: ${billing.error}`);
+    } else {
+      const delta = billingPercentChange(billing.total, billing.previousTotal);
+      const hero =
+        delta === null
+          ? "New"
+          : `${formatHeroChangePercent(delta)} (${formatUsd(billing.total - billing.previousTotal)})`;
+      lines.push(`  Total: ${formatUsd(billing.total)} ${hero}`);
+      lines.push(
+        `  vs ${formatBillingRange(billing.previousStartDate, billing.previousEndDate)}`,
+      );
+      if (billing.insight) lines.push(`  ${billing.insight}`);
+      for (const service of billing.services) {
+        const serviceDelta = billingPercentChange(
+          service.usageCost,
+          service.previousCost,
+        );
+        lines.push(
+          `  - ${service.name}: ${formatUsd(service.usageCost)} (${formatChangePercent(serviceDelta)})`,
+        );
+      }
+      lines.push(`  ${billing.reportsUrl}`);
+    }
+  }
+
   if (usage) {
     lines.push("", "USAGE WATCH");
     if (usage.watch.length === 0) {
@@ -1080,6 +1419,18 @@ export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
   }
 
   const dateLabel = formatHumanDate(brief.generatedAt, { withTime: false });
+  let html: string;
+  let text: string;
+  try {
+    html = renderBriefHtml(brief, usage);
+    text = renderBriefText(brief, usage);
+  } catch (error) {
+    if (!brief.gcpBilling) throw error;
+    console.warn("gcp-billing: brief render failed; sending without it", error);
+    const fallback = { ...brief, gcpBilling: null };
+    html = renderBriefHtml(fallback, usage);
+    text = renderBriefText(fallback, usage);
+  }
   // Use fetch (not the SDK) so we can read quota response headers — needed for
   // send-only API keys that cannot call GET /emails.
   const response = await fetch("https://api.resend.com/emails", {
@@ -1092,8 +1443,8 @@ export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
       from: getEmailFrom(),
       to: [getEmailTo()],
       subject: `Daily Brief · ${dateLabel}`,
-      html: renderBriefHtml(brief, usage),
-      text: renderBriefText(brief, usage),
+      html,
+      text,
     }),
   });
 

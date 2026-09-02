@@ -10,6 +10,10 @@ import {
   type SiteAnalytics,
 } from "@/lib/analytics";
 import {
+  collectGcpBilling,
+  type GcpBillingReport,
+} from "@/lib/gcp-billing";
+import {
   PEOPLE,
   PERSON_NEWS_LIMIT,
   TICKERS,
@@ -70,6 +74,8 @@ export type ResearchBundle = {
   reddit: RedditSubFeed[];
   /** GA4 site overviews — pass-through, no LLM; empty when creds missing */
   sites: SiteAnalytics[];
+  /** Cloud Billing last-month report — pass-through, no LLM */
+  gcpBilling: GcpBillingReport | null;
   /** Fear & greed meters + per-ticker proxies — pass-through, no LLM */
   sentiment: SentimentReport;
   /** Open-market Form 4 buys/sells from OpenInsider — pass-through, no LLM */
@@ -254,7 +260,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
   const people: Record<string, NewsItem[]> = {};
   const trends = {} as Record<TrendRegionId, TrendItem[]>;
 
-  const [, , earnings, reddit, , sites, sentiment, insiders, whales, valuation] =
+  const [, , earnings, reddit, , sites, sentiment, insiders, whales, valuation, gcpBilling] =
     await Promise.all([
     Promise.all(
       TICKERS.map(async (ticker) => {
@@ -311,6 +317,10 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
       console.warn("valuation fetch failed", error);
       return [] as TickerValuation[];
     }),
+    collectGcpBilling().catch((error) => {
+      console.warn("gcp billing fetch failed", error);
+      return null;
+    }),
   ]);
 
   return {
@@ -322,6 +332,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
     trends,
     reddit,
     sites,
+    gcpBilling,
     sentiment,
     insiders,
     whales,

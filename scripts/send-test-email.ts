@@ -10,6 +10,7 @@ import { sendBriefEmail } from "@/lib/email";
 import { saveMarketsBrief, toMarketsBrief } from "@/lib/markets-brief";
 import { collectRedditTops } from "@/lib/reddit";
 import { collectUsageReport } from "@/lib/usage";
+import { collectGcpBilling } from "@/lib/gcp-billing";
 
 function demoDailySeries(baseUsers: number): SiteAnalytics["dailySeries"] {
   const pattern = [0.72, 0.8, 0.68, 0.95, 1.05, 0.88, 1];
@@ -290,6 +291,7 @@ const brief: DailyBrief = {
   },
   reddit: [],
   sites: [],
+  gcpBilling: null,
   sentiment: {
     collectedAt: new Date().toISOString(),
     valueDial: "",
@@ -476,7 +478,7 @@ const brief: DailyBrief = {
 };
 
 async function main() {
-  const [usage, sites, reddit] = await Promise.all([
+  const [usage, sites, reddit, gcpBilling] = await Promise.all([
     collectUsageReport(),
     collectSiteAnalytics().catch((error) => {
       console.warn("live GA fetch failed; using demo sites", error);
@@ -486,9 +488,14 @@ async function main() {
       console.warn("live Reddit fetch failed", error);
       return [];
     }),
+    collectGcpBilling().catch((error) => {
+      console.warn("live GCP billing fetch failed", error);
+      return null;
+    }),
   ]);
   brief.sites = sites.length > 0 ? sites : demoSites();
   brief.reddit = reddit;
+  brief.gcpBilling = gcpBilling;
   brief.generatedAt = new Date().toISOString();
 
   await saveMarketsBrief(toMarketsBrief(brief)).catch((error) => {
@@ -513,6 +520,14 @@ async function main() {
           users: s.metrics.activeUsers,
           error: s.error ?? null,
         })),
+        gcpBilling: brief.gcpBilling
+          ? {
+              range: `${brief.gcpBilling.startDate} – ${brief.gcpBilling.endDate}`,
+              total: brief.gcpBilling.total,
+              source: brief.gcpBilling.source,
+              services: brief.gcpBilling.services.map((s) => s.name),
+            }
+          : null,
         watch: usage.watch.map((m) => ({
           id: m.id,
           percent: m.percent,

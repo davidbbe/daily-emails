@@ -18,6 +18,7 @@ import { buildBriefTrends, type BriefTrends } from "@/lib/trends";
 import { emptyInsiderBrief, type InsiderBrief } from "@/lib/openinsider";
 import { annotateValuation, type TickerValuation } from "@/lib/valuation";
 import { buildWhaleBrief, type WhaleBrief } from "@/lib/whale-brief";
+import type { GcpBillingReport } from "@/lib/gcp-billing";
 
 export const BULLET_FLAGS = ["Watch", "Noise", "Actionable"] as const;
 export type BulletFlag = (typeof BULLET_FLAGS)[number];
@@ -95,6 +96,8 @@ export type DailyBrief = {
   reddit: RedditSubFeed[];
   /** GA4 site overviews — pass-through, no LLM */
   sites: SiteAnalytics[];
+  /** Cloud Billing last-month report — pass-through, no LLM */
+  gcpBilling: GcpBillingReport | null;
   /** Fear & greed meters + per-ticker proxies — pass-through, no LLM */
   sentiment: SentimentReport;
   /** Open-market Form 4 buys/sells for the hosted markets page */
@@ -386,6 +389,7 @@ export async function generateDailyBrief(
     trends,
     reddit: bundle.reddit ?? [],
     sites: bundle.sites ?? [],
+    gcpBilling: bundle.gcpBilling ?? null,
     sentiment,
     insiders: bundle.insiders ?? emptyInsiderBrief("Insider trades were not collected"),
     whales,

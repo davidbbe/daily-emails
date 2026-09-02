@@ -18,7 +18,7 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
    - Fetches **2×** each region’s limit, drops **Sports**-category rows, then keeps the configured top N
 8. Flags topics rising in **2+ regions**
 9. Pulls top Reddit posts (title, link, thumbnail when available) for configured subreddits
-10. Pulls **GA4** yesterday + 7-day trend + month-to-date overviews for configured sites (when a service account is set)
+10. Pulls **GA4** yesterday + 7-day trend + month-to-date overviews for configured sites (when a service account is set), plus **Google Cloud Billing** month-to-date (through yesterday UTC)
 11. Loads yesterday’s slim snapshot (when available) for day-over-day history
 12. Summarizes with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
 13. Saves a **markets brief** payload for the secret hosted page (Blob when configured, otherwise `.data/markets-latest.json`)
@@ -26,7 +26,7 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
 15. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
 16. Saves a slim day-over-day snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
 
-Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGIONS`, `REDDIT_SUBREDDITS`, `GA_ACCOUNTS`, `DEFAULT_MODEL`).
+Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGIONS`, `REDDIT_SUBREDDITS`, `GA_ACCOUNTS`, `GCP_BILLING_ACCOUNT`, `DEFAULT_MODEL`).
 
 ## Hosted markets page
 
@@ -61,6 +61,7 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 | **Also rising in 2+ regions**                             | —                                                                                                                                                                  | **No LLM** — string match on English titles                                                                                     |
 | **Reddit**                                                | Reddit Atom RSS — top 6 per sub (`pics`, `generativeAI`, `CursedAI`, `aiArt`); day → week → hot fallback | **No LLM** — subreddits in 2 columns; posts in a 3-column grid with larger thumbnails                                           |
 | **Google Analytics**                                      | GA4 Data API — yesterday KPIs (vs prior day), 7-day users bar chart, and month-to-date totals for `uwhmap.com`, `greetingcardfun.com`, `tvroulette.app`            | **No LLM** — skipped when `GOOGLE_CLIENT_EMAIL` / `GOOGLE_PRIVATE_KEY` are unset                                                |
+| **Google Cloud Billing**                                  | Month-to-date (through yesterday UTC) for billing account `016802-8E2106-038F4F` (Restaurant Roulette) — daily stacked bars by service vs the same days last month | **No LLM** — BigQuery Standard usage cost export. Shows a setup card until `GCP_BILLING_BQ_TABLE` is set                         |
 | **Usage watch**                                           | AI Gateway, Fast Data Transfer, Edge Requests, Blob size/ops, function invocations, Resend                                                                         | **No LLM** — flags anything ≥50% of its Hobby/free limit                                                                        |
 | **Delivery**                                              | —                                                                                                                                                                  | **Resend API** sends HTML + plain-text email                                                                                    |
 
@@ -99,8 +100,12 @@ cp .env.example .env
 | `BLOB_READ_WRITE_TOKEN`     | Prod\*   | From a [Vercel Blob](https://vercel.com/docs/vercel-blob) store — enables durable day-over-day history       |
 | `VERCEL_TOKEN`              | Prod\*   | [Account token](https://vercel.com/account/tokens) for Fast Data Transfer / platform usage via `/v2/usage` |
 | `VERCEL_TEAM_ID`            | No       | Team id (defaults to `orgId` in `.vercel/project.json` when linked)                                          |
-| `GOOGLE_CLIENT_EMAIL`       | No       | GCP service account email for the **Google Analytics** section                                               |
+| `GOOGLE_CLIENT_EMAIL`       | No       | GCP service account email for the **Google Analytics** and **Cloud Billing** sections                        |
 | `GOOGLE_PRIVATE_KEY`        | No       | Service account private key (PEM; literal `\n` newlines are fine)                                            |
+| `GCP_BILLING_ACCOUNT_ID`    | No       | Cloud Billing account id (default `016802-8E2106-038F4F`)                                                    |
+| `GCP_BILLING_BQ_TABLE`      | Billing* | BigQuery export table `project.dataset.gcp_billing_export_v1_016802_8E2106_038F4F` (jobs run in the table’s project) |
+| `GOOGLE_CLOUD_PROJECT`      | No       | Fallback GCP project for table discovery if `GCP_BILLING_BQ_TABLE` is unset                                 |
+| `GCP_BILLING_BQ_JOB_PROJECT`| No       | Project that runs the billing query job (defaults to the table’s project)                                    |
 
 \*Without Blob, local runs still persist to `.data/previous-brief.json` and `.data/markets-latest.json`. On Vercel without Blob, day-over-day sections and the hosted markets page stay empty until a store is connected. `APP_BASE_URL` is recommended in production so the email CTA always points at your canonical domain.
 
@@ -115,6 +120,21 @@ Optional. Without these env vars the brief still sends — the analytics block i
 5. Redeploy / restart so the env vars are available
 
 Account IDs and email labels live in `src/lib/config.ts` (`GA_ACCOUNTS`). Each account is expected to have a single GA4 property; the Admin API resolves the property id at runtime.
+
+### Google Cloud Billing
+
+The email shows **month to date through yesterday UTC** for the Restaurant Roulette billing account (`GCP_BILLING_ACCOUNT` in `src/lib/config.ts`), compared with the same days last month.
+
+Restaurant Roulette billing and the daily-emails service account are on **different Google accounts**. The export must land in a project **linked to billing account `016802-8E2106-038F4F`**, then that dataset is shared with `GOOGLE_CLIENT_EMAIL`.
+
+1. On the Restaurant Roulette login, pick a project already billed to that account (or create `billing-export` and link it)
+2. In [BigQuery](https://console.cloud.google.com/bigquery), create dataset `billing_export` with location **US** (multi-region, so current + previous month backfill). Leave table expiration off
+3. [Billing export](https://console.cloud.google.com/billing/016802-8E2106-038F4F) → **BigQuery export** → enable **Standard usage cost** → that project + `billing_export`
+4. Dataset **Sharing** → add `GOOGLE_CLIENT_EMAIL` as **BigQuery Data Viewer**
+5. On the export project (AI Greeting Card App), grant that same email **BigQuery Job User**
+6. Set `GCP_BILLING_BQ_TABLE=YOUR_PROJECT.billing_export.gcp_billing_export_v1_016802_8E2106_038F4F` locally and on Vercel
+
+Until the table is readable, the email shows a short setup card instead of the chart. First US-region backfill can take up to five days.
 
 3. Install and run locally:
 
