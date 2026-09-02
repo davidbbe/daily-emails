@@ -1,6 +1,6 @@
 ---
 description: Gmail-only HTML email design — use modern Gmail-safe styles; skip Outlook workarounds
-globs: src/lib/email.ts,src/lib/fear-greed-gauge.ts,src/lib/ticker-proxy-chart.ts,scripts/**/*email*.ts
+globs: src/lib/email.ts,src/lib/gcp-billing.ts,src/lib/fear-greed-gauge.ts,src/lib/ticker-proxy-chart.ts,scripts/**/*email*.ts
 alwaysApply: false
 ---
 
