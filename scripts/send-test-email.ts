@@ -13,7 +13,8 @@ import { collectUsageReport } from "@/lib/usage";
 import { collectGcpBilling } from "@/lib/gcp-billing";
 
 function demoDailySeries(baseUsers: number): SiteAnalytics["dailySeries"] {
-  const pattern = [0.72, 0.8, 0.68, 0.95, 1.05, 0.88, 1];
+  // Tall last bar vs short early days — matches the Gmail alignment edge case.
+  const pattern = [0.18, 0.05, 0.18, 0.09, 0.55, 0.91, 1];
   return pattern.map((factor, i) => {
     const users = Math.round(baseUsers * factor);
     return {
@@ -36,6 +37,7 @@ function demoSites(): SiteAnalytics[] {
       date: "2026-08-01",
       previousDate: "2026-07-31",
       monthStart: "2026-08-01",
+      timeZone: "America/Los_Angeles",
       metrics: {
         activeUsers: users,
         sessions: users + 20,

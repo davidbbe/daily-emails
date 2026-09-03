@@ -12,7 +12,7 @@ import {
   getMarketsPageUrl,
   PEOPLE,
 } from "@/lib/config";
-import { formatHumanDate } from "@/lib/dates";
+import { formatHumanDate, formatTimeZoneAbbr } from "@/lib/dates";
 import {
   formatChangePercent,
   formatHeroChangePercent,
@@ -406,33 +406,42 @@ function renderUsersBarChart(
 
   const maxUsers = Math.max(...points.map((p) => p.activeUsers), 1);
   const barMaxHeight = 56;
+  const colPct = `${(100 / points.length).toFixed(2)}%`;
+  const colWidthAttr = String(Math.floor(100 / points.length));
+
+  const counts = points
+    .map((point) => {
+      return `<td width="${colWidthAttr}%" style="width:${colPct};padding:0 4px 6px 4px;text-align:center;font-size:10px;font-weight:700;color:#64748b;line-height:1;vertical-align:bottom;">${formatCount(point.activeUsers)}</td>`;
+    })
+    .join("");
 
   const bars = points
     .map((point, index) => {
       const height = Math.max(
         4,
-        Math.round((point.activeUsers / maxUsers) * barMaxHeight),
+        Math.round((point.activeUsers / maxUsers) * (barMaxHeight - 2)),
       );
       const isLast = index === points.length - 1;
       const barColor = isLast ? accent.strong : accent.soft;
-      const labelColor = isLast ? "#0f172a" : "#94a3b8";
-      const weight = isLast ? "700" : "600";
-      return `<td style="padding:0 3px;vertical-align:bottom;text-align:center;width:${Math.floor(100 / points.length)}%;">
-        <div style="font-size:10px;font-weight:700;color:#64748b;margin:0 0 4px 0;line-height:1;">${formatCount(point.activeUsers)}</div>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="height:${barMaxHeight}px;">
-          <tr>
-            <td style="vertical-align:bottom;height:${barMaxHeight}px;">
-              <div style="height:${height}px;background:${barColor};border-radius:6px 6px 2px 2px;line-height:1px;font-size:1px;">&nbsp;</div>
-            </td>
-          </tr>
-        </table>
-        <div style="margin-top:6px;font-size:10px;font-weight:${weight};color:${labelColor};">${escapeHtml(shortWeekday(point.date))}</div>
+      return `<td width="${colWidthAttr}%" valign="bottom" height="${barMaxHeight}" style="width:${colPct};height:${barMaxHeight}px;vertical-align:bottom;text-align:center;padding:0 4px;font-size:1px;line-height:1px;">
+        <div style="height:${height}px;background:${barColor};border-radius:6px 6px 2px 2px;line-height:1px;font-size:1px;">&nbsp;</div>
       </td>`;
     })
     .join("");
 
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  const labels = points
+    .map((point, index) => {
+      const isLast = index === points.length - 1;
+      const labelColor = isLast ? "#0f172a" : "#94a3b8";
+      const weight = isLast ? "700" : "600";
+      return `<td width="${colWidthAttr}%" style="width:${colPct};padding:6px 2px 0 2px;text-align:center;font-size:10px;font-weight:${weight};color:${labelColor};line-height:1.2;white-space:nowrap;">${escapeHtml(shortWeekday(point.date))}</td>`;
+    })
+    .join("");
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;width:100%;">
+    <tr>${counts}</tr>
     <tr>${bars}</tr>
+    <tr>${labels}</tr>
   </table>`;
 }
 
@@ -479,6 +488,10 @@ function renderSiteCard(site: SiteAnalytics) {
   const mtd = site.monthToDate;
   const dateLabel = formatHumanDate(site.date, { withTime: false });
   const mtdRange = `${formatHumanDate(site.monthStart, { withTime: false })} – ${dateLabel}`;
+  const tzAbbr = formatTimeZoneAbbr(site.timeZone || "UTC", site.date);
+  const dateHeading = site.freshnessNote
+    ? dateLabel
+    : `Yesterday · ${dateLabel}`;
 
   return `<tr>
     <td style="padding:0 0 14px 0;">
@@ -492,13 +505,18 @@ function renderSiteCard(site: SiteAnalytics) {
               <tr>
                 <td style="vertical-align:middle;">
                   <div style="font-size:17px;font-weight:700;color:#0f172a;">${escapeHtml(site.label)}</div>
-                  <div style="margin-top:3px;font-size:12px;color:#64748b;">Yesterday · ${escapeHtml(dateLabel)}</div>
+                  <div style="margin-top:3px;font-size:12px;color:#64748b;">${escapeHtml(dateHeading)}</div>
                 </td>
                 <td style="vertical-align:middle;text-align:right;">
                   <span style="display:inline-block;font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${accent.strong};background:${accent.chip};border-radius:999px;padding:4px 9px;">GA4</span>
                 </td>
               </tr>
             </table>
+            ${
+              site.freshnessNote
+                ? `<div style="margin-top:10px;font-size:12px;line-height:1.45;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 10px;">${escapeHtml(site.freshnessNote)}</div>`
+                : ""
+            }
           </td>
         </tr>
         <tr>
@@ -530,7 +548,7 @@ function renderSiteCard(site: SiteAnalytics) {
                   <div style="font-size:12px;font-weight:700;color:#0f172a;">Users · last 7 days</div>
                 </td>
                 <td style="vertical-align:middle;text-align:right;">
-                  <div style="font-size:11px;color:#94a3b8;">UTC days through yesterday</div>
+                  <div style="font-size:11px;color:#94a3b8;">${escapeHtml(tzAbbr)} days through ${escapeHtml(dateLabel)}</div>
                 </td>
               </tr>
             </table>
@@ -1306,8 +1324,13 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
         ),
       );
       lines.push(
-        `  Yesterday (${formatHumanDate(site.date, { withTime: false })})`,
+        site.freshnessNote
+          ? `  ${formatHumanDate(site.date, { withTime: false })}`
+          : `  Yesterday (${formatHumanDate(site.date, { withTime: false })})`,
       );
+      if (site.freshnessNote) {
+        lines.push(`  ${site.freshnessNote}`);
+      }
       lines.push(
         `  Users: ${Math.round(site.metrics.activeUsers)} (${usersDelta})`,
       );

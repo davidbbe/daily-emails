@@ -13,13 +13,38 @@ export function formatTitleDate(value: string | Date) {
   });
 }
 
-function calendarDayInZone(date: Date, timeZone = EASTERN) {
+export function calendarDayInZone(date: Date, timeZone = EASTERN) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(date);
+}
+
+/** Shift a YYYY-MM-DD calendar date by a whole number of days. */
+export function addIsoDays(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T12:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return isoDate;
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export function monthStartOf(isoDate: string): string {
+  return `${isoDate.slice(0, 8)}01`;
+}
+
+export function formatTimeZoneAbbr(
+  timeZone: string,
+  at: Date | string = new Date(),
+): string {
+  const date = typeof at === "string" ? new Date(`${at}T12:00:00.000Z`) : at;
+  if (Number.isNaN(date.getTime())) return timeZone;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "short",
+  }).formatToParts(date);
+  return parts.find((part) => part.type === "timeZoneName")?.value ?? timeZone;
 }
 
 function isoDay(value: string): string | null {
