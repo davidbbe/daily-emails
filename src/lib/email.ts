@@ -18,6 +18,7 @@ import {
   formatHeroChangePercent,
   formatUsd,
   percentChange as billingPercentChange,
+  TRAILING_BILLING_DAYS,
   type GcpBillingReport,
 } from "@/lib/gcp-billing";
 import type { RedditSubFeed, RedditWindow } from "@/lib/reddit";
@@ -833,7 +834,9 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
   const intro =
     report.period === "latest_month"
       ? `Latest available month for ${escapeHtml(report.accountLabel)}, grouped by service (same days prior month).`
-      : `Month to date for ${escapeHtml(report.accountLabel)}, grouped by service (same days last month).`;
+      : report.period === "trailing"
+        ? `Last ${TRAILING_BILLING_DAYS} days for ${escapeHtml(report.accountLabel)}, grouped by service (prior ${TRAILING_BILLING_DAYS} days).`
+        : `Month to date for ${escapeHtml(report.accountLabel)}, grouped by service (same days last month).`;
 
   return `${sectionLabel("Google Cloud Billing")}
     <tr>
@@ -1370,7 +1373,7 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     const billing = brief.gcpBilling;
     lines.push("", "GOOGLE CLOUD BILLING");
     lines.push(
-      `${billing.accountLabel} · ${billing.period === "latest_month" ? "latest month" : "month to date"} ${formatBillingRange(billing.startDate, billing.endDate)}`,
+      `${billing.accountLabel} · ${billing.period === "latest_month" ? "latest month" : billing.period === "trailing" ? `last ${TRAILING_BILLING_DAYS} days` : "month to date"} ${formatBillingRange(billing.startDate, billing.endDate)}`,
     );
     if (billing.error) {
       lines.push(`  Error: ${billing.error}`);

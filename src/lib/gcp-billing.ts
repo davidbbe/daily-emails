@@ -57,10 +57,12 @@ export type GcpBillingReport = {
   insight?: string;
   /** Why the window is not current-month MTD, when export is lagging. */
   freshnessNote?: string;
-  period: "month_to_date" | "latest_month";
+  period: "month_to_date" | "latest_month" | "trailing";
   source: "bigquery";
   error?: string;
 };
+
+export type GcpBillingPeriod = GcpBillingReport["period"];
 
 export type GcpBillingWindow = {
   startDate: string;
@@ -69,16 +71,19 @@ export type GcpBillingWindow = {
   previousEndDate: string;
   year: number;
   monthIndex: number;
-  period: "month_to_date" | "latest_month";
+  period: GcpBillingPeriod;
 };
 
-type ParsedBillingRow = {
+export type GcpBillingRow = {
   day: string;
   service: string;
   project: string;
   usageCost: number;
   credits: number;
 };
+
+/** Days shown when the current month is still missing priced costs for a live service. */
+export const TRAILING_BILLING_DAYS = 30;
 
 type BqJobResponse = {
   jobComplete?: boolean;
@@ -102,7 +107,12 @@ function reportsUrlFor(
   accountId: string,
   period: GcpBillingWindow["period"],
 ) {
-  const range = period === "latest_month" ? "LAST_MONTH" : "THIS_MONTH";
+  const range =
+    period === "latest_month"
+      ? "LAST_MONTH"
+      : period === "trailing"
+        ? "LAST_30_DAYS"
+        : "THIS_MONTH";
   return `https://console.cloud.google.com/billing/${accountId}/reports;timeRange=${range}`;
 }
 
@@ -130,10 +140,10 @@ export function currentMonthToDate(now = new Date()): GcpBillingWindow {
   return windowThroughDay(year, monthIndex, endDay, now);
 }
 
-/** First of the month two months ago through yesterday — enough for MoM. */
+/** First of the month three months ago through yesterday — enough for MoM + trailing 30. */
 export function lookbackRange(now = new Date()) {
   const mtd = currentMonthToDate(now);
-  const start = new Date(Date.UTC(mtd.year, mtd.monthIndex - 2, 1));
+  const start = new Date(Date.UTC(mtd.year, mtd.monthIndex - 3, 1));
   return {
     startDate: isoDate(start.getUTCFullYear(), start.getUTCMonth(), 1),
     endDate: mtd.endDate,
@@ -180,9 +190,41 @@ export function windowFromSpendDate(
   );
 }
 
-const SPEND_EPSILON = 0.005;
+function shiftIsoDate(iso: string, deltaDays: number) {
+  const date = new Date(`${iso}T12:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + deltaDays);
+  return isoDate(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
 
-export function latestSpendDay(rows: ParsedBillingRow[]): string | null {
+/** `dayCount` days ending on `endDate`, vs the equal-length window before that. */
+export function trailingWindow(
+  endDate: string,
+  dayCount = TRAILING_BILLING_DAYS,
+  now = new Date(),
+): GcpBillingWindow {
+  const end = new Date(`${endDate}T12:00:00.000Z`);
+  if (Number.isNaN(end.getTime()) || dayCount < 1) {
+    return currentMonthToDate(now);
+  }
+  const startDate = shiftIsoDate(endDate, -(dayCount - 1));
+  const previousEndDate = shiftIsoDate(startDate, -1);
+  const previousStartDate = shiftIsoDate(previousEndDate, -(dayCount - 1));
+  return {
+    startDate,
+    endDate,
+    previousStartDate,
+    previousEndDate,
+    year: end.getUTCFullYear(),
+    monthIndex: end.getUTCMonth(),
+    period: "trailing",
+  };
+}
+
+const SPEND_EPSILON = 0.005;
+/** Previous-month spend high enough to treat a $0 current-month service as “still pricing”. */
+const RECENT_PAID_SERVICE_MIN = 0.05;
+
+export function latestSpendDay(rows: GcpBillingRow[]): string | null {
   let latest: string | null = null;
   for (const row of rows) {
     if (!row.day || Math.abs(row.usageCost + row.credits) < SPEND_EPSILON) {
@@ -191,6 +233,71 @@ export function latestSpendDay(rows: ParsedBillingRow[]): string | null {
     if (!latest || row.day > latest) latest = row.day;
   }
   return latest;
+}
+
+/**
+ * True when this month has some priced rows, but a service that cost money last
+ * month still has usage (or $0 export rows) with no priced cost yet — typical
+ * Cloud Billing lag at month start.
+ */
+export function currentMonthPricingIncomplete(
+  rows: GcpBillingRow[],
+  window: GcpBillingWindow,
+): boolean {
+  if (window.period !== "month_to_date") return false;
+
+  const prevMonthIndex = window.monthIndex === 0 ? 11 : window.monthIndex - 1;
+  const prevYear = window.monthIndex === 0 ? window.year - 1 : window.year;
+  const prevStart = isoDate(prevYear, prevMonthIndex, 1);
+  const prevEnd = isoDate(
+    prevYear,
+    prevMonthIndex,
+    daysInUtcMonth(prevYear, prevMonthIndex),
+  );
+  const currStart = isoDate(window.year, window.monthIndex, 1);
+
+  const stats = new Map<
+    string,
+    { prevCost: number; currCost: number; hasCurrRow: boolean }
+  >();
+
+  for (const row of rows) {
+    if (!row.day || !row.service) continue;
+    const net = row.usageCost + row.credits;
+    let stat = stats.get(row.service);
+    if (!stat) {
+      stat = { prevCost: 0, currCost: 0, hasCurrRow: false };
+      stats.set(row.service, stat);
+    }
+    if (row.day >= prevStart && row.day <= prevEnd) {
+      stat.prevCost += net;
+    }
+    if (row.day >= currStart) {
+      stat.hasCurrRow = true;
+      if (row.day <= window.endDate) stat.currCost += net;
+    }
+  }
+
+  for (const stat of stats.values()) {
+    if (stat.prevCost < RECENT_PAID_SERVICE_MIN) continue;
+    if (!stat.hasCurrRow) continue;
+    if (Math.abs(stat.currCost) >= SPEND_EPSILON) continue;
+    return true;
+  }
+  return false;
+}
+
+export function resolveBillingWindow(
+  rows: GcpBillingRow[],
+  now = new Date(),
+): GcpBillingWindow {
+  const spendDay = latestSpendDay(rows);
+  if (!spendDay) return currentMonthToDate(now);
+  const fromSpend = windowFromSpendDate(spendDay, now);
+  if (currentMonthPricingIncomplete(rows, fromSpend)) {
+    return trailingWindow(spendDay, TRAILING_BILLING_DAYS, now);
+  }
+  return fromSpend;
 }
 
 function formatShortUtcDay(iso: string) {
@@ -212,6 +319,9 @@ function utcMonthName(year: number, monthIndex: number) {
 
 function buildFreshnessNote(window: GcpBillingWindow, now = new Date()) {
   const yesterday = currentMonthToDate(now).endDate;
+  if (window.period === "trailing") {
+    return `This month’s service costs are still being priced in Cloud Billing. Showing the last ${TRAILING_BILLING_DAYS} days so every project stays on the chart.`;
+  }
   if (window.period === "latest_month") {
     const currentMonth = utcMonthName(now.getUTCFullYear(), now.getUTCMonth());
     return `Cloud Billing export is current through ${formatShortUtcDay(window.endDate)}. ${currentMonth} charges have not landed yet.`;
@@ -345,7 +455,7 @@ function unavailableReport(
 }
 
 const EXPORT_SETUP_HINT =
-  "Enable Standard usage cost export to a US BigQuery dataset on a project billed to Restaurant Roulette, share it with this app’s service account as BigQuery Data Viewer, and set GCP_BILLING_BQ_TABLE=project.dataset.gcp_billing_export_v1_016802_8E2106_038F4F.";
+  "Enable Standard usage cost export to a US BigQuery dataset on a project billed to AI Greeting Card & Restaurant Roulette, share it with this app’s service account as BigQuery Data Viewer, and set GCP_BILLING_BQ_TABLE=project.dataset.gcp_billing_export_v1_016802_8E2106_038F4F.";
 
 function parseTableRef(raw: string) {
   const cleaned = raw.replace(/`/g, "").trim();
@@ -456,7 +566,7 @@ async function runBqQuery(
 function reportFromRows(
   account: GcpBillingAccountConfig,
   window: GcpBillingWindow,
-  rows: ParsedBillingRow[],
+  rows: GcpBillingRow[],
   now = new Date(),
 ): GcpBillingReport {
   const currentDays = new Set(eachUtcDate(window.startDate, window.endDate));
@@ -601,7 +711,7 @@ async function collectFromBigQuery(
     { name: "end", value: lookback.endDate, type: "DATE" },
   ]);
 
-  const parsed: ParsedBillingRow[] = rows.map((cols) => ({
+  const parsed: GcpBillingRow[] = rows.map((cols) => ({
     day: cols[0] ?? "",
     service: cols[1] || "Unknown service",
     project: cols[2] ?? "",
@@ -618,14 +728,16 @@ async function collectFromBigQuery(
     );
   }
 
-  const window = windowFromSpendDate(spendDay, now);
+  const window = resolveBillingWindow(parsed, now);
   return reportFromRows(account, window, parsed, now);
 }
 
 /**
  * Cloud Billing grouped by service. Prefers current-month MTD through the
- * latest day with charges in the export; if this month is still empty (export
- * lag at month start), falls back to that latest month.
+ * latest day with priced charges. If this month is empty, falls back to that
+ * latest month. If this month has some priced rows but a service that billed
+ * last month is still $0 (export lag), shows the last 30 days instead so
+ * both projects stay on the chart.
  * Returns null when Google creds are unset.
  */
 export async function collectGcpBilling(): Promise<GcpBillingReport | null> {

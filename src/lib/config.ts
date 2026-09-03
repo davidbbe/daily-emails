@@ -277,10 +277,10 @@ export const GA_ACCOUNTS = [
   { accountId: "220211668", label: "tvroulette.app" },
 ] as const;
 
-/** Cloud Billing account shown in the daily email (month to date). */
+/** Cloud Billing account shown in the daily email (covers both GCP projects). */
 export const GCP_BILLING_ACCOUNT = {
   id: "016802-8E2106-038F4F",
-  label: "Restaurant Roulette",
+  label: "Greeting Card Fun & Restaurant Roulette",
   reportsUrl:
     "https://console.cloud.google.com/billing/016802-8E2106-038F4F/reports;timeRange=THIS_MONTH",
 } as const;
