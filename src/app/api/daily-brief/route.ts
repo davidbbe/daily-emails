@@ -85,7 +85,11 @@ export async function GET(request: Request) {
             services: brief.gcpBilling.services.map((s) => ({
               name: s.name,
               cost: s.usageCost,
+              calls: s.calls ?? null,
             })),
+            apiUsageRange: brief.gcpBilling.apiUsageStartDate
+              ? `${brief.gcpBilling.apiUsageStartDate} – ${brief.gcpBilling.apiUsageEndDate}`
+              : null,
             error: brief.gcpBilling.error ?? null,
           }
         : null,

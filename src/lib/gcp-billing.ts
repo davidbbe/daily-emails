@@ -24,12 +24,33 @@ const SERVICE_STYLES: Array<{
   { color: "#00acc1", marker: "square" },
 ];
 
+export type GcpBillingSkuUnit = "calls" | "tokens";
+
+export type GcpBillingSku = {
+  name: string;
+  quantity: number;
+  unit: GcpBillingSkuUnit;
+  /** Per-SKU monthly free events, when known (Places Enterprise is 1,000). */
+  freeMonthly?: number;
+};
+
+export type GcpBillingApiUsage = {
+  name: string;
+  color: string;
+  marker: "circle" | "square";
+  /** Month-to-date request-like SKUs (excludes token counts). */
+  calls: number | null;
+  skus: GcpBillingSku[];
+};
+
 export type GcpBillingService = {
   name: string;
   color: string;
   marker: "circle" | "square";
   usageCost: number;
   previousCost: number | null;
+  /** Month-to-date request-like SKUs (from the 1st), not the cost chart window. */
+  calls: number | null;
   /** Largest project contributor when known */
   projectHint?: string;
 };
@@ -53,6 +74,13 @@ export type GcpBillingReport = {
   previousTotal: number;
   savings: number;
   services: GcpBillingService[];
+  /**
+   * SKU-level API usage for the current calendar month (from the 1st),
+   * independent of the cost chart window. Free-tier SKUs reset monthly.
+   */
+  apiUsage: GcpBillingApiUsage[];
+  apiUsageStartDate: string;
+  apiUsageEndDate: string;
   days: GcpBillingDay[];
   insight?: string;
   /** Why the window is not current-month MTD, when export is lagging. */
@@ -77,9 +105,12 @@ export type GcpBillingWindow = {
 export type GcpBillingRow = {
   day: string;
   service: string;
+  sku?: string;
   project: string;
   usageCost: number;
   credits: number;
+  usageAmount?: number;
+  usageUnit?: string;
 };
 
 /** Days shown when the current month is still missing priced costs for a live service. */
@@ -398,6 +429,97 @@ export function formatHeroChangePercent(delta: number) {
   })}%`;
 }
 
+export function formatCallCount(value: number) {
+  return Math.round(value).toLocaleString("en-US");
+}
+
+export function formatSkuUsage(
+  quantity: number,
+  unit: GcpBillingSkuUnit,
+  freeMonthly?: number,
+) {
+  const n = formatCallCount(quantity);
+  if (unit === "tokens") return `${n} tokens`;
+  if (freeMonthly) return `${n} / ${formatCallCount(freeMonthly)} free`;
+  return `${n} calls`;
+}
+
+function humanizeModelName(raw: string) {
+  return raw
+    .split(/\s+/)
+    .map((part) => {
+      if (/^[0-9.]+$/.test(part)) return part;
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    })
+    .join(" ");
+}
+
+/** Short label for a Cloud Billing SKU (Places Nearby Search, Gemini tokens, …). */
+export function displaySkuName(service: string, sku: string): string {
+  let name = sku.trim();
+  const prefixes = [
+    service,
+    "Places API (New)",
+    "Places API",
+    "Maps API",
+    "Gemini API",
+    "Cloud Logging",
+    "BigQuery",
+  ].sort((a, b) => b.length - a.length);
+
+  for (const prefix of prefixes) {
+    if (name.toLowerCase().startsWith(prefix.toLowerCase())) {
+      name = name.slice(prefix.length).replace(/^[\s:_-]+/, "");
+      break;
+    }
+  }
+
+  name = name.replace(/\s+-\s+Predictions$/i, "").trim();
+  name = name.replace(/^Generate_content\s+/i, "");
+
+  const token = name.match(/^text (input|output) token count for (.+)$/i);
+  if (token) {
+    const model = humanizeModelName(
+      token[2]!.replace(/\s+short$/i, "").trim(),
+    );
+    return `${model} · ${token[1]!.toLowerCase()} tokens`;
+  }
+
+  const geminiImage = name.match(
+    /^(Gemini .+? Image)\s+(Image|Text)\s+(Input|Output)$/i,
+  );
+  if (geminiImage) {
+    return `${geminiImage[1]} · ${geminiImage[2]!.toLowerCase()} ${geminiImage[3]!.toLowerCase()}`;
+  }
+
+  return name.replace(/\s+/g, " ").trim() || sku.trim();
+}
+
+export function skuUsageUnit(
+  sku: string,
+  usageUnit: string,
+): GcpBillingSkuUnit | null {
+  if (/byte/i.test(usageUnit)) return null;
+  if (/token/i.test(sku)) return "tokens";
+  if (/request|count/i.test(usageUnit)) return "calls";
+  return null;
+}
+
+/**
+ * Google Maps Platform free monthly events by SKU category (resets on the 1st).
+ * Enterprise / Place Photos = 1,000; Pro = 5,000; Essentials = 10,000.
+ */
+export function skuFreeMonthlyCap(sku: string): number | null {
+  const s = sku.toLowerCase();
+  if (/photo/.test(s)) return 1000;
+  if (/enterprise/.test(s)) return 1000;
+  if (/\bpro\b/.test(s)) return 5000;
+  if (/autocomplete requests/.test(s)) return 10_000;
+  if (/dynamic maps/.test(s)) return 10_000;
+  if (/essentials/.test(s)) return 10_000;
+  return null;
+}
+
 function buildInsight(services: GcpBillingService[]): string | undefined {
   const newest = services
     .filter((s) => s.previousCost == null && s.usageCost > 0)
@@ -433,7 +555,9 @@ function unavailableReport(
   account: GcpBillingAccountConfig,
   window: GcpBillingWindow,
   error: string,
+  now = new Date(),
 ): GcpBillingReport {
+  const mtd = currentMonthToDate(now);
   return {
     accountId: account.id,
     accountLabel: account.label,
@@ -447,6 +571,9 @@ function unavailableReport(
     previousTotal: 0,
     savings: 0,
     services: [],
+    apiUsage: [],
+    apiUsageStartDate: mtd.startDate,
+    apiUsageEndDate: mtd.endDate,
     days: emptyDays(window.startDate, window.endDate),
     period: window.period,
     source: "bigquery",
@@ -534,7 +661,7 @@ async function runBqQuery(
         query,
         useLegacySql: false,
         timeoutMs: 20000,
-        maxResults: 5000,
+        maxResults: 10000,
         parameterMode: "NAMED",
         queryParameters: params.map((p) => ({
           name: p.name,
@@ -573,9 +700,25 @@ function reportFromRows(
   const previousDays = new Set(
     eachUtcDate(window.previousStartDate, window.previousEndDate),
   );
+  const mtd = currentMonthToDate(now);
+  const usageDays = new Set(eachUtcDate(mtd.startDate, mtd.endDate));
   const serviceCosts = new Map<
     string,
-    { usage: number; previous: number; projects: Map<string, number> }
+    {
+      usage: number;
+      previous: number;
+      projects: Map<string, number>;
+    }
+  >();
+  const mtdServiceCalls = new Map<string, number>();
+  const skuUsage = new Map<
+    string,
+    {
+      service: string;
+      sku: string;
+      unit: GcpBillingSkuUnit;
+      quantity: number;
+    }
   >();
   const dayCosts = new Map<string, Record<string, number>>();
   let total = 0;
@@ -590,6 +733,8 @@ function reportFromRows(
       previous: 0,
       projects: new Map<string, number>(),
     };
+    const amount = row.usageAmount ?? 0;
+    const unit = skuUsageUnit(row.sku ?? "", row.usageUnit ?? "");
     if (inCurrent) {
       bucket.usage += net;
       total += net;
@@ -606,6 +751,25 @@ function reportFromRows(
       previousTotal += net;
     }
     serviceCosts.set(row.service, bucket);
+
+    if (unit && usageDays.has(row.day)) {
+      const skuName = row.sku?.trim() || "Unknown SKU";
+      const skuKey = `${row.service}\t${skuName}`;
+      const skuBucket = skuUsage.get(skuKey) ?? {
+        service: row.service,
+        sku: skuName,
+        unit,
+        quantity: 0,
+      };
+      skuBucket.quantity += amount;
+      skuUsage.set(skuKey, skuBucket);
+      if (unit === "calls") {
+        mtdServiceCalls.set(
+          row.service,
+          (mtdServiceCalls.get(row.service) ?? 0) + amount,
+        );
+      }
+    }
   }
 
   const ranked = [...serviceCosts.entries()]
@@ -614,16 +778,73 @@ function reportFromRows(
     )
     .sort((a, b) => b[1].usage - a[1].usage);
 
-  const services = ranked.map(([name, v], index) => {
+  const skuGroups = new Map<string, GcpBillingSku[]>();
+  for (const bucket of skuUsage.values()) {
+    if (Math.round(bucket.quantity) <= 0) continue;
+    const list = skuGroups.get(bucket.service) ?? [];
+    const name = displaySkuName(bucket.service, bucket.sku);
+    const quantity = Math.round(bucket.quantity);
+    const existing = list.find((sku) => sku.name === name && sku.unit === bucket.unit);
+    const freeMonthly = skuFreeMonthlyCap(bucket.sku) ?? undefined;
+    if (existing) existing.quantity += quantity;
+    else {
+      list.push({
+        name,
+        quantity,
+        unit: bucket.unit,
+        ...(freeMonthly ? { freeMonthly } : {}),
+      });
+    }
+    skuGroups.set(bucket.service, list);
+  }
+  for (const list of skuGroups.values()) {
+    list.sort((a, b) => {
+      if (a.unit !== b.unit) return a.unit === "calls" ? -1 : 1;
+      return b.quantity - a.quantity;
+    });
+  }
+
+  const styleNames = [
+    ...ranked.map(([name]) => name),
+    ...[...skuGroups.keys()].filter(
+      (name) => !ranked.some(([service]) => service === name),
+    ),
+  ];
+  const styles = new Map(
+    styleNames.map((name, index) => [name, styleForService(name, index)]),
+  );
+
+  const services = ranked.map(([name, v]) => {
     const topProject = [...v.projects.entries()].sort((a, b) => b[1] - a[1])[0];
+    const roundedCalls = Math.round(mtdServiceCalls.get(name) ?? 0);
     return {
       name,
-      ...styleForService(name, index),
+      ...(styles.get(name) ?? styleForService(name, 0)),
       usageCost: roundUsd(v.usage),
       previousCost: v.previous === 0 && v.usage > 0 ? null : roundUsd(v.previous),
+      calls: roundedCalls > 0 ? roundedCalls : null,
       projectHint: topProject?.[0],
     } satisfies GcpBillingService;
   });
+
+  const apiUsage: GcpBillingApiUsage[] = [...skuGroups.entries()]
+    .map(([name, skus]) => {
+      const roundedCalls = Math.round(mtdServiceCalls.get(name) ?? 0);
+      return {
+        name,
+        ...(styles.get(name) ?? styleForService(name, 0)),
+        calls: roundedCalls > 0 ? roundedCalls : null,
+        skus,
+      } satisfies GcpBillingApiUsage;
+    })
+    .sort((a, b) => {
+      const aRank = ranked.findIndex(([name]) => name === a.name);
+      const bRank = ranked.findIndex(([name]) => name === b.name);
+      const aOrder = aRank === -1 ? Number.POSITIVE_INFINITY : aRank;
+      const bOrder = bRank === -1 ? Number.POSITIVE_INFINITY : bRank;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return (b.calls ?? 0) - (a.calls ?? 0) || a.name.localeCompare(b.name);
+    });
 
   const days = emptyDays(window.startDate, window.endDate).map((day) => ({
     date: day.date,
@@ -643,6 +864,9 @@ function reportFromRows(
     previousTotal: roundUsd(previousTotal),
     savings: roundUsd(Math.abs(savings)),
     services,
+    apiUsage,
+    apiUsageStartDate: mtd.startDate,
+    apiUsageEndDate: mtd.endDate,
     days,
     insight: buildInsight(services),
     freshnessNote: buildFreshnessNote(window, now),
@@ -694,16 +918,19 @@ async function collectFromBigQuery(
     SELECT
       CAST(DATE(usage_start_time) AS STRING) AS day,
       service.description AS service,
+      sku.description AS sku,
       IFNULL(project.name, "") AS project,
       SUM(cost) AS usage_cost,
       SUM(IFNULL((
         SELECT SUM(CAST(c.amount AS FLOAT64)) FROM UNNEST(credits) c
-      ), 0)) AS credits
+      ), 0)) AS credits,
+      SUM(IFNULL(usage.amount, 0)) AS usage_amount,
+      ANY_VALUE(usage.unit) AS usage_unit
     FROM ${fq}
     WHERE DATE(usage_start_time) BETWEEN @start AND @end
       AND DATE(export_time) >= DATE_SUB(@start, INTERVAL 5 DAY)
       AND DATE(export_time) <= DATE_ADD(@end, INTERVAL 14 DAY)
-    GROUP BY 1, 2, 3
+    GROUP BY 1, 2, 3, 4
   `;
 
   const rows = await runBqQuery(accessToken, jobProject, query, [
@@ -714,9 +941,12 @@ async function collectFromBigQuery(
   const parsed: GcpBillingRow[] = rows.map((cols) => ({
     day: cols[0] ?? "",
     service: cols[1] || "Unknown service",
-    project: cols[2] ?? "",
-    usageCost: Number.parseFloat(cols[3] ?? "0") || 0,
-    credits: Number.parseFloat(cols[4] ?? "0") || 0,
+    sku: cols[2] || "Unknown SKU",
+    project: cols[3] ?? "",
+    usageCost: Number.parseFloat(cols[4] ?? "0") || 0,
+    credits: Number.parseFloat(cols[5] ?? "0") || 0,
+    usageAmount: Number.parseFloat(cols[6] ?? "0") || 0,
+    usageUnit: cols[7] ?? "",
   }));
 
   const spendDay = latestSpendDay(parsed);

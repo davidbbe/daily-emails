@@ -14,11 +14,14 @@ import {
 } from "@/lib/config";
 import { formatHumanDate, formatTimeZoneAbbr } from "@/lib/dates";
 import {
+  formatCallCount,
   formatChangePercent,
   formatHeroChangePercent,
+  formatSkuUsage,
   formatUsd,
   percentChange as billingPercentChange,
   TRAILING_BILLING_DAYS,
+  type GcpBillingApiUsage,
   type GcpBillingReport,
 } from "@/lib/gcp-billing";
 import type { RedditSubFeed, RedditWindow } from "@/lib/reddit";
@@ -655,7 +658,10 @@ function formatAxisUsd(value: number) {
   })}`;
 }
 
-function serviceMarker(service: GcpBillingReport["services"][number]) {
+function serviceMarker(service: {
+  color: string;
+  marker: "circle" | "square";
+}) {
   const radius = service.marker === "circle" ? "999px" : "2px";
   return `<span style="display:inline-block;width:10px;height:10px;border-radius:${radius};background:${service.color};vertical-align:middle;margin-right:8px;"></span>`;
 }
@@ -762,9 +768,16 @@ function renderGcpBillingServices(report: GcpBillingReport) {
     .map((service) => {
       const delta = billingPercentChange(service.usageCost, service.previousCost);
       const color = billingChangeColor(delta);
+      const calls =
+        service.calls != null && service.calls > 0
+          ? formatCallCount(service.calls)
+          : "—";
       return `<tr>
         <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:middle;">
           <div style="font-size:14px;font-weight:600;color:#0f172a;">${serviceMarker(service)}${escapeHtml(service.name)}</div>
+        </td>
+        <td style="padding:10px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;text-align:right;white-space:nowrap;">
+          <div style="font-size:14px;font-weight:700;color:#0f172a;">${calls}</div>
         </td>
         <td style="padding:10px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;text-align:right;white-space:nowrap;">
           <div style="font-size:14px;font-weight:700;color:#0f172a;">${formatUsd(service.usageCost)}</div>
@@ -779,11 +792,64 @@ function renderGcpBillingServices(report: GcpBillingReport) {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
     <tr>
       <td style="padding:0 0 8px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;">Service</td>
+      <td style="padding:0 8px 8px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;text-align:right;">MTD calls</td>
       <td style="padding:0 8px 8px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;text-align:right;">Usage cost</td>
       <td style="padding:0 0 8px 8px;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;text-align:right;">% Change</td>
     </tr>
     ${rows}
   </table>`;
+}
+
+function renderGcpBillingApiCalls(report: GcpBillingReport) {
+  const groups = (report.apiUsage ?? []).filter(
+    (group) => group.skus.length > 0,
+  );
+  if (groups.length === 0) return "";
+
+  const body = groups
+    .map((group) => renderGcpBillingApiCallGroup(group))
+    .join("");
+  const range = formatBillingRange(
+    report.apiUsageStartDate,
+    report.apiUsageEndDate,
+  );
+
+  return `<div style="margin-top:4px;padding-top:12px;border-top:1px solid #e2e8f0;">
+    <div style="padding:0 0 2px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;">API calls this month</div>
+    <div style="padding:0 0 8px 0;font-size:12px;line-height:1.45;color:#64748b;">
+      ${escapeHtml(range)} · from the 1st, including $0 usage. Places Enterprise / Photos are free for the first 1,000 calls; Google bills overage after month end.
+    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      ${body}
+    </table>
+  </div>`;
+}
+
+function skuQuantityColor(quantity: number, freeMonthly: number | undefined, isFirst: boolean) {
+  if (freeMonthly != null && quantity > freeMonthly) return "#b42318";
+  return isFirst ? "#0f172a" : "#334155";
+}
+
+function renderGcpBillingApiCallGroup(group: GcpBillingApiUsage) {
+  const total =
+    group.calls != null && group.calls > 0
+      ? `${formatCallCount(group.calls)} calls`
+      : "";
+  const skuRows = group.skus
+    .map((sku, index) => {
+      const color = skuQuantityColor(sku.quantity, sku.freeMonthly, index === 0);
+      return `<tr>
+        <td style="padding:5px 8px 5px 18px;border-bottom:1px solid #f8fafc;font-size:13px;line-height:1.35;color:#334155;">${escapeHtml(sku.name)}</td>
+        <td style="padding:5px 0;border-bottom:1px solid #f8fafc;text-align:right;white-space:nowrap;font-size:13px;font-weight:600;color:${color};">${escapeHtml(formatSkuUsage(sku.quantity, sku.unit, sku.freeMonthly))}</td>
+      </tr>`;
+    })
+    .join("");
+
+  return `<tr>
+      <td style="padding:12px 8px 4px 0;font-size:14px;font-weight:600;color:#0f172a;vertical-align:bottom;">${serviceMarker(group)}${escapeHtml(group.name)}</td>
+      <td style="padding:12px 0 4px 0;text-align:right;white-space:nowrap;font-size:12px;font-weight:600;color:#64748b;vertical-align:bottom;">${escapeHtml(total)}</td>
+    </tr>
+    ${skuRows}`;
 }
 
 function renderGcpBillingSection(report: GcpBillingReport | null | undefined) {
@@ -833,9 +899,9 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
 
   const intro =
     report.period === "latest_month"
-      ? `Latest available month for ${escapeHtml(report.accountLabel)}, grouped by service (same days prior month).`
+      ? `Latest available month for ${escapeHtml(report.accountLabel)}, grouped by service (same days prior month). API calls are counted from the 1st of this month.`
       : report.period === "trailing"
-        ? `Last ${TRAILING_BILLING_DAYS} days for ${escapeHtml(report.accountLabel)}, grouped by service (prior ${TRAILING_BILLING_DAYS} days).`
+        ? `Last ${TRAILING_BILLING_DAYS} days for ${escapeHtml(report.accountLabel)}, grouped by service (prior ${TRAILING_BILLING_DAYS} days). API calls are counted from the 1st of this month.`
         : `Month to date for ${escapeHtml(report.accountLabel)}, grouped by service (same days last month).`;
 
   return `${sectionLabel("Google Cloud Billing")}
@@ -900,6 +966,7 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
           <tr>
             <td style="padding:8px 18px 16px 18px;">
               ${renderGcpBillingServices(report)}
+              ${renderGcpBillingApiCalls(report)}
             </td>
           </tr>
         </table>
@@ -1389,14 +1456,37 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
       );
       if (billing.insight) lines.push(`  ${billing.insight}`);
       if (billing.freshnessNote) lines.push(`  ${billing.freshnessNote}`);
+      const listed = new Set<string>();
+      const skuLines = (group: { skus: GcpBillingReport["apiUsage"][number]["skus"] }) => {
+        for (const sku of group.skus) {
+          lines.push(
+            `      ${sku.name}: ${formatSkuUsage(sku.quantity, sku.unit, sku.freeMonthly)}`,
+          );
+        }
+      };
+      lines.push(
+        `  API calls this month ${formatBillingRange(billing.apiUsageStartDate, billing.apiUsageEndDate)} (from the 1st)`,
+      );
       for (const service of billing.services) {
         const serviceDelta = billingPercentChange(
           service.usageCost,
           service.previousCost,
         );
         lines.push(
-          `  - ${service.name}: ${formatUsd(service.usageCost)} (${formatChangePercent(serviceDelta)})`,
+          `  - ${service.name}: ${formatUsd(service.usageCost)} (${formatChangePercent(serviceDelta)})${service.calls ? ` · ${formatCallCount(service.calls)} calls` : ""}`,
         );
+        const group = (billing.apiUsage ?? []).find((g) => g.name === service.name);
+        if (group) {
+          listed.add(group.name);
+          skuLines(group);
+        }
+      }
+      for (const group of billing.apiUsage ?? []) {
+        if (listed.has(group.name)) continue;
+        lines.push(
+          `  - ${group.name}${group.calls ? `: ${formatCallCount(group.calls)} calls` : ""}`,
+        );
+        skuLines(group);
       }
       lines.push(`  ${billing.reportsUrl}`);
     }

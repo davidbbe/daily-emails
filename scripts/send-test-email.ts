@@ -528,7 +528,15 @@ async function main() {
               total: brief.gcpBilling.total,
               source: brief.gcpBilling.source,
               period: brief.gcpBilling.period,
-              services: brief.gcpBilling.services.map((s) => s.name),
+              services: brief.gcpBilling.services.map((s) => ({
+                name: s.name,
+                calls: s.calls ?? null,
+              })),
+              apiUsage: brief.gcpBilling.apiUsage.map((g) => ({
+                name: g.name,
+                calls: g.calls ?? null,
+                skus: g.skus.length,
+              })),
             }
           : null,
         watch: usage.watch.map((m) => ({
