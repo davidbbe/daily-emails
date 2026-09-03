@@ -96,7 +96,7 @@ export type DailyBrief = {
   reddit: RedditSubFeed[];
   /** GA4 site overviews — pass-through, no LLM */
   sites: SiteAnalytics[];
-  /** Cloud Billing last-month report — pass-through, no LLM */
+  /** Cloud Billing report — pass-through, no LLM */
   gcpBilling: GcpBillingReport | null;
   /** Fear & greed meters + per-ticker proxies — pass-through, no LLM */
   sentiment: SentimentReport;

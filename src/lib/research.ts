@@ -74,7 +74,7 @@ export type ResearchBundle = {
   reddit: RedditSubFeed[];
   /** GA4 site overviews — pass-through, no LLM; empty when creds missing */
   sites: SiteAnalytics[];
-  /** Cloud Billing last-month report — pass-through, no LLM */
+  /** Cloud Billing report — pass-through, no LLM */
   gcpBilling: GcpBillingReport | null;
   /** Fear & greed meters + per-ticker proxies — pass-through, no LLM */
   sentiment: SentimentReport;

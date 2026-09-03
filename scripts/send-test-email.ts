@@ -525,6 +525,7 @@ async function main() {
               range: `${brief.gcpBilling.startDate} – ${brief.gcpBilling.endDate}`,
               total: brief.gcpBilling.total,
               source: brief.gcpBilling.source,
+              period: brief.gcpBilling.period,
               services: brief.gcpBilling.services.map((s) => s.name),
             }
           : null,

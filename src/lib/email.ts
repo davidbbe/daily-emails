@@ -812,11 +812,16 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
       ? "New"
       : `${formatHeroChangePercent(delta)}${deltaAbs ? ` (${delta > 0 ? "+" : ""}${deltaAbs})` : ""}`;
 
+  const intro =
+    report.period === "latest_month"
+      ? `Latest available month for ${escapeHtml(report.accountLabel)}, grouped by service (same days prior month).`
+      : `Month to date for ${escapeHtml(report.accountLabel)}, grouped by service (same days last month).`;
+
   return `${sectionLabel("Google Cloud Billing")}
     <tr>
       <td style="padding:0 4px 12px 4px;">
         <div style="font-size:13px;line-height:1.5;color:#64748b;">
-          Month to date for ${escapeHtml(report.accountLabel)}, grouped by service (same days last month).
+          ${intro}
         </div>
       </td>
     </tr>
@@ -848,6 +853,11 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
                 ${escapeHtml(heroChange)}
                 <span style="margin-left:6px;font-size:12px;font-weight:600;color:#64748b;">vs ${escapeHtml(previousRange)}</span>
               </div>
+              ${
+                report.freshnessNote
+                  ? `<div style="margin-top:8px;font-size:12px;line-height:1.45;color:#64748b;">${escapeHtml(report.freshnessNote)}</div>`
+                  : ""
+              }
             </td>
           </tr>
           ${
@@ -1337,7 +1347,7 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     const billing = brief.gcpBilling;
     lines.push("", "GOOGLE CLOUD BILLING");
     lines.push(
-      `${billing.accountLabel} · month to date ${formatBillingRange(billing.startDate, billing.endDate)}`,
+      `${billing.accountLabel} · ${billing.period === "latest_month" ? "latest month" : "month to date"} ${formatBillingRange(billing.startDate, billing.endDate)}`,
     );
     if (billing.error) {
       lines.push(`  Error: ${billing.error}`);
@@ -1352,6 +1362,7 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
         `  vs ${formatBillingRange(billing.previousStartDate, billing.previousEndDate)}`,
       );
       if (billing.insight) lines.push(`  ${billing.insight}`);
+      if (billing.freshnessNote) lines.push(`  ${billing.freshnessNote}`);
       for (const service of billing.services) {
         const serviceDelta = billingPercentChange(
           service.usageCost,
