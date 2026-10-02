@@ -182,6 +182,7 @@ async function resolveProperty(
 
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15_000),
   });
 
   const payload = (await response.json().catch(() => null)) as {
@@ -259,6 +260,7 @@ async function fetchOverviewReport(
     `${DATA_API}/properties/${propertyId}:runReport`,
     {
       method: "POST",
+      signal: AbortSignal.timeout(15_000),
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
@@ -340,6 +342,7 @@ async function fetchDailySeries(
     `${DATA_API}/properties/${propertyId}:runReport`,
     {
       method: "POST",
+      signal: AbortSignal.timeout(15_000),
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",

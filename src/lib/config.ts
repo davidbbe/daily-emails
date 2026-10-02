@@ -326,6 +326,15 @@ export function getModel() {
   return process.env.AI_MODEL?.trim() || DEFAULT_MODEL;
 }
 
+/** Must match the connected Blob store; public preserves existing installations. */
+export function getBlobAccess(): "public" | "private" {
+  const access = process.env.BLOB_ACCESS?.trim() || "public";
+  if (access !== "public" && access !== "private") {
+    throw new Error("BLOB_ACCESS must be public or private");
+  }
+  return access;
+}
+
 export function getEmailTo() {
   return process.env.EMAIL_TO?.trim() || "streethouse4@gmail.com";
 }

@@ -118,6 +118,8 @@ export const TRAILING_BILLING_DAYS = 30;
 
 type BqJobResponse = {
   jobComplete?: boolean;
+  pageToken?: string;
+  totalRows?: string;
   rows?: Array<{ f?: Array<{ v?: string | null }> }>;
   schema?: { fields?: Array<{ name?: string }> };
   errorResult?: { message?: string };
@@ -601,6 +603,7 @@ async function bqGetJson(
 ): Promise<{ ok: boolean; status: number; body: unknown }> {
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15_000),
   });
   const body = await response.json().catch(() => null);
   return { ok: response.ok, status: response.status, body };
@@ -634,7 +637,7 @@ async function discoverBillingTable(
     if (!tables.ok) continue;
     for (const table of tableList?.tables ?? []) {
       const tableId = table.tableReference?.tableId;
-      if (tableId === expected || tableId?.startsWith("gcp_billing_export_v1_")) {
+      if (tableId === expected) {
         return `${projectId}.${datasetId}.${tableId}`;
       }
     }
@@ -684,6 +687,9 @@ async function runBqQuery(
   }
   if (!payload?.jobComplete) {
     throw new Error("BigQuery billing query timed out");
+  }
+  if (payload.pageToken || Number(payload.totalRows ?? 0) > (payload.rows?.length ?? 0)) {
+    throw new Error("BigQuery billing results exceed one page; refusing to report incomplete totals");
   }
   return (payload.rows ?? []).map((row) =>
     (row.f ?? []).map((cell) => cell.v ?? ""),
@@ -928,6 +934,7 @@ async function collectFromBigQuery(
       ANY_VALUE(usage.unit) AS usage_unit
     FROM ${fq}
     WHERE DATE(usage_start_time) BETWEEN @start AND @end
+      AND billing_account_id = @account
       AND DATE(export_time) >= DATE_SUB(@start, INTERVAL 5 DAY)
       AND DATE(export_time) <= DATE_ADD(@end, INTERVAL 14 DAY)
     GROUP BY 1, 2, 3, 4
@@ -936,6 +943,7 @@ async function collectFromBigQuery(
   const rows = await runBqQuery(accessToken, jobProject, query, [
     { name: "start", value: lookback.startDate, type: "DATE" },
     { name: "end", value: lookback.endDate, type: "DATE" },
+    { name: "account", value: account.id, type: "STRING" },
   ]);
 
   const parsed: GcpBillingRow[] = rows.map((cols) => ({

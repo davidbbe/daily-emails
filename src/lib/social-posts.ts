@@ -147,7 +147,7 @@ async function fetchXPosts(
     }
 
     cursor = data.cursor?.bottom;
-    if (pageAllOlder || !cursor) break;
+    if (items.length >= SOCIAL_POST_LIMIT || pageAllOlder || !cursor) break;
   }
 
   return items.slice(0, SOCIAL_POST_LIMIT);

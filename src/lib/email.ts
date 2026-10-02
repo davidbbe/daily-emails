@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   formatBounceRate,
   formatDeltaPercent,
@@ -1539,11 +1540,16 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
   return lines.join("\n");
 }
 
-export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
-  const apiKey = process.env.RESEND_API_KEY;
+export function getEmailConfiguration() {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("RESEND_API_KEY is required");
   }
+  return { apiKey, from: getEmailFrom(), to: getEmailTo() };
+}
+
+export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
+  const { apiKey, from, to } = getEmailConfiguration();
 
   const dateLabel = formatHumanDate(brief.generatedAt, { withTime: false });
   let html: string;
@@ -1560,19 +1566,24 @@ export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
   }
   // Use fetch (not the SDK) so we can read quota response headers — needed for
   // send-only API keys that cannot call GET /emails.
+  const body = JSON.stringify({
+    from,
+    to: [to],
+    subject: `Daily Brief · ${dateLabel}`,
+    html,
+    text,
+  });
+  // Identical payload retries share a key; a new generated brief remains a new send.
+  const idempotencyKey = `daily-brief/${createHash("sha256").update(body).digest("hex")}`;
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey,
     },
-    body: JSON.stringify({
-      from: getEmailFrom(),
-      to: [getEmailTo()],
-      subject: `Daily Brief · ${dateLabel}`,
-      html,
-      text,
-    }),
+    signal: AbortSignal.timeout(20_000),
+    body,
   });
 
   const payload = (await response.json().catch(() => null)) as {
@@ -1587,7 +1598,12 @@ export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
     );
   }
 
-  await persistResendQuotaFromHeaders(response.headers);
+  if (!payload?.id) {
+    throw new Error("Resend accepted the request without an email id");
+  }
+  await persistResendQuotaFromHeaders(response.headers).catch((error) => {
+    console.warn("email: quota cache save failed after successful send", error);
+  });
 
-  return payload?.id ? { id: payload.id } : null;
+  return { id: payload.id };
 }

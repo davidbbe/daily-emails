@@ -1,4 +1,4 @@
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 import { getModel, TICKERS } from "@/lib/config";
 import {
@@ -172,14 +172,15 @@ export async function buildWhaleBrief(
   };
 
   try {
-    const { object } = await generateObject({
+    const { output: object } = await generateText({
       model: getModel(),
-      schema: whaleSchema,
+      output: Output.object({ schema: whaleSchema }),
+      timeout: 60_000,
       maxOutputTokens: 4096,
       providerOptions: {
         google: { thinkingConfig: { thinkingBudget: 0 } },
       },
-      system: `You brief a value-oriented reader on hedge-fund / superinvestor activity.
+      instructions: `You brief a value-oriented reader on hedge-fund / superinvestor activity.
 Only use the provided 13F and Form 4 tables. Do not invent funds, tickers, percents, or dates.
 
 13F rules:

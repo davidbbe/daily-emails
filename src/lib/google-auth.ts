@@ -41,6 +41,7 @@ export async function getGoogleAccessToken(
     email: creds.clientEmail,
     key: creds.privateKey,
     scopes,
+    transporterOptions: { timeout: 15_000, retry: false },
   });
 
   const token = await client.getAccessToken();

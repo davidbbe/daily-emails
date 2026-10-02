@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { gateway } from "ai";
+import { createGateway } from "ai";
 import {
   AI_GATEWAY_MONTHLY_BUDGET_USD,
   BLOB_HOBBY_ADVANCED_OPS,
@@ -15,6 +15,7 @@ import {
   RESEND_DAILY_LIMIT,
   RESEND_MONTHLY_LIMIT,
   USAGE_WATCH_THRESHOLD,
+  getBlobAccess,
 } from "@/lib/config";
 import { formatHumanDate } from "@/lib/dates";
 
@@ -108,6 +109,15 @@ function formatBytes(bytes: number) {
 async function collectAiGateway(): Promise<UsageMetric> {
   const budget = gatewayBudgetUsd();
   try {
+    const gateway = createGateway({
+      fetch: (input, init) => fetch(input, {
+        ...init,
+        signal: AbortSignal.any([
+          ...(init?.signal ? [init.signal] : []),
+          AbortSignal.timeout(10_000),
+        ]),
+      }),
+    });
     const credits = await gateway.getCredits();
     const balance = Number.parseFloat(credits.balance);
     const totalUsed = Number.parseFloat(credits.totalUsed);
@@ -181,6 +191,7 @@ async function collectBlobStorage(): Promise<UsageMetric> {
       const page = await list({
         cursor,
         limit: 1000,
+        abortSignal: AbortSignal.timeout(10_000),
         ...(token ? { token } : {}),
       });
       for (const blob of page.blobs) {
@@ -314,9 +325,9 @@ function parseResendCache(text: string): ResendQuotaCache | null {
 
 async function getBlobText(pathname: string): Promise<string | null> {
   const token = blobToken();
-  // Store is public (private access is rejected by the Blob API).
   const result = await get(pathname, {
-    access: "public",
+    access: getBlobAccess(),
+    abortSignal: AbortSignal.timeout(10_000),
     useCache: false,
     ...(token ? { token } : {}),
   });
@@ -361,7 +372,8 @@ async function saveResendCache(payload: ResendQuotaCache) {
     try {
       const token = blobToken();
       await put(RESEND_BLOB_PATHNAME, body, {
-        access: "public",
+        access: getBlobAccess(),
+        abortSignal: AbortSignal.timeout(10_000),
         contentType: "application/json",
         allowOverwrite: true,
         addRandomSuffix: false,
@@ -440,6 +452,7 @@ async function collectResendQuota(): Promise<UsageMetric[]> {
     const response = await fetch("https://api.resend.com/emails?limit=1", {
       method: "GET",
       headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!response.ok) {
@@ -473,7 +486,7 @@ async function collectResendQuota(): Promise<UsageMetric[]> {
     const dailyUsed = headerNumber(response.headers, "x-resend-daily-quota");
     const monthlyUsed = headerNumber(response.headers, "x-resend-monthly-quota");
     if (dailyUsed != null || monthlyUsed != null) {
-      void saveResendCache({
+      await saveResendCache({
         updatedAt: new Date().toISOString(),
         dailyUsed,
         monthlyUsed,
@@ -566,6 +579,7 @@ async function vercelApiGetJson(apiPath: string): Promise<unknown> {
   if (token) {
     const response = await fetch(`https://api.vercel.com${apiPath}`, {
       headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10_000),
     });
     const text = await response.text();
     if (!response.ok) {
@@ -588,7 +602,7 @@ async function vercelApiGetJson(apiPath: string): Promise<unknown> {
     const child = spawn(
       "vercel",
       ["api", apiPath, "--raw"],
-      { stdio: ["ignore", "pipe", "pipe"] },
+      { stdio: ["ignore", "pipe", "pipe"], timeout: 10_000 },
     );
     let stdout = "";
     let stderr = "";
@@ -752,7 +766,8 @@ async function savePlatformUsageCache(metrics: UsageMetric[]) {
       })),
     };
     await put(PLATFORM_BLOB_PATHNAME, JSON.stringify(payload, null, 2), {
-      access: "public",
+      access: getBlobAccess(),
+      abortSignal: AbortSignal.timeout(10_000),
       contentType: "application/json",
       allowOverwrite: true,
       addRandomSuffix: false,

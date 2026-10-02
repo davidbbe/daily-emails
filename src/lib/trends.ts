@@ -1,4 +1,4 @@
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 import { getModel, TREND_REGIONS, type TrendRegionId } from "@/lib/config";
 import type { ResearchBundle, TrendItem } from "@/lib/research";
@@ -91,16 +91,17 @@ async function translateUsItems(
   if (jobs.length === 0) return map;
 
   try {
-    const { object } = await generateObject({
+    const { output: object } = await generateText({
       model: getModel(),
-      schema: translationSchema,
+      output: Output.object({ schema: translationSchema }),
+      timeout: 60_000,
       maxOutputTokens: 4096,
       // Gemini 2.5 Flash burns thinking tokens against maxOutputTokens; disable
       // so structured JSON is not truncated (finishReason: length).
       providerOptions: {
         google: { thinkingConfig: { thinkingBudget: 0 } },
       },
-      system: `You translate Google Trends search queries and related news headlines into clear, concise English.
+      instructions: `You translate Google Trends search queries and related news headlines into clear, concise English.
 Translate literally — do not invent context or explain.
 Keep proper nouns when they are already Latin-script names.
 Return every requested id exactly once.
@@ -148,14 +149,15 @@ async function enrichLocalTrends(
   if (regionJobs.length === 0) return { enrichments, selectedIds };
 
   try {
-    const { object } = await generateObject({
+    const { output: object } = await generateText({
       model: getModel(),
-      schema: localItemsSchema,
+      output: Output.object({ schema: localItemsSchema }),
+      timeout: 60_000,
       maxOutputTokens: 4096,
       providerOptions: {
         google: { thinkingConfig: { thinkingBudget: 0 } },
       },
-      system: `You select and describe Google Trends items for a daily email brief.
+      instructions: `You select and describe Google Trends items for a daily email brief.
 For each country region:
 - Choose the ${LOCAL_ITEM_COUNT} most important trends (news, civic, markets, culture, or widely discussed events). Skip leftover sports or trivial celebrity noise when better options exist.
 - Return exactly those items, most important first.

@@ -12,16 +12,14 @@ import {
   gaugeScoreFromMeter,
 } from "@/lib/fear-greed-gauge";
 import { isValidMarketsToken } from "@/lib/markets-auth";
-import { loadMarketsBrief, saveMarketsBrief } from "@/lib/markets-brief";
+import { loadMarketsBrief } from "@/lib/markets-brief";
 import {
-  fetchVixMeter,
   type FearGreedMeter,
   type SentimentBand,
   type TickerGreedProxy,
 } from "@/lib/sentiment";
 import { buildVixLineChartSvg } from "@/lib/vix-line-chart";
 import {
-  collectInsiderTrades,
   formatInsiderUsd,
   hasInsiderTrades,
   type InsiderBrief,
@@ -30,10 +28,7 @@ import {
 import type { WhaleBrief } from "@/lib/whale-brief";
 import type { WhaleManagerMove } from "@/lib/whales";
 import {
-  annotateValuation,
-  collectValuation,
   hasValuationMetrics,
-  needsValueInvestorNote,
   valuationContextLine,
   valuationMetrics,
   type TickerValuation,
@@ -45,6 +40,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Markets brief · Daily Emails",
   robots: { index: false, follow: false },
+  referrer: "no-referrer",
 };
 
 const BAND_STYLES: Record<SentimentBand, string> = {
@@ -887,27 +883,7 @@ export default async function MarketsPage({
     );
   }
 
-  const liveInsidersPromise = collectInsiderTrades().catch((error) => {
-    console.warn("markets: live insider trades hydrate failed", error);
-    return null;
-  });
-
-  // Older briefs omit VIX history — hydrate the chart from the live quote API.
-  const meters = [...(brief.sentiment?.meters ?? [])];
-  const vixIndex = meters.findIndex((m) => m.id === "vix");
-  const savedVix = vixIndex >= 0 ? meters[vixIndex] : null;
-  if (!savedVix?.history || savedVix.history.length < 2) {
-    try {
-      const liveVix = await fetchVixMeter();
-      if (liveVix.history && liveVix.history.length >= 2) {
-        if (vixIndex >= 0) meters[vixIndex] = { ...savedVix!, ...liveVix };
-        else meters.push(liveVix);
-      }
-    } catch (error) {
-      console.warn("markets: live VIX hydrate failed", error);
-    }
-  }
-
+  const meters = brief.sentiment?.meters ?? [];
   const proxyByTicker = new Map(
     (brief.sentiment?.tickers ?? []).map(
       (proxy) => [proxy.tickerId, proxy] as const,
@@ -916,31 +892,11 @@ export default async function MarketsPage({
   const earningsByTicker = new Map(
     brief.earningsCalendar.map((event) => [event.tickerId, event] as const),
   );
-  let valuationRows = brief.valuation ?? [];
-  if (!valuationRows.some(hasValuationMetrics)) {
-    try {
-      valuationRows = await collectValuation();
-    } catch (error) {
-      console.warn("markets: live valuation hydrate failed", error);
-    }
-  }
-  if (valuationRows.some(needsValueInvestorNote)) {
-    try {
-      valuationRows = await annotateValuation(valuationRows);
-      await saveMarketsBrief({ ...brief, valuation: valuationRows });
-    } catch (error) {
-      console.warn("markets: value-investor notes failed", error);
-    }
-  }
+  const valuationRows = brief.valuation ?? [];
   const valuationByTicker = new Map(
     valuationRows.map((row) => [row.tickerId, row] as const),
   );
-  const liveInsiders = await liveInsidersPromise;
-  const insiders =
-    liveInsiders &&
-    (hasInsiderTrades(liveInsiders) || !hasInsiderTrades(brief.insiders))
-      ? liveInsiders
-      : brief.insiders;
+  const insiders = brief.insiders;
 
   const dateLabel = formatTitleDate(brief.generatedAt);
 

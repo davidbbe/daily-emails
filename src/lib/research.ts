@@ -69,6 +69,8 @@ export type ResearchBundle = {
   windowHours: number;
   tickers: Record<string, NewsItem[]>;
   people: Record<string, NewsItem[]>;
+  /** Feed failures are distinct from a successful feed with no recent items. */
+  feedErrors?: Record<string, string>;
   earnings: EarningsDates[];
   trends: Record<TrendRegionId, TrendItem[]>;
   reddit: RedditSubFeed[];
@@ -107,9 +109,13 @@ function isWithinHours(date: Date, hours: number) {
 }
 
 export function parseTrafficScore(approxTraffic: string): number {
-  const digits = approxTraffic.replace(/[^\d]/g, "");
-  const n = Number.parseInt(digits, 10);
-  return Number.isFinite(n) ? n : 0;
+  const match = approxTraffic
+    .replaceAll(",", "")
+    .trim()
+    .match(/^(\d+(?:\.\d+)?)\s*([KMB])?\+?$/i);
+  if (!match) return 0;
+  const multiplier = { K: 1e3, M: 1e6, B: 1e9 }[match[2]?.toUpperCase() ?? ""] ?? 1;
+  return Number(match[1]) * multiplier;
 }
 
 function trafficScoreFromItem(item: TrendingNowItem): number {
@@ -255,23 +261,43 @@ export async function collectPersonFeed(
   return fetchPersonNews(person.query, hours);
 }
 
-export async function collectResearch(hours = 24): Promise<ResearchBundle> {
+/** Isolate feed failures without losing the rest of the watchlist. */
+export async function collectNewsFeeds(hours = 24) {
   const tickers: Record<string, NewsItem[]> = {};
   const people: Record<string, NewsItem[]> = {};
-  const trends = {} as Record<TrendRegionId, TrendItem[]>;
-
-  const [, , earnings, reddit, , sites, sentiment, insiders, whales, valuation, gcpBilling] =
-    await Promise.all([
+  const feedErrors: Record<string, string> = {};
+  await Promise.all([
     Promise.all(
       TICKERS.map(async (ticker) => {
-        tickers[ticker.id] = await fetchRecentNews(ticker.query, hours);
+        tickers[ticker.id] = await fetchRecentNews(ticker.query, hours).catch(
+          (error) => {
+            console.warn(`news fetch failed for ${ticker.id}`, error);
+            feedErrors[ticker.id] = error instanceof Error ? error.message : "News feed unavailable";
+            return [];
+          },
+        );
       }),
     ),
     Promise.all(
       PEOPLE.map(async (person) => {
-        people[person.id] = await collectPersonFeed(person, hours);
+        people[person.id] = await collectPersonFeed(person, hours).catch(
+          (error) => {
+            console.warn(`news fetch failed for ${person.id}`, error);
+            feedErrors[person.id] = error instanceof Error ? error.message : "News feed unavailable";
+            return [];
+          },
+        );
       }),
     ),
+  ]);
+  return { tickers, people, feedErrors };
+}
+
+export async function collectResearch(hours = 24): Promise<ResearchBundle> {
+  const trends = {} as Record<TrendRegionId, TrendItem[]>;
+  const [news, earnings, reddit, , sites, sentiment, insiders, whales, valuation, gcpBilling] =
+    await Promise.all([
+    collectNewsFeeds(hours),
     collectEarningsCalendar(),
     collectRedditTops().catch((error) => {
       console.warn("reddit fetch failed", error);
@@ -326,8 +352,7 @@ export async function collectResearch(hours = 24): Promise<ResearchBundle> {
   return {
     collectedAt: new Date().toISOString(),
     windowHours: hours,
-    tickers,
-    people,
+    ...news,
     earnings,
     trends,
     reddit,

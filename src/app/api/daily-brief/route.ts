@@ -1,5 +1,5 @@
 import { generateDailyBrief } from "@/lib/brief";
-import { sendBriefEmail } from "@/lib/email";
+import { getEmailConfiguration, sendBriefEmail } from "@/lib/email";
 import { loadPreviousBrief, savePreviousBrief, toSnapshot } from "@/lib/history";
 import {
   saveMarketsBrief,
@@ -10,6 +10,11 @@ import { collectUsageReport } from "@/lib/usage";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+// Next.js otherwise implements HEAD by invoking GET, which sends an email.
+export function HEAD() {
+  return new Response(null, { status: 405, headers: { Allow: "GET" } });
+}
 
 function isAuthorized(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
@@ -28,13 +33,11 @@ export async function GET(request: Request) {
   }
 
   try {
+    // Fail before fetching data or spending AI credits when delivery is unconfigured.
+    getEmailConfiguration();
     const previous = await loadPreviousBrief();
     const research = await collectResearch(24);
     const brief = await generateDailyBrief(research, previous);
-    // Snapshot is best-effort — never block the email on history persistence.
-    await savePreviousBrief(toSnapshot(brief)).catch((error) => {
-      console.warn("daily-brief: previous-brief save failed", error);
-    });
     // Hosted markets page payload — same best-effort rules as previous-brief.
     await saveMarketsBrief(toMarketsBrief(brief)).catch((error) => {
       console.warn("daily-brief: markets-brief save failed", error);
@@ -42,6 +45,10 @@ export async function GET(request: Request) {
     // Collect after the brief so AI Gateway balance includes today's spend.
     const usage = await collectUsageReport();
     const email = await sendBriefEmail(brief, usage);
+    // History represents the last successfully delivered brief, including retries.
+    await savePreviousBrief(toSnapshot(brief)).catch((error) => {
+      console.warn("daily-brief: previous-brief save failed", error);
+    });
 
     return Response.json({
       ok: true,

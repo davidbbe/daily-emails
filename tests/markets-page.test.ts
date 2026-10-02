@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import { renderToStaticMarkup } from "react-dom/server";
+import { briefFixture } from "./fixtures";
+
+test("markets page renders a saved brief without provider requests or storage writes", async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "daily-emails-page-"));
+  const oldDirectory = process.cwd();
+  const oldEnv = { ...process.env };
+  t.after(async () => { process.chdir(oldDirectory); process.env = oldEnv; await rm(directory, { recursive: true, force: true }); });
+  process.chdir(directory);
+  Object.assign(process.env, { NODE_ENV: "development" });
+  for (const key of ["VERCEL", "AWS_LAMBDA_FUNCTION_NAME", "BLOB_READ_WRITE_TOKEN", "BLOB_STORE_ID", "MARKETS_PAGE_SECRET"]) delete process.env[key];
+  const brief = briefFixture();
+  const payload = JSON.stringify({ generatedAt: brief.generatedAt, sentiment: brief.sentiment, tickers: [], earningsCalendar: [], valuation: [], insiders: brief.insiders, whales: brief.whales });
+  await mkdir(path.join(directory, ".data"));
+  await writeFile(path.join(directory, ".data/markets-latest.json"), payload);
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => { calls++; throw new Error("Unexpected provider call"); });
+  const { default: MarketsPage, metadata } = await import("../src/app/markets/[token]/page");
+  const html = renderToStaticMarkup(await MarketsPage({ params: Promise.resolve({ token: "dev-markets-secret" }) }));
+  assert.ok(html.includes("Markets brief"));
+  assert.equal(calls, 0);
+  assert.equal(metadata.referrer, "no-referrer");
+  const { readFile } = await import("node:fs/promises");
+  assert.equal(await readFile(path.join(directory, ".data/markets-latest.json"), "utf8"), payload);
+  await assert.rejects(MarketsPage({ params: Promise.resolve({ token: "wrong" }) }), /404/);
+});

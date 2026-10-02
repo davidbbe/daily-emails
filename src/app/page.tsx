@@ -21,12 +21,12 @@ export default function Home() {
         </h1>
         <p style={{ fontSize: "1.1rem", lineHeight: 1.6, margin: 0 }}>
           A Vercel cron job researches markets, people, catalysts, and web
-          trends across the US and Thailand — then emails a noon-UTC
-          digest with flags, quotes, day-over-day movers, and source links via
+          trends across the US and Thailand — then emails a 09:00-UTC
+          digest with flags, quotes, and source links via
           Resend.
         </p>
         <p style={{ marginTop: "1.5rem", color: "#445048", fontSize: "0.95rem" }}>
-          Endpoint: <code>/api/daily-brief</code> · Schedule: <code>0 12 * * *</code> UTC
+          Endpoint: <code>/api/daily-brief</code> · Schedule: <code>0 9 * * *</code> UTC
         </p>
       </div>
     </main>

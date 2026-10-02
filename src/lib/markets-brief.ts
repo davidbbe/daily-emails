@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { get, put } from "@vercel/blob";
+import { getBlobAccess } from "@/lib/config";
 import type { DailyBrief, EarningsEvent, TickerBrief } from "@/lib/brief";
 import type { SentimentReport } from "@/lib/sentiment";
 import type { TickerValuation } from "@/lib/valuation";
@@ -55,7 +56,8 @@ async function streamToText(stream: ReadableStream<Uint8Array>) {
 async function getBlobText(pathname: string): Promise<string | null> {
   const token = blobToken();
   const result = await get(pathname, {
-    access: "public",
+    access: getBlobAccess(),
+    abortSignal: AbortSignal.timeout(10_000),
     useCache: false,
     ...(token ? { token } : {}),
   });
@@ -77,7 +79,8 @@ async function loadFromBlob(): Promise<MarketsBrief | null> {
 async function saveToBlob(payload: MarketsBrief) {
   const token = blobToken();
   await put(BLOB_PATHNAME, JSON.stringify(payload, null, 2), {
-    access: "public",
+    access: getBlobAccess(),
+    abortSignal: AbortSignal.timeout(10_000),
     contentType: "application/json",
     allowOverwrite: true,
     addRandomSuffix: false,

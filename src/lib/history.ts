@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { get, put } from "@vercel/blob";
 import { materialPersonItems, type DailyBrief } from "@/lib/brief";
-import type { TrendRegionId } from "@/lib/config";
+import { getBlobAccess, type TrendRegionId } from "@/lib/config";
 
 const BLOB_PATHNAME = "daily-emails/previous-brief.json";
 /** Pre-rename path — read fallback until the next successful save. */
@@ -67,9 +67,9 @@ function blobToken() {
 
 async function getBlobText(pathname: string): Promise<string | null> {
   const token = blobToken();
-  // Store is public (private access is rejected by the Blob API).
   const result = await get(pathname, {
-    access: "public",
+    access: getBlobAccess(),
+    abortSignal: AbortSignal.timeout(10_000),
     useCache: false,
     ...(token ? { token } : {}),
   });
@@ -93,7 +93,8 @@ async function loadFromBlob(): Promise<BriefSnapshot | null> {
 async function saveToBlob(snapshot: BriefSnapshot) {
   const token = blobToken();
   await put(BLOB_PATHNAME, JSON.stringify(snapshot, null, 2), {
-    access: "public",
+    access: getBlobAccess(),
+    abortSignal: AbortSignal.timeout(10_000),
     contentType: "application/json",
     allowOverwrite: true,
     addRandomSuffix: false,

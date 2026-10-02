@@ -1,4 +1,5 @@
 import Parser from "rss-parser";
+import { setTimeout as sleep } from "node:timers/promises";
 import { REDDIT_SUBREDDITS } from "@/lib/config";
 
 export type RedditPost = {
@@ -58,14 +59,11 @@ const FETCH_BATCHES: string[][] = [
 /** Earliest time we should hit Reddit again (ms since epoch). */
 let rateLimitReadyAt = 0;
 
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForRateBudget() {
+async function waitForRateBudget(signal: AbortSignal) {
+  signal.throwIfAborted();
   const waitMs = rateLimitReadyAt - Date.now();
   if (waitMs > 0) {
-    await sleep(waitMs);
+    await sleep(waitMs, undefined, { signal });
   }
 }
 
@@ -180,19 +178,19 @@ async function parseFeedXml(xml: string): Promise<RedditPost[]> {
   return posts;
 }
 
-async function fetchFeedXml(url: string): Promise<string> {
+async function fetchFeedXml(url: string, signal: AbortSignal): Promise<string> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 6; attempt++) {
     try {
-      await waitForRateBudget();
+      await waitForRateBudget(signal);
 
       const response = await fetch(url, {
         headers: {
           "User-Agent": USER_AGENT,
           Accept: "application/atom+xml,application/xml,text/xml,*/*",
         },
-        signal: AbortSignal.timeout(20_000),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
         cache: "no-store",
       });
 
@@ -218,6 +216,7 @@ async function fetchFeedXml(url: string): Promise<string> {
       return xml;
     } catch (error) {
       lastError = error;
+      if (signal.aborted) break;
       const message = error instanceof Error ? error.message : String(error);
       const retryable = /status code 429|status code 503|timeout|network|fetch failed/i.test(
         message,
@@ -254,8 +253,9 @@ function groupPostsBySubreddit(posts: RedditPost[]): Map<string, RedditPost[]> {
 async function fetchBatchWindow(
   subreddits: string[],
   window: RedditWindow,
+  signal: AbortSignal,
 ): Promise<Map<string, RedditPost[]>> {
-  const xml = await fetchFeedXml(feedUrl(subreddits, window));
+  const xml = await fetchFeedXml(feedUrl(subreddits, window), signal);
   const posts = await parseFeedXml(xml);
   return groupPostsBySubreddit(posts);
 }
@@ -280,7 +280,9 @@ function buildBatches(): string[][] {
  * Batches subs into a few multireddit requests and respects rate-limit headers
  * so later subs are not wiped out by 429s.
  */
-export async function collectRedditTops(): Promise<RedditSubFeed[]> {
+export async function collectRedditTops(timeoutMs = 60_000): Promise<RedditSubFeed[]> {
+  // All batches, fallback windows, sleeps and retries share one deadline.
+  const signal = AbortSignal.timeout(timeoutMs);
   const limits = new Map(
     REDDIT_SUBREDDITS.map((sub) => [sub.id.toLowerCase(), sub.limit]),
   );
@@ -291,9 +293,11 @@ export async function collectRedditTops(): Promise<RedditSubFeed[]> {
   const retryAlone = new Set<string>();
 
   for (const batch of batches) {
+    if (signal.aborted) break;
     for (const window of windows) {
+      if (signal.aborted) break;
       try {
-        const grouped = await fetchBatchWindow(batch, window);
+        const grouped = await fetchBatchWindow(batch, window, signal);
 
         for (const subId of batch) {
           const key = subId.toLowerCase();
@@ -324,12 +328,14 @@ export async function collectRedditTops(): Promise<RedditSubFeed[]> {
 
   // Retry only subs that errored out of a shared batch (not quiet empty feeds).
   for (const sub of REDDIT_SUBREDDITS) {
+    if (signal.aborted) break;
     const key = sub.id.toLowerCase();
     if (results.has(key) || !retryAlone.has(key)) continue;
 
     for (const window of windows) {
+      if (signal.aborted) break;
       try {
-        const grouped = await fetchBatchWindow([sub.id], window);
+        const grouped = await fetchBatchWindow([sub.id], window, signal);
         const posts = (grouped.get(key) ?? []).slice(0, sub.limit);
         if (posts.length > 0) {
           results.set(key, { window, posts });

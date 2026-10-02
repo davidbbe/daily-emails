@@ -128,7 +128,7 @@ export function computeRsi14(closes: number[]): number | null {
     avgLoss = (avgLoss * (period - 1) + loss) / period;
   }
 
-  if (avgLoss === 0) return 100;
+  if (avgLoss === 0) return avgGain === 0 ? 50 : 100;
   const rs = avgGain / avgLoss;
   return round1(100 - 100 / (1 + rs));
 }

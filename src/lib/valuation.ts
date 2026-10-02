@@ -1,4 +1,4 @@
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 import { getModel, TICKERS } from "@/lib/config";
 
@@ -390,14 +390,15 @@ export async function annotateValuation(
   if (eligible.length === 0) return rows;
 
   try {
-    const { object } = await generateObject({
+    const { output: object } = await generateText({
       model: getModel(),
-      schema: valueNoteSchema,
+      output: Output.object({ schema: valueNoteSchema }),
+      timeout: 60_000,
       maxOutputTokens: 2048,
       providerOptions: {
         google: { thinkingConfig: { thinkingBudget: 0 } },
       },
-      system: `You are a disciplined value investor writing a short take on each stock.
+      instructions: `You are a disciplined value investor writing a short take on each stock.
 Only use the provided multiples. Do not invent prices, earnings, news, or ratios.
 Do not give a buy, sell, or hold recommendation.
 

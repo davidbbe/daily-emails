@@ -1,4 +1,4 @@
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 import {
   getModel,
@@ -166,21 +166,22 @@ function formatSources(bundle: ResearchBundle) {
 
   for (const ticker of TICKERS) {
     lines.push(`\n## ${ticker.label} (id=${ticker.id})`);
-    lines.push(formatIndexedNews(bundle.tickers[ticker.id] ?? []));
+    lines.push(bundle.feedErrors?.[ticker.id] ? "- (news feed unavailable; do not infer a quiet session)" : formatIndexedNews(bundle.tickers[ticker.id] ?? []));
   }
 
   for (const person of PEOPLE) {
     const social = personSocial(person);
+    const items = bundle.people[person.id] ?? [];
+    const hasOwnPosts = items.some((item) => item.source === "X" || item.source === "Truth Social");
     const kind =
-      social === "x"
+      social === "x" && hasOwnPosts
         ? "own X posts from the last 24 hours"
-        : social === "truth"
+        : social === "truth" && hasOwnPosts
           ? "own Truth Social posts from the last 24 hours"
           : "headlines";
     lines.push(
       `\n## ${person.name} (id=${person.id}) — ${kind}; pick up to ${personPickCount(person)}`,
     );
-    const items = bundle.people[person.id] ?? [];
     lines.push(formatIndexedNews(items, Math.max(PERSON_NEWS_LIMIT, items.length)));
   }
 
@@ -202,15 +203,16 @@ function resolveSource(
 }
 
 async function generateCoreBrief(bundle: ResearchBundle, model: string) {
-  return generateObject({
+  const { output } = await generateText({
     model,
-    schema: coreBriefSchema,
+    timeout: 60_000,
+    output: Output.object({ schema: coreBriefSchema }),
     maxOutputTokens: 6144,
     // Keep thinking off so structured JSON is not truncated by reasoning tokens.
     providerOptions: {
       google: { thinkingConfig: { thinkingBudget: 0 } },
     },
-    system: `You are a concise market and tech briefing analyst.
+    instructions: `You are a concise market and tech briefing analyst.
 Only use the provided headlines. Do not invent events, dates, prices, or quotes.
 Prefer material news over rumor.
 
@@ -226,7 +228,7 @@ For each ticker:
 
 For each person:
 - Read every item in that person's list before choosing. High-volume speakers often have many items — do not stop at the first one.
-- Elon Musk and Donald Trump lists are THEIR OWN posts (X / Truth Social) from the last 24 hours. Choose up to TWO posts most likely to move stock or crypto prices (policy, regulation, tariffs, rates, company guidance, products, deals, Tesla/SpaceX/xAI, Bitcoin, etc.). Prefer two distinct topics. Always set sourceIndex so the original post can be linked.
+- Elon Musk and Donald Trump lists contain own posts when the section says so; otherwise they contain fallback news headlines. Choose up to TWO sourced remarks most likely to move stock or crypto prices (policy, regulation, tariffs, rates, company guidance, products, deals, Tesla/SpaceX/xAI, Bitcoin, etc.). Prefer two distinct topics. Always set sourceIndex. Do not present a news headline as an original social post.
 - Everyone else: include them only if they themselves said, posted, or announced something in this window. Choose at most ONE item.
 - Each item: one short sentence (what they said and why it could matter for markets). Do not round up several remarks into one item.
 - If nothing they said is market-significant, return items: [] and summary exactly "None found". Do not stretch gossip, campaign color, or coverage that is merely about them.
@@ -246,9 +248,10 @@ Labels: ${TICKERS.map((t) => `${t.id}=${t.label}`).join("; ")}.
 Names: ${PEOPLE.map((p) => `${p.id}=${p.name}`).join("; ")}.
     Person item limits: ${PEOPLE.map((p) => `${p.id}≤${personPickCount(p)}`).join("; ")}.`,
   });
+  return { object: output };
 }
 
-function normalizeCore(
+export function normalizeCore(
   object: z.infer<typeof coreBriefSchema>,
   bundle: ResearchBundle,
 ): {
@@ -258,7 +261,8 @@ function normalizeCore(
   const tickers = TICKERS.map((ticker) => {
     const found = object.tickers.find((t) => t.id === ticker.id);
     const sourceItems = bundle.tickers[ticker.id] ?? [];
-    const bullets = (found?.bullets ?? [])
+    const unavailable = Boolean(bundle.feedErrors?.[ticker.id]);
+    const bullets = (sourceItems.length > 0 ? found?.bullets ?? [] : [])
       .map((b) => {
         const text = b.text.trim();
         if (!text) return null;
@@ -272,6 +276,16 @@ function normalizeCore(
       .filter((b): b is BriefBullet => Boolean(b))
       .slice(0, 5);
 
+    let whyItMatters = "No recent coverage available.";
+    let overnightOpener = "Quiet overnight — no notable session headlines.";
+    if (unavailable) {
+      whyItMatters = "Coverage could not be checked today.";
+      overnightOpener = "Session headlines could not be checked today.";
+    } else if (sourceItems.length > 0) {
+      whyItMatters = found?.whyItMatters?.trim() || "Limited coverage in this window.";
+      overnightOpener = found?.overnightOpener?.trim() || "Session context unavailable today.";
+    }
+
     return {
       id: ticker.id,
       label: ticker.label,
@@ -280,16 +294,12 @@ function normalizeCore(
           ? bullets
           : [
               {
-                text: "No material headlines in the last 24 hours.",
+                text: unavailable ? "News feed unavailable today." : `No material headlines in the last ${bundle.windowHours} hours.`,
                 flag: "Noise" as const,
               },
             ],
-      whyItMatters:
-        found?.whyItMatters?.trim() || "Limited coverage in the last 24 hours.",
-      overnightOpener: isOvernightTicker(ticker)
-        ? found?.overnightOpener?.trim() ||
-          "Quiet overnight — no notable session headlines."
-        : "",
+      whyItMatters,
+      overnightOpener: isOvernightTicker(ticker) ? overnightOpener : "",
     };
   });
 
@@ -316,6 +326,7 @@ function normalizeCore(
           bundle.people[person.id],
           item.sourceIndex,
         );
+        if (!source.sourceUrl) return [];
         const next: PersonItem = { summary };
         const quote = item.quote?.trim();
         if (quote) next.quote = quote;
@@ -342,6 +353,24 @@ function normalizeCore(
   return { tickers, people };
 }
 
+/** Source headlines survive a model outage; no unsourced synthesis or quotes. */
+export function fallbackCoreBrief(bundle: ResearchBundle): z.infer<typeof coreBriefSchema> {
+  return {
+    tickers: TICKERS.map((ticker) => ({
+      id: ticker.id,
+      label: ticker.label,
+      bullets: (bundle.tickers[ticker.id] ?? []).slice(0, 5).map((item, sourceIndex) => ({
+        text: item.title,
+        flag: "Watch" as const,
+        sourceIndex,
+      })),
+      whyItMatters: "AI summary unavailable; showing source headlines.",
+      overnightOpener: "AI session summary unavailable; see the source headlines.",
+    })),
+    people: [],
+  };
+}
+
 function mapEarningsCalendar(bundle: ResearchBundle): EarningsEvent[] {
   const events: EarningsEvent[] = [];
   for (const entry of bundle.earnings) {
@@ -366,7 +395,10 @@ export async function generateDailyBrief(
   const model = getModel();
 
   const [coreResult, trends, whales, valuation] = await Promise.all([
-    generateCoreBrief(bundle, model),
+    generateCoreBrief(bundle, model).catch((error) => {
+      console.warn("brief: AI summary failed; using source headlines", error);
+      return { object: fallbackCoreBrief(bundle) };
+    }),
     buildBriefTrends(bundle),
     buildWhaleBrief(bundle.whales),
     annotateValuation(bundle.valuation ?? []),
