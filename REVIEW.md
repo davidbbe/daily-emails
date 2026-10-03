@@ -18,13 +18,14 @@ markets rendering, configuration, dependencies, and project instructions.
   markets page reads its saved daily payload, following the requested behavior.
   Browser TradingView widgets still load their charts. Token URLs use no-referrer.
 - **Misleading delivery state.** Missing email configuration fails before AI
-  spending. Successful sends require an email ID; quota-cache failures cannot
-  invalidate accepted delivery. History updates after delivery.
+  spending. Successful sends require an email ID; usage-cache failures cannot
+  invalidate live readings. Sending no longer overwrites quota caches with headers;
+  history updates after delivery.
 - **Identical email retries.** Resend requests use a payload-derived idempotency
   key, with the provider's [24-hour retention](https://resend.com/docs/dashboard/emails/idempotency-keys).
 - **Wrong/incomplete billing totals.** Discovery selects the exact account's
-  export and SQL filters the account. Paginated results fail explicitly instead
-  of silently dropping charges.
+  export and SQL filters the account. All result pages are read; collection
+  failures report unavailable rather than silently dropping charges.
 - **Data calculations.** Traffic labels retain K/M/B magnitudes and decimals;
   a flat closing-price series produces neutral RSI rather than maximum greed.
 - **Unnecessary social-feed pagination.** X collection stops once it has enough
@@ -43,7 +44,7 @@ markets rendering, configuration, dependencies, and project instructions.
   This app does not use every affected feature; the audit is a dependency scan,
   not evidence that the production application was exploited.
 
-## Remaining improvements
+## Improvement follow-up — 3 October 2026
 
 1. **Migrate existing public storage if privacy is expected.** Page-token checks
    do not protect public Blob JSON directly. Connect a private store, set
@@ -54,33 +55,36 @@ markets rendering, configuration, dependencies, and project instructions.
    two concurrent GETs can regenerate different briefs and send twice. A durable
    job record with a lease, pending payload, and sent status would support retries
    across instances without regenerating AI output or clobbering newer snapshots.
-3. **GA4 freshness policy.** The zero-activity fallback can hide a real zero-traffic
-   day by treating it as processing lag. Choose a fixed reporting delay or an
-   explicit freshness policy before replacing that heuristic.
-4. **Large BigQuery exports.** Fetch subsequent query pages and paginate dataset/
-   table discovery when needed. For now, explicit GCP_BILLING_BQ_TABLE avoids
-   discovery limits, and incomplete query results report an error.
-5. **Quota freshness.** Resend cached counters are a last-send observation,
-   potentially from a prior day/month. Include cache timestamps and expire
-   counters when their reporting period resets.
-6. **History feature.** Snapshots currently only set hasPreviousBrief. Implement
+3. **GA4 freshness policy — completed.** Property-local yesterday remains the
+   report day, including zeros. Recent values are labeled provisional; the app
+   no longer asserts that zero traffic proves processing lag.
+4. **Large BigQuery exports — completed.** Dataset/table discovery and query
+   results follow subsequent pages under one 60-second budget. Query pages use
+   the same job and location; failures, repeated tokens, or incomplete row counts
+   cannot produce partial totals. Explicit GCP_BILLING_BQ_TABLE skips discovery.
+5. **Quota freshness — completed.** Resend GET /usage supplies current counts,
+   actual limits, and reset times, including with send-only keys. Cached readings
+   show their observation time and expire per provider reporting period. Old
+   header-only caches are ignored. Uncapped plans show no percentage alert.
+6. **History feature — deferred.** Snapshots currently only set hasPreviousBrief. Implement
    comparisons if actual day-over-day news movers are wanted.
 
 ## Verification
 
 Offline regression tests cover feed/model failures, all five structured calls,
 traffic/RSI edge cases, Reddit deadlines, authorization and HEAD safety, email
-idempotency and response validation, billing selection/truncation, and markets
+idempotency and response validation, billing selection/pagination failures, provisional GA4 zeros and property-local
+month boundaries, Resend resets/cache validation/uncapped plans, and markets
 rendering without provider calls or storage changes.
 
-Final checks after the dependency updates:
+Checks after the 3 October follow-up:
 
-- npm test: 18 passed.
+- npm test: 31 passed.
 - npm run typecheck: passed.
 - npm run lint: passed.
 - npm run build: passed on Next.js 16.3.8.
 - npm dependency audit: zero reported vulnerabilities after compatible fixes.
 - git diff --check: passed.
 
-No live email was sent, AI generation was mocked in tests, and no deployment or
-hosted-storage migration was performed.
+Follow-up checks mock providers and send no live email. No hosted-storage
+migration was performed.

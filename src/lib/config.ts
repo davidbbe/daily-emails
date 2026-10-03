@@ -318,10 +318,6 @@ export const HOBBY_EDGE_REQUESTS = 1_000_000;
 /** Hobby Function Invocations included */
 export const HOBBY_FUNCTION_INVOCATIONS = 1_000_000;
 
-/** Resend free-plan email quotas */
-export const RESEND_DAILY_LIMIT = 100;
-export const RESEND_MONTHLY_LIMIT = 3000;
-
 export function getModel() {
   return process.env.AI_MODEL?.trim() || DEFAULT_MODEL;
 }

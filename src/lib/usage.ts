@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { createGateway } from "ai";
+import { z } from "zod";
 import {
   AI_GATEWAY_MONTHLY_BUDGET_USD,
   BLOB_HOBBY_ADVANCED_OPS,
@@ -12,8 +13,6 @@ import {
   HOBBY_EDGE_REQUESTS,
   HOBBY_FAST_DATA_TRANSFER_BYTES,
   HOBBY_FUNCTION_INVOCATIONS,
-  RESEND_DAILY_LIMIT,
-  RESEND_MONTHLY_LIMIT,
   USAGE_WATCH_THRESHOLD,
   getBlobAccess,
 } from "@/lib/config";
@@ -24,7 +23,8 @@ export type UsageMetric = {
   label: string;
   /** Amount consumed toward the limit */
   used: number;
-  limit: number;
+  /** null means the provider reports no cap. */
+  limit: number | null;
   unit: string;
   percent: number;
   /** Human-readable status line shown in the email */
@@ -53,16 +53,9 @@ function gatewayBudgetUsd() {
   return envNumber("AI_GATEWAY_MONTHLY_BUDGET", AI_GATEWAY_MONTHLY_BUDGET_USD);
 }
 
-function resendDailyLimit() {
-  return envNumber("RESEND_DAILY_LIMIT", RESEND_DAILY_LIMIT);
-}
-
-function resendMonthlyLimit() {
-  return envNumber("RESEND_MONTHLY_LIMIT", RESEND_MONTHLY_LIMIT);
-}
-
-function roundPercent(used: number, limit: number) {
-  if (limit <= 0) return 0;
+function roundPercent(used: number, limit: number | null) {
+  if (limit == null) return 0;
+  if (limit <= 0) return used > 0 ? 100 : 0;
   return Math.round((used / limit) * 1000) / 10;
 }
 
@@ -76,7 +69,7 @@ function metric(partial: Omit<UsageMetric, "percent"> & { percent?: number }): U
 function unavailable(
   id: string,
   label: string,
-  limit: number,
+  limit: number | null,
   unit: string,
   reason: string,
 ): UsageMetric {
@@ -217,18 +210,20 @@ async function collectBlobStorage(): Promise<UsageMetric> {
   }
 }
 
-function headerNumber(headers: Headers, name: string) {
-  const raw = headers.get(name);
-  if (raw == null || raw === "") return null;
-  const value = Number.parseFloat(raw);
-  return Number.isFinite(value) ? value : null;
-}
-
-type ResendQuotaCache = {
-  updatedAt: string;
-  dailyUsed: number | null;
-  monthlyUsed: number | null;
-};
+const resendWindowSchema = z.object({
+  used: z.number().int().nonnegative(),
+  limit: z.number().int().nonnegative().nullable(),
+  resets_at: z.string().datetime({ offset: true }),
+});
+const resendCacheSchema = z.object({
+  updatedAt: z.string().datetime({ offset: true }),
+  daily: resendWindowSchema,
+  monthly: resendWindowSchema,
+});
+const resendUsageSchema = z.object({
+  emails: z.object({ daily: resendWindowSchema, monthly: resendWindowSchema }),
+});
+type ResendQuotaCache = z.infer<typeof resendCacheSchema>;
 
 const RESEND_CACHE_PATH = path.join(
   process.cwd(),
@@ -252,72 +247,40 @@ async function streamToText(stream: ReadableStream<Uint8Array>) {
 }
 
 function buildResendMetrics(
-  dailyUsed: number | null,
-  monthlyUsed: number | null,
-  source: "live" | "last-send",
+  cache: ResendQuotaCache,
+  source: "live" | "cached",
+  now: Date,
 ): UsageMetric[] {
-  const dailyLimit = resendDailyLimit();
-  const monthlyLimit = resendMonthlyLimit();
-  const sourceNote =
-    source === "last-send" ? " · as of last send (send-only API key)" : "";
-  const metrics: UsageMetric[] = [];
-
-  if (dailyUsed != null) {
-    metrics.push(
-      metric({
-        id: "resend-daily",
-        label: "Resend daily emails",
-        used: dailyUsed,
-        limit: dailyLimit,
-        unit: "emails",
-        detail: `${dailyUsed} / ${dailyLimit} emails today (free plan)${sourceNote}`,
-        available: true,
-      }),
-    );
-  } else {
-    metrics.push(
-      unavailable(
-        "resend-daily",
-        "Resend daily emails",
-        dailyLimit,
-        "emails",
-        "Daily quota header not returned (paid plan or unavailable)",
-      ),
-    );
-  }
-
-  if (monthlyUsed != null) {
-    metrics.push(
-      metric({
-        id: "resend-monthly",
-        label: "Resend monthly emails",
-        used: monthlyUsed,
-        limit: monthlyLimit,
-        unit: "emails",
-        detail: `${monthlyUsed} / ${monthlyLimit} emails this month${sourceNote}`,
-        available: true,
-      }),
-    );
-  } else {
-    metrics.push(
-      unavailable(
-        "resend-monthly",
-        "Resend monthly emails",
-        monthlyLimit,
-        "emails",
-        "Monthly quota header not returned",
-      ),
-    );
-  }
-
-  return metrics;
+  return (["daily", "monthly"] as const).map((period) => {
+    const counter = cache[period];
+    const id = `resend-${period}`;
+    const label = `Resend ${period} emails`;
+    const observedAt = Date.parse(cache.updatedAt);
+    const resetsAt = Date.parse(counter.resets_at);
+    const observation = `${source === "cached" ? "cached" : "observed"} ${formatHumanDate(cache.updatedAt)}`;
+    if (observedAt > now.getTime() || resetsAt <= observedAt || resetsAt <= now.getTime()) {
+      return unavailable(id, label, counter.limit, "emails", `Current usage unavailable — ${observation}; reporting period expired or invalid. Refresh required.`);
+    }
+    const amount = counter.limit == null
+      ? `${counter.used} emails; no ${period} cap`
+      : `${counter.used} / ${counter.limit} emails`;
+    return metric({
+      id,
+      label,
+      used: counter.used,
+      limit: counter.limit,
+      unit: "emails",
+      available: true,
+      detail: `${amount} (sent + received) · ${observation} · resets ${formatHumanDate(counter.resets_at)} · collected before this digest's send`,
+    });
+  });
 }
 
 function parseResendCache(text: string): ResendQuotaCache | null {
   try {
-    const cached = JSON.parse(text) as ResendQuotaCache;
-    if (cached.dailyUsed == null && cached.monthlyUsed == null) return null;
-    return cached;
+    // Old last-send headers have no limits/reset times, so cannot be reused safely.
+    const result = resendCacheSchema.safeParse(JSON.parse(text));
+    return result.success ? result.data : null;
   } catch {
     return null;
   }
@@ -357,12 +320,12 @@ async function loadResendCacheFromLocal(): Promise<ResendQuotaCache | null> {
   }
 }
 
-async function loadCachedResendQuota(): Promise<UsageMetric[] | null> {
+async function loadCachedResendQuota(now?: Date): Promise<UsageMetric[] | null> {
   const cached =
     (await loadResendCacheFromBlob()) ??
     (isVercelRuntime() ? null : await loadResendCacheFromLocal());
   if (!cached) return null;
-  return buildResendMetrics(cached.dailyUsed, cached.monthlyUsed, "last-send");
+  return buildResendMetrics(cached, "cached", now ?? new Date());
 }
 
 async function saveResendCache(payload: ResendQuotaCache) {
@@ -387,7 +350,7 @@ async function saveResendCache(payload: ResendQuotaCache) {
     }
   } else if (isVercelRuntime()) {
     console.warn(
-      "usage: Blob not configured; Resend quotas cannot persist across cron runs with a send-only API key",
+      "usage: Blob not configured; Resend usage fallback cannot persist across cron runs",
     );
     return;
   }
@@ -400,121 +363,34 @@ async function saveResendCache(payload: ResendQuotaCache) {
   }
 }
 
-/** Persist quota headers from a Resend send response (works with send-only API keys). */
-export async function persistResendQuotaFromHeaders(headers: Headers) {
-  const dailyUsed = headerNumber(headers, "x-resend-daily-quota");
-  const monthlyUsed = headerNumber(headers, "x-resend-monthly-quota");
-  if (dailyUsed == null && monthlyUsed == null) return;
-
-  await saveResendCache({
-    updatedAt: new Date().toISOString(),
-    dailyUsed,
-    monthlyUsed,
-  });
-}
-
-function resendUnavailableReason(status: number, body: string) {
-  if (status === 401 && body.includes("restricted_api_key")) {
-    return "Send-only Resend API key — quotas appear after the next send (cached in Blob)";
-  }
-  return `Resend API ${status}${body ? `: ${body.slice(0, 120)}` : ""}`;
-}
-
-/** Lightweight Resend API call to read quota headers (does not send mail). */
-async function collectResendQuota(): Promise<UsageMetric[]> {
-  const dailyLimit = resendDailyLimit();
-  const monthlyLimit = resendMonthlyLimit();
+/** Read-only account usage, supported by sending-only keys too. */
+export async function collectResendQuota(now?: Date): Promise<UsageMetric[]> {
+  const unavailableMetrics = (reason: string) => (["daily", "monthly"] as const).map(
+    (period) => unavailable(`resend-${period}`, `Resend ${period} emails`, null, "emails", reason),
+  );
   const apiKey = process.env.RESEND_API_KEY?.trim();
-  if (!apiKey) {
-    return [
-      unavailable(
-        "resend-daily",
-        "Resend daily emails",
-        dailyLimit,
-        "emails",
-        "RESEND_API_KEY not set",
-      ),
-      unavailable(
-        "resend-monthly",
-        "Resend monthly emails",
-        monthlyLimit,
-        "emails",
-        "RESEND_API_KEY not set",
-      ),
-    ];
-  }
-
-  // Prefer durable last-send cache first — send-only keys cannot GET /emails,
-  // and serverless FS does not keep the local fallback between cron runs.
-  const cached = await loadCachedResendQuota();
+  if (!apiKey) return unavailableMetrics("RESEND_API_KEY not set");
 
   try {
-    const response = await fetch("https://api.resend.com/emails?limit=1", {
-      method: "GET",
+    const response = await fetch("https://api.resend.com/usage", {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(10_000),
     });
-
-    if (!response.ok) {
-      if (cached) return cached;
-      const body = await response.text().catch(() => "");
-      const reason = resendUnavailableReason(response.status, body);
-      return [
-        unavailable(
-          "resend-daily",
-          "Resend daily emails",
-          dailyLimit,
-          "emails",
-          reason,
-        ),
-        unavailable(
-          "resend-monthly",
-          "Resend monthly emails",
-          monthlyLimit,
-          "emails",
-          reason,
-        ),
-      ];
-    }
-
-    const live = buildResendMetrics(
-      headerNumber(response.headers, "x-resend-daily-quota"),
-      headerNumber(response.headers, "x-resend-monthly-quota"),
-      "live",
-    );
-    // Keep Blob/local cache warm when a full-access key returns quotas live.
-    const dailyUsed = headerNumber(response.headers, "x-resend-daily-quota");
-    const monthlyUsed = headerNumber(response.headers, "x-resend-monthly-quota");
-    if (dailyUsed != null || monthlyUsed != null) {
-      await saveResendCache({
-        updatedAt: new Date().toISOString(),
-        dailyUsed,
-        monthlyUsed,
-      });
-    }
-    return live;
+    if (!response.ok) throw new Error(`Resend usage API ${response.status}`);
+    const result = resendUsageSchema.safeParse(await response.json());
+    if (!result.success) throw new Error("Resend usage API returned invalid counters, limits, or reset times");
+    const observedAt = now ?? new Date();
+    const cache: ResendQuotaCache = { updatedAt: observedAt.toISOString(), ...result.data.emails };
+    const metrics = buildResendMetrics(cache, "live", observedAt);
+    // A cache failure must not discard valid live readings.
+    await saveResendCache(cache).catch((error) => console.warn("usage: Resend cache save failed", error));
+    return metrics;
   } catch (error) {
+    const cached = await loadCachedResendQuota(now);
     if (cached) return cached;
-
-    const message =
-      error instanceof Error ? error.message : "Resend probe failed";
+    const message = error instanceof Error ? error.message : "Resend usage unavailable";
     console.warn("usage: Resend quota failed", error);
-    return [
-      unavailable(
-        "resend-daily",
-        "Resend daily emails",
-        dailyLimit,
-        "emails",
-        message,
-      ),
-      unavailable(
-        "resend-monthly",
-        "Resend monthly emails",
-        monthlyLimit,
-        "emails",
-        message,
-      ),
-    ];
+    return unavailableMetrics(message);
   }
 }
 
@@ -526,6 +402,7 @@ export function formatMetricUsed(m: UsageMetric) {
 }
 
 export function formatMetricLimit(m: UsageMetric) {
+  if (m.limit == null) return "No cap";
   if (m.unit === "USD") return formatUsd(m.limit);
   if (m.unit === "bytes") return formatBytes(m.limit);
   return `${m.limit.toLocaleString("en-US")} ${m.unit}`;
@@ -673,7 +550,7 @@ type PlatformUsageCache = {
     id: string;
     label: string;
     used: number;
-    limit: number;
+    limit: number | null;
     unit: string;
     detail: string;
   }>;
@@ -899,7 +776,7 @@ export async function collectUsageReport(): Promise<UsageReport> {
   ];
   const thresholdPercent = USAGE_WATCH_THRESHOLD;
   const watch = metrics.filter(
-    (m) => m.available && m.percent >= thresholdPercent,
+    (m) => m.available && m.limit != null && m.percent >= thresholdPercent,
   );
 
   return {

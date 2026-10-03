@@ -30,7 +30,6 @@ import { looksNonEnglish, type BriefTrendItem } from "@/lib/trends";
 import {
   formatMetricLimit,
   formatMetricUsed,
-  persistResendQuotaFromHeaders,
   type UsageMetric,
   type UsageReport,
 } from "@/lib/usage";
@@ -494,9 +493,7 @@ function renderSiteCard(site: SiteAnalytics) {
   const dateLabel = formatHumanDate(site.date, { withTime: false });
   const mtdRange = `${formatHumanDate(site.monthStart, { withTime: false })} – ${dateLabel}`;
   const tzAbbr = formatTimeZoneAbbr(site.timeZone || "UTC", site.date);
-  const dateHeading = site.freshnessNote
-    ? dateLabel
-    : `Yesterday · ${dateLabel}`;
+  const dateHeading = `Yesterday · ${dateLabel}`;
 
   return `<tr>
     <td style="padding:0 0 14px 0;">
@@ -975,12 +972,18 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
     </tr>`;
 }
 
+function usageWatchSummary(usage: UsageReport) {
+  return usage.metrics.some((m) => !m.available)
+    ? `No available quota readings are at or above ${usage.thresholdPercent}%. Some usage readings are unavailable.`
+    : `All tracked quotas with a cap are under ${usage.thresholdPercent}% of their limits.`;
+}
+
 function renderUsageWatch(usage: UsageReport) {
   if (usage.watch.length === 0) {
     return `<tr>
       <td style="padding:0 0 14px 0;">
         <div style="font-size:14px;line-height:1.5;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:14px 16px;">
-          All tracked quotas are under ${usage.thresholdPercent}% of their limits.
+          ${escapeHtml(usageWatchSummary(usage))}
         </div>
       </td>
     </tr>`;
@@ -1022,7 +1025,7 @@ function renderUsageWatch(usage: UsageReport) {
 
 function renderUsageRow(m: UsageMetric) {
   const color = percentColor(m.percent, m.available);
-  const pct = m.available ? `${m.percent}%` : "—";
+  const pct = !m.available ? "—" : m.limit == null ? "No cap" : `${m.percent}%`;
   const usedLimit = m.available
     ? `${formatMetricUsed(m)} / ${formatMetricLimit(m)}`
     : "n/a";
@@ -1395,9 +1398,7 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
         ),
       );
       lines.push(
-        site.freshnessNote
-          ? `  ${formatHumanDate(site.date, { withTime: false })}`
-          : `  Yesterday (${formatHumanDate(site.date, { withTime: false })})`,
+        `  Yesterday (${formatHumanDate(site.date, { withTime: false })})`,
       );
       if (site.freshnessNote) {
         lines.push(`  ${site.freshnessNote}`);
@@ -1497,7 +1498,7 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     lines.push("", "USAGE WATCH");
     if (usage.watch.length === 0) {
       lines.push(
-        `All tracked quotas are under ${usage.thresholdPercent}% of their limits.`,
+        usageWatchSummary(usage),
       );
     } else {
       for (const m of usage.watch) {
@@ -1517,7 +1518,7 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
           continue;
         }
         lines.push(
-          `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.percent}%)`,
+          `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.limit == null ? "No cap" : `${m.percent}%`})`,
         );
         lines.push(`  ${m.detail}`);
       }
@@ -1530,7 +1531,7 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
           continue;
         }
         lines.push(
-          `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.percent}%)`,
+          `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.limit == null ? "No cap" : `${m.percent}%`})`,
         );
         lines.push(`  ${m.detail}`);
       }
@@ -1564,8 +1565,7 @@ export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
     html = renderBriefHtml(fallback, usage);
     text = renderBriefText(fallback, usage);
   }
-  // Use fetch (not the SDK) so we can read quota response headers — needed for
-  // send-only API keys that cannot call GET /emails.
+  // Delivery uses a bounded request and a payload-derived retry key.
   const body = JSON.stringify({
     from,
     to: [to],
@@ -1601,9 +1601,6 @@ export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
   if (!payload?.id) {
     throw new Error("Resend accepted the request without an email id");
   }
-  await persistResendQuotaFromHeaders(response.headers).catch((error) => {
-    console.warn("email: quota cache save failed after successful send", error);
-  });
 
   return { id: payload.id };
 }

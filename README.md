@@ -22,8 +22,8 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
 11. Loads the last successfully delivered slim snapshot (when available); currently records availability, without generating day-over-day movers
 12. Summarizes news, trends, whale activity, and valuation multiples with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
 13. Saves a **markets brief** payload for the secret hosted page (Blob when configured, otherwise `.data/markets-latest.json`)
-14. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest with a CTA to the full hosted markets page
-15. Appends a **usage** section (AI Gateway credits, Blob storage, Resend quotas) and a **usage watch** for anything ≥50% of its limit
+14. Collects and appends **usage** (AI Gateway credits, Blob storage, Resend usage) and a **usage watch** for capped readings ≥50% of their limit
+15. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest with a CTA to the full hosted markets page
 16. After confirmed delivery, saves a slim snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
 
 Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGIONS`, `REDDIT_SUBREDDITS`, `GA_ACCOUNTS`, `GCP_BILLING_ACCOUNT`, `DEFAULT_MODEL`).
@@ -65,7 +65,7 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 | **Reddit**                                                | Reddit Atom RSS — top 6 per sub (`pics`, `generativeAI`, `CursedAI`, `aiArt`); day → week → hot fallback | **No LLM** — subreddits in 2 columns; posts in a 3-column grid with larger thumbnails                                           |
 | **Google Analytics**                                      | GA4 Data API — yesterday KPIs (vs prior day), 7-day users bar chart, and month-to-date totals for `uwhmap.com`, `greetingcardfun.com`, `tvroulette.app`            | **No LLM** — skipped when `GOOGLE_CLIENT_EMAIL` / `GOOGLE_PRIVATE_KEY` are unset                                                |
 | **Google Cloud Billing**                                  | Costs: month-to-date (through yesterday UTC) for billing account `016802-8E2106-038F4F` covering **AI Greeting Card** and **Restaurant Roulette** — daily stacked bars by service vs the same days last month. If this month’s costs are still being priced, last 30 days instead. **API calls** are always counted from the **1st of this month** (including $0 rows) so monthly free caps (1,000 for Places Enterprise / Photos) stay on a calendar clock. | **No LLM** — BigQuery Standard usage cost export. Shows a setup card until `GCP_BILLING_BQ_TABLE` is set                         |
-| **Usage watch**                                           | AI Gateway, Fast Data Transfer, Edge Requests, Blob size/ops, function invocations, Resend                                                                         | **No LLM** — flags anything ≥50% of its Hobby/free limit                                                                        |
+| **Usage watch**                                           | AI Gateway, Fast Data Transfer, Edge Requests, Blob size/ops, function invocations, Resend                                                                         | **No LLM** — flags capped usage ≥50%; Resend limits come from its usage API                                                                        |
 | **Delivery**                                              | —                                                                                                                                                                  | **Resend API** sends HTML + plain-text email                                                                                    |
 
 In practice that means **up to five** Gateway model calls per daily run:
@@ -101,8 +101,6 @@ cp .env.example .env.local
 | `AI_GATEWAY_API_KEY`        | Local    | From the [AI Gateway](https://vercel.com/docs/ai-gateway) dashboard; on Vercel, OIDC can work without this   |
 | `AI_MODEL`                  | No       | Defaults to `google/gemini-2.5-flash`                                                                        |
 | `AI_GATEWAY_MONTHLY_BUDGET` | No       | USD free-credit budget for usage watch (default `5`)                                                         |
-| `RESEND_DAILY_LIMIT`        | No       | Daily email quota for usage watch (default `100`)                                                            |
-| `RESEND_MONTHLY_LIMIT`      | No       | Monthly email quota for usage watch (default `3000`)                                                         |
 | `BLOB_ACCESS`               | No       | `public` (existing-store default) or `private`; must match the connected Blob store |
 | `BLOB_READ_WRITE_TOKEN`     | Prod\*   | From a [Vercel Blob](https://vercel.com/docs/vercel-blob) store — enables durable snapshots, markets payloads, and usage caches |
 | `VERCEL_TOKEN`              | Prod\*   | [Account token](https://vercel.com/account/tokens) for Fast Data Transfer / platform usage via `/v2/usage` |
@@ -195,16 +193,17 @@ Tests are offline and mock provider responses. The production build needs networ
 - Missing Resend configuration fails before research or AI spending. A send counts as successful only when Resend returns an email ID.
 - Identical email payloads share a Resend idempotency key, protecting retries within [Resend's 24-hour window](https://resend.com/docs/dashboard/emails/idempotency-keys). Regenerating a new brief changes the payload; this is not a distributed lock or a guarantee of one run per calendar day.
 - Markets persistence is best-effort before sending, so the CTA can load immediately. History is updated only after delivery. Missing Blob on Vercel leaves the markets page empty and history unavailable.
-- Billing discovery selects only the configured account's export, and queries filter by billing account. Paginated results produce an explicit unavailable report instead of incomplete totals; reading additional result pages is a future improvement.
+- GA4 always reports property-local yesterday, including zero activity, with a provisional-data note. Recent values can change during processing; zero activity is not treated as proof of a delay.
+- Billing discovery selects only the configured account's export, and queries filter by billing account. Dataset/table discovery and query results follow every page within a shared 60-second budget. Later-page failures, repeated tokens, and row-count mismatches produce an unavailable report instead of incomplete totals. Set `GCP_BILLING_BQ_TABLE` to skip discovery.
 - Saved snapshots currently record `hasPreviousBrief`; no day-over-day news-mover comparison is generated.
 
 ## Quotas and models
 
 `DEFAULT_MODEL` is `google/gemini-2.5-flash`; override with `AI_MODEL`. Check the [live Gateway model catalog](https://vercel.com/ai-gateway/models) for model availability, free-credit eligibility, and prices. Model rankings, prices, and plan allowances change; this README does not guarantee a monthly cost.
 
-Usage-watch defaults in `src/lib/config.ts` reflect the intended Hobby/free setup. Confirm actual limits against your accounts and use `AI_GATEWAY_MONTHLY_BUDGET`, `RESEND_DAILY_LIMIT`, and `RESEND_MONTHLY_LIMIT` as needed.
+Vercel usage-watch defaults in `src/lib/config.ts` reflect the intended Hobby setup. Confirm actual limits against your account and use `AI_GATEWAY_MONTHLY_BUDGET` for your AI budget. Resend counts and plan limits come from its [read-only usage API](https://resend.com/docs/api-reference/usage/retrieve-usage), including sent and received emails. A null limit is displayed as “No cap” and is excluded from percentage alerts. `RESEND_DAILY_LIMIT` and `RESEND_MONTHLY_LIMIT` are no longer used.
 
 - Cron configuration is `0 9 * * *` (09:00 UTC). Hosting-plan timing and limits are documented in [Vercel Cron usage](https://vercel.com/docs/cron-jobs/usage-and-pricing).
 - Platform usage requires `VERCEL_TOKEN` on Vercel; local runs may use the authenticated Vercel CLI. Without live access, the email can use the last successful Blob cache.
 - Blob storage size comes from `list()`; operation counts come from platform usage. `BLOB_ACCESS` applies consistently to markets, history, and usage caches. See [private storage setup](https://vercel.com/docs/vercel-blob/private-storage).
-- Send-only Resend keys cannot read live quotas. Cached last-send counters can be stale; treat them as a prior observation, particularly across daily/monthly resets.
+- Resend `GET /usage` supports sending-only keys. Validated responses are cached with their observation and provider reset times; fallback readings are visibly dated. Daily and monthly readings expire independently at `resets_at` and then show unavailable until refreshed. Old last-send caches lack reset times and are ignored until a successful usage fetch replaces them. Usage is collected before sending this digest, so it excludes that delivery. Cache failures cannot invalidate live readings or email delivery.

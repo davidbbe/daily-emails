@@ -41,6 +41,13 @@ AI Gateway, and Resend. See `README.md` for setup and `.env.example` for variabl
   or persistence writes to page rendering. TradingView widgets still load in the browser.
 - Save history after confirmed delivery. Persistence and quota-cache failures are
   best-effort and must not turn an accepted email into a failed send.
+- GA4 reports property-local yesterday, including zeros, as provisional data.
+  Never infer processing lag solely from zero activity.
+- Resend usage comes from GET /usage (sent + received, provider limits/reset times).
+  Date cached observations and expire daily/monthly counters independently; uncapped
+  plans have no percentage alert. Do not overwrite the cache with send headers.
+- BigQuery discovery and query pages share a 60-second collection deadline.
+  Never calculate totals from partial pages or rerun SQL to retrieve the next page.
 - Serverless disk is ephemeral/read-only. Use Blob on Vercel; `.data/` is local only.
 - `BLOB_ACCESS` must match the connected store. Public Blob JSON bypasses the page
   token; use a private store for private data. Never expose tokens or private keys.

@@ -11,8 +11,6 @@ const ADMIN_API = "https://analyticsadmin.googleapis.com/v1beta";
 const DATA_API = "https://analyticsdata.googleapis.com/v1beta";
 const DEFAULT_TIME_ZONE = "UTC";
 const SERIES_DAYS = 7;
-/** Extra day so we can fall back when GA4 has not processed yesterday yet. */
-const SERIES_LOOKAHEAD_DAYS = SERIES_DAYS + 1;
 
 const OVERVIEW_METRICS = [
   { name: "activeUsers" },
@@ -52,9 +50,9 @@ export type SiteAnalytics = {
   previous: SiteDayMetrics;
   /** Month-to-date through the report day */
   monthToDate: SiteDayMetrics;
-  /** Daily users/sessions/views for the last 7 complete property-local days */
+  /** Daily users/sessions/views for the last 7 elapsed property-local days (recent values are provisional) */
   dailySeries: SiteDayPoint[];
-  /** Why the report day is not property-local yesterday, when GA4 is lagging. */
+  /** Processing caveat for provisional recent data. */
   freshnessNote?: string;
   /** Present when the property resolved but the report failed */
   error?: string;
@@ -116,60 +114,6 @@ function metricsFromValues(
     bounceRate: byName.get("bounceRate") ?? 0,
     averageSessionDuration: byName.get("averageSessionDuration") ?? 0,
   };
-}
-
-function metricsFromPoint(point: SiteDayPoint | undefined): SiteDayMetrics {
-  if (!point) return emptyMetrics();
-  return {
-    activeUsers: point.activeUsers,
-    sessions: point.sessions,
-    screenPageViews: point.screenPageViews,
-    bounceRate: 0,
-    averageSessionDuration: 0,
-  };
-}
-
-function dayHasActivity(
-  metrics: Pick<
-    SiteDayMetrics,
-    "activeUsers" | "sessions" | "screenPageViews"
-  >,
-): boolean {
-  return (
-    metrics.activeUsers > 0 ||
-    metrics.sessions > 0 ||
-    metrics.screenPageViews > 0
-  );
-}
-
-function formatShortDay(isoDate: string): string {
-  const date = new Date(`${isoDate}T12:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) return isoDate;
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-/**
- * Standard GA4 properties often lag 24–48h. The 09:00 UTC cron is only a few
- * hours after midnight in US timezones, so property-local yesterday is often
- * still empty. If yesterday has no activity but earlier days do, report through
- * the prior day.
- */
-function shouldDeferUnprocessedYesterday(
-  yesterdayMetrics: SiteDayMetrics,
-  yesterdayPoint: SiteDayPoint | undefined,
-  priorPoints: SiteDayPoint[],
-): boolean {
-  if (
-    dayHasActivity(yesterdayMetrics) ||
-    (yesterdayPoint && dayHasActivity(yesterdayPoint))
-  ) {
-    return false;
-  }
-  return priorPoints.some(dayHasActivity);
 }
 
 async function resolveProperty(
@@ -253,9 +197,8 @@ async function fetchOverviewReport(
   yesterday: SiteDayMetrics;
   previous: SiteDayMetrics;
   monthToDate: SiteDayMetrics;
-  monthToDatePrevious: SiteDayMetrics;
 }> {
-  const rangeNames = ["yesterday", "previous", "mtd", "mtdPrev"] as const;
+  const rangeNames = ["yesterday", "previous", "mtd"] as const;
   const response = await fetch(
     `${DATA_API}/properties/${propertyId}:runReport`,
     {
@@ -273,11 +216,6 @@ async function fetchOverviewReport(
             startDate: monthStartOf(reportDay),
             endDate: reportDay,
             name: "mtd",
-          },
-          {
-            startDate: monthStartOf(previousDay),
-            endDate: previousDay,
-            name: "mtdPrev",
           },
         ],
         metrics: [...OVERVIEW_METRICS],
@@ -302,7 +240,6 @@ async function fetchOverviewReport(
     yesterday: byName.yesterday ?? emptyMetrics(),
     previous: byName.previous ?? emptyMetrics(),
     monthToDate: byName.mtd ?? emptyMetrics(),
-    monthToDatePrevious: byName.mtdPrev ?? emptyMetrics(),
   };
 }
 
@@ -321,21 +258,11 @@ function emptyDailySeries(endDate: string, days = SERIES_DAYS): SiteDayPoint[] {
   }));
 }
 
-function sliceSeriesEndingOn(
-  series: SiteDayPoint[],
-  endDate: string,
-  days = SERIES_DAYS,
-): SiteDayPoint[] {
-  const spine = emptyDailySeries(endDate, days);
-  const byDate = new Map(series.map((point) => [point.date, point]));
-  return spine.map((point) => byDate.get(point.date) ?? point);
-}
-
 async function fetchDailySeries(
   accessToken: string,
   propertyId: string,
   endDate: string,
-  days = SERIES_LOOKAHEAD_DAYS,
+  days = SERIES_DAYS,
 ): Promise<SiteDayPoint[]> {
   const startDate = addIsoDays(endDate, -(days - 1));
   const response = await fetch(
@@ -440,31 +367,15 @@ async function collectOneSite(
         yesterday: yesterdayMetrics,
         previous,
         monthToDate,
-        monthToDatePrevious,
       } = overview;
 
-      const yesterdayPoint = dailySeries.find((point) => point.date === yesterday);
-      const priorPoints = dailySeries.filter((point) => point.date < yesterday);
-      const defer = shouldDeferUnprocessedYesterday(
-        yesterdayMetrics,
-        yesterdayPoint,
-        priorPoints,
-      );
-      const reportDay = defer ? previousDay : yesterday;
-
       return {
-        ...siteShell(accountId, label, propertyId, timeZone, reportDay),
-        metrics: defer ? previous : yesterdayMetrics,
-        previous: defer
-          ? metricsFromPoint(
-              dailySeries.find((point) => point.date === addIsoDays(reportDay, -1)),
-            )
-          : previous,
-        monthToDate: defer ? monthToDatePrevious : monthToDate,
-        dailySeries: sliceSeriesEndingOn(dailySeries, reportDay, SERIES_DAYS),
-        freshnessNote: defer
-          ? `GA4 has not finished processing ${formatShortDay(yesterday)} yet. Showing ${formatShortDay(reportDay)}.`
-          : undefined,
+        ...siteShell(accountId, label, propertyId, timeZone, yesterday),
+        metrics: yesterdayMetrics,
+        previous,
+        monthToDate,
+        dailySeries,
+        freshnessNote: "Provisional GA4 figures — processing can take 24–48 hours. Recent values, including zero activity, may change.",
       };
     } catch (error) {
       const today = calendarDayInZone(now, timeZone);

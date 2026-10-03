@@ -117,6 +117,7 @@ export type GcpBillingRow = {
 export const TRAILING_BILLING_DAYS = 30;
 
 type BqJobResponse = {
+  jobReference?: { projectId?: string; jobId?: string; location?: string };
   jobComplete?: boolean;
   pageToken?: string;
   totalRows?: string;
@@ -599,47 +600,64 @@ function parseTableRef(raw: string) {
 
 async function bqGetJson(
   accessToken: string,
-  url: string,
+  url: string | URL,
+  signal: AbortSignal,
 ): Promise<{ ok: boolean; status: number; body: unknown }> {
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
   });
   const body = await response.json().catch(() => null);
   return { ok: response.ok, status: response.status, body };
+}
+
+type BqListEntry = {
+  datasetReference?: { datasetId?: string };
+  tableReference?: { tableId?: string };
+};
+
+/** Each collection has its own tokens; all requests share the billing deadline. */
+async function* listBqEntries(
+  accessToken: string,
+  endpoint: string,
+  collection: "datasets" | "tables",
+  signal: AbortSignal,
+): AsyncGenerator<BqListEntry> {
+  const url = new URL(endpoint);
+  const seen = new Set<string>();
+  while (true) {
+    signal.throwIfAborted();
+    const response = await bqGetJson(accessToken, url, signal);
+    // Inaccessible datasets can be skipped during discovery of other datasets.
+    if (collection === "tables" && [403, 404].includes(response.status)) return;
+    const body = response.body as {
+      datasets?: BqListEntry[];
+      tables?: BqListEntry[];
+      nextPageToken?: string;
+      error?: { message?: string };
+    } | null;
+    if (!response.ok || !body) throw new Error(body?.error?.message || `BigQuery ${collection} discovery ${response.status}`);
+    for (const entry of body[collection] ?? []) yield entry;
+    if (!body.nextPageToken) return;
+    if (seen.has(body.nextPageToken)) throw new Error(`BigQuery ${collection} discovery repeated a page token`);
+    seen.add(body.nextPageToken);
+    url.searchParams.set("pageToken", body.nextPageToken);
+  }
 }
 
 async function discoverBillingTable(
   accessToken: string,
   projectId: string,
   accountId: string,
+  signal: AbortSignal,
 ): Promise<string | null> {
   const expected = `gcp_billing_export_v1_${accountId.replaceAll("-", "_")}`;
-  const datasets = await bqGetJson(
-    accessToken,
-    `${BIGQUERY_API}/projects/${encodeURIComponent(projectId)}/datasets`,
-  );
-  const list = datasets.body as {
-    datasets?: Array<{ datasetReference?: { datasetId?: string } }>;
-  } | null;
-  if (!datasets.ok) return null;
-
-  for (const dataset of list?.datasets ?? []) {
+  const projectUrl = `${BIGQUERY_API}/projects/${encodeURIComponent(projectId)}`;
+  for await (const dataset of listBqEntries(accessToken, `${projectUrl}/datasets`, "datasets", signal)) {
     const datasetId = dataset.datasetReference?.datasetId;
     if (!datasetId) continue;
-    const tables = await bqGetJson(
-      accessToken,
-      `${BIGQUERY_API}/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/tables`,
-    );
-    const tableList = tables.body as {
-      tables?: Array<{ tableReference?: { tableId?: string } }>;
-    } | null;
-    if (!tables.ok) continue;
-    for (const table of tableList?.tables ?? []) {
-      const tableId = table.tableReference?.tableId;
-      if (tableId === expected) {
-        return `${projectId}.${datasetId}.${tableId}`;
-      }
+    for await (const table of listBqEntries(accessToken, `${projectUrl}/datasets/${encodeURIComponent(datasetId)}/tables`, "tables", signal)) {
+      if (table.tableReference?.tableId === expected) return `${projectId}.${datasetId}.${expected}`;
     }
   }
   return null;
@@ -650,7 +668,9 @@ async function runBqQuery(
   projectId: string,
   query: string,
   params: Array<{ name: string; value: string; type: "DATE" | "STRING" }>,
+  signal: AbortSignal,
 ): Promise<string[][]> {
+  signal.throwIfAborted();
   const response = await fetch(
     `${BIGQUERY_API}/projects/${encodeURIComponent(projectId)}/queries`,
     {
@@ -659,7 +679,7 @@ async function runBqQuery(
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]),
       body: JSON.stringify({
         query,
         useLegacySql: false,
@@ -674,26 +694,43 @@ async function runBqQuery(
       }),
     },
   );
-  const payload = (await response.json().catch(() => null)) as
-    | (BqJobResponse & { error?: { message?: string } })
-    | null;
-  if (!response.ok || payload?.errorResult || payload?.error) {
-    throw new Error(
-      payload?.errorResult?.message ||
-        payload?.errors?.[0]?.message ||
-        payload?.error?.message ||
-        `BigQuery query ${response.status}`,
-    );
+  const parsePage = async (response: Response): Promise<BqJobResponse> => {
+    const payload = await response.json().catch(() => null) as
+      | (BqJobResponse & { error?: { message?: string } })
+      | null;
+    if (!response.ok || !payload || payload.errorResult || payload.error) {
+      throw new Error(payload?.errorResult?.message || payload?.error?.message || payload?.errors?.[0]?.message || `BigQuery query ${response.status}`);
+    }
+    return payload;
+  };
+  let payload = await parsePage(response);
+  const job = payload.jobReference;
+  const rows: string[][] = [];
+  const seen = new Set<string>();
+  let totalRows: string | undefined;
+  while (true) {
+    signal.throwIfAborted();
+    if (!payload.jobComplete) throw new Error("BigQuery billing query timed out");
+    totalRows = payload.totalRows ?? totalRows;
+    rows.push(...(payload.rows ?? []).map((row) => (row.f ?? []).map((cell) => cell.v ?? "")));
+    if (!payload.pageToken) break;
+    if (!job?.jobId) throw new Error("BigQuery billing results missing job reference; refusing to report incomplete totals");
+    if (seen.has(payload.pageToken)) throw new Error("BigQuery billing repeated a page token; refusing to report incomplete totals");
+    seen.add(payload.pageToken);
+    const url = new URL(`${BIGQUERY_API}/projects/${encodeURIComponent(job.projectId || projectId)}/queries/${encodeURIComponent(job.jobId)}`);
+    url.searchParams.set("pageToken", payload.pageToken);
+    url.searchParams.set("maxResults", "10000");
+    if (job.location) url.searchParams.set("location", job.location);
+    const next = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+    });
+    payload = await parsePage(next);
   }
-  if (!payload?.jobComplete) {
-    throw new Error("BigQuery billing query timed out");
+  if (totalRows != null && BigInt(totalRows) !== BigInt(rows.length)) {
+    throw new Error("BigQuery billing row count mismatch; refusing to report incomplete totals");
   }
-  if (payload.pageToken || Number(payload.totalRows ?? 0) > (payload.rows?.length ?? 0)) {
-    throw new Error("BigQuery billing results exceed one page; refusing to report incomplete totals");
-  }
-  return (payload.rows ?? []).map((row) =>
-    (row.f ?? []).map((cell) => cell.v ?? ""),
-  );
+  return rows;
 }
 
 function reportFromRows(
@@ -899,19 +936,12 @@ async function collectFromBigQuery(
   const projectId = getGoogleCloudProjectId();
   if (!projectId) return null;
 
+  // Discovery and all query pages share one total collection budget.
+  const signal = AbortSignal.timeout(60_000);
   const configured = process.env.GCP_BILLING_BQ_TABLE?.trim();
   let tableRef: string | null = configured || null;
   if (!tableRef) {
-    try {
-      tableRef = await discoverBillingTable(
-        accessToken,
-        projectId,
-        account.id,
-      );
-    } catch (error) {
-      console.warn("gcp-billing: table discovery failed", error);
-      return null;
-    }
+    tableRef = await discoverBillingTable(accessToken, projectId, account.id, signal);
   }
   if (!tableRef) return null;
 
@@ -940,11 +970,15 @@ async function collectFromBigQuery(
     GROUP BY 1, 2, 3, 4
   `;
 
-  const rows = await runBqQuery(accessToken, jobProject, query, [
-    { name: "start", value: lookback.startDate, type: "DATE" },
-    { name: "end", value: lookback.endDate, type: "DATE" },
-    { name: "account", value: account.id, type: "STRING" },
-  ]);
+  const rows = await runBqQuery(
+    accessToken, jobProject, query,
+    [
+      { name: "start", value: lookback.startDate, type: "DATE" },
+      { name: "end", value: lookback.endDate, type: "DATE" },
+      { name: "account", value: account.id, type: "STRING" },
+    ],
+    signal,
+  );
 
   const parsed: GcpBillingRow[] = rows.map((cols) => ({
     day: cols[0] ?? "",
