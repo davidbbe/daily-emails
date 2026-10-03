@@ -294,7 +294,7 @@ export type GcpBillingAccountConfig = {
 export type GaAccountId = (typeof GA_ACCOUNTS)[number]["accountId"];
 
 /** Free-tier-friendly Gateway model with reliable structured output */
-export const DEFAULT_MODEL = "google/gemini-2.5-flash";
+export const DEFAULT_MODEL = "openai/gpt-5-mini";
 
 /** Flag metrics in the daily email when used/limit is at or above this % */
 export const USAGE_WATCH_THRESHOLD = 50;
@@ -320,6 +320,18 @@ export const HOBBY_FUNCTION_INVOCATIONS = 1_000_000;
 
 export function getModel() {
   return process.env.AI_MODEL?.trim() || DEFAULT_MODEL;
+}
+
+/** Keep GPT-5 mini reasoning low; preserve the Gemini override's token budget. */
+export function getBriefModelSettings(model = getModel()) {
+  if (model === DEFAULT_MODEL) return { model, reasoning: "low" as const };
+  if (model.startsWith("google/")) {
+    return {
+      model,
+      providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
+    };
+  }
+  return { model };
 }
 
 /** Must match the connected Blob store; public preserves existing installations. */

@@ -1,6 +1,6 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { getModel, TREND_REGIONS, type TrendRegionId } from "@/lib/config";
+import { getBriefModelSettings, TREND_REGIONS, type TrendRegionId } from "@/lib/config";
 import type { ResearchBundle, TrendItem } from "@/lib/research";
 
 export type BriefTrendItem = {
@@ -33,7 +33,7 @@ const translationSchema = z.object({
     z.object({
       id: z.string(),
       titleEn: z.string(),
-      newsTitleEn: z.string().optional(),
+      newsTitleEn: z.string().nullable(),
     }),
   ),
 });
@@ -92,20 +92,15 @@ async function translateUsItems(
 
   try {
     const { output: object } = await generateText({
-      model: getModel(),
+      ...getBriefModelSettings(),
       output: Output.object({ schema: translationSchema }),
       timeout: 60_000,
       maxOutputTokens: 4096,
-      // Gemini 2.5 Flash burns thinking tokens against maxOutputTokens; disable
-      // so structured JSON is not truncated (finishReason: length).
-      providerOptions: {
-        google: { thinkingConfig: { thinkingBudget: 0 } },
-      },
       instructions: `You translate Google Trends search queries and related news headlines into clear, concise English.
 Translate literally — do not invent context or explain.
 Keep proper nouns when they are already Latin-script names.
 Return every requested id exactly once.
-If newsTitleEn is not needed (no news title provided), omit it.`,
+If newsTitleEn is not needed (no news title provided), return null.`,
       prompt: `Translate these trend strings to English:
 ${jobs
   .map((job) => {
@@ -150,13 +145,10 @@ async function enrichLocalTrends(
 
   try {
     const { output: object } = await generateText({
-      model: getModel(),
+      ...getBriefModelSettings(),
       output: Output.object({ schema: localItemsSchema }),
       timeout: 60_000,
       maxOutputTokens: 4096,
-      providerOptions: {
-        google: { thinkingConfig: { thinkingBudget: 0 } },
-      },
       instructions: `You select and describe Google Trends items for a daily email brief.
 For each country region:
 - Choose the ${LOCAL_ITEM_COUNT} most important trends (news, civic, markets, culture, or widely discussed events). Skip leftover sports or trivial celebrity noise when better options exist.

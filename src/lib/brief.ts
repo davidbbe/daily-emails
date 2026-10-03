@@ -2,6 +2,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import {
   getModel,
+  getBriefModelSettings,
   PEOPLE,
   PERSON_NEWS_LIMIT,
   TICKERS,
@@ -113,6 +114,10 @@ export type DailyBrief = {
 };
 
 const flagSchema = z.enum(BULLET_FLAGS);
+// OpenAI requires every wire field. Normalize nullable fields to the existing
+// undefined representation after validation; the SDK sends the input schema.
+const nullableString = z.string().nullable().transform((value) => value ?? undefined);
+const nullableSourceIndex = z.number().int().nullable().transform((value) => value ?? undefined);
 
 const coreBriefSchema = z.object({
   tickers: z.array(
@@ -123,29 +128,30 @@ const coreBriefSchema = z.object({
         z.object({
           text: z.string(),
           flag: flagSchema,
-          sourceIndex: z.number().int().optional(),
+          sourceIndex: nullableSourceIndex,
         }),
       ),
       whyItMatters: z.string(),
-      overnightOpener: z.string().optional(),
+      overnightOpener: nullableString,
     }),
   ),
   people: z.array(
     z.object({
       id: z.string(),
       name: z.string(),
-      summary: z.string().optional(),
-      quote: z.string().optional(),
-      sourceIndex: z.number().int().optional(),
+      summary: nullableString,
+      quote: nullableString,
+      sourceIndex: nullableSourceIndex,
       items: z
         .array(
           z.object({
             summary: z.string(),
-            quote: z.string().optional(),
-            sourceIndex: z.number().int().optional(),
+            quote: nullableString,
+            sourceIndex: nullableSourceIndex,
           }),
         )
-        .optional(),
+        .nullable()
+        .transform((value) => value ?? undefined),
     }),
   ),
 });
@@ -204,14 +210,10 @@ function resolveSource(
 
 async function generateCoreBrief(bundle: ResearchBundle, model: string) {
   const { output } = await generateText({
-    model,
+    ...getBriefModelSettings(model),
     timeout: 60_000,
     output: Output.object({ schema: coreBriefSchema }),
     maxOutputTokens: 6144,
-    // Keep thinking off so structured JSON is not truncated by reasoning tokens.
-    providerOptions: {
-      google: { thinkingConfig: { thinkingBudget: 0 } },
-    },
     instructions: `You are a concise market and tech briefing analyst.
 Only use the provided headlines. Do not invent events, dates, prices, or quotes.
 Prefer material news over rumor.
@@ -224,7 +226,7 @@ For each ticker:
   - Noise: soft coverage, rumor, or low-signal chatter
 - Set sourceIndex to the [n] index of the best supporting headline for that ticker when possible.
 - whyItMatters: one sentence (≤28 words) synthesizing why today's coverage matters for that name.
-- overnightOpener: one sentence (≤28 words) on overnight / pre-market / after-hours / crypto-session context from the headlines. If quiet, say so plainly. For BTC, treat it as a 24/7 session. Only set overnightOpener for overnight tickers.
+- overnightOpener: one sentence (≤28 words) on overnight / pre-market / after-hours / crypto-session context from the headlines. If quiet, say so plainly. For BTC, treat it as a 24/7 session. Set overnightOpener to null for other tickers.
 
 For each person:
 - Read every item in that person's list before choosing. High-volume speakers often have many items — do not stop at the first one.
@@ -232,17 +234,18 @@ For each person:
 - Everyone else: include them only if they themselves said, posted, or announced something in this window. Choose at most ONE item.
 - Each item: one short sentence (what they said and why it could matter for markets). Do not round up several remarks into one item.
 - If nothing they said is market-significant, return items: [] and summary exactly "None found". Do not stretch gossip, campaign color, or coverage that is merely about them.
-- quote: a short attributed quote of that chosen post/statement when the text is available; otherwise omit.
+- quote: a short attributed quote of that chosen post/statement when the text is available; otherwise return null.
 - sourceIndex: the [n] index of the chosen post/headline.
 
 Always include every requested ticker and person id.
-Return each person as { id, name, items: [{ summary, quote, sourceIndex }] }.`,
+Use null for optional fields when unavailable; never invent a quote or source index.
+Return each person as { id, name, summary: null, quote: null, sourceIndex: null, items: [{ summary, quote, sourceIndex }] }.`,
     prompt: `Create today's brief from these sources collected at ${bundle.collectedAt}:
 ${formatSources(bundle)}
 
 Return ticker ids exactly: ${TICKERS.map((t) => t.id).join(", ")}.
 Overnight tickers (overnightOpener required): ${TICKERS.filter(isOvernightTicker).map((t) => t.id).join(", ")}.
-Skip overnightOpener for: ${TICKERS.filter((t) => !isOvernightTicker(t)).map((t) => t.id).join(", ") || "(none)"}.
+Use null for overnightOpener for: ${TICKERS.filter((t) => !isOvernightTicker(t)).map((t) => t.id).join(", ") || "(none)"}.
 Return people ids exactly: ${PEOPLE.map((p) => p.id).join(", ")}.
 Labels: ${TICKERS.map((t) => `${t.id}=${t.label}`).join("; ")}.
 Names: ${PEOPLE.map((p) => `${p.id}=${p.name}`).join("; ")}.

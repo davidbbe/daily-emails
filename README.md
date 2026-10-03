@@ -20,7 +20,7 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
 9. Pulls top Reddit posts (title, link, thumbnail when available) for configured subreddits
 10. Pulls **GA4** yesterday + 7-day trend + month-to-date overviews for configured sites (when a service account is set), plus **Google Cloud Billing** month-to-date (through yesterday UTC, including today on the 1st)
 11. Loads the last successfully delivered slim snapshot (when available); currently records availability, without generating day-over-day movers
-12. Summarizes news, trends, whale activity, and valuation multiples with **Vercel AI Gateway** (`google/gemini-2.5-flash` by default)
+12. Summarizes news, trends, whale activity, and valuation multiples with **Vercel AI Gateway** (`openai/gpt-5-mini` by default)
 13. Saves a **markets brief** payload for the secret hosted page (Blob when configured, otherwise `.data/markets-latest.json`)
 14. Collects and appends **usage** (AI Gateway credits, Blob storage, Resend usage) and a **usage watch** for capped readings ≥50% of their limit
 15. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest with a CTA to the full hosted markets page
@@ -47,7 +47,7 @@ https://your-app.vercel.app/markets/<MARKETS_PAGE_SECRET>
 
 ## What’s in the email (data + AI)
 
-All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk.dev) `generateText` helper with `Output.object`. Default model: **`google/gemini-2.5-flash`** (override with `AI_MODEL`). No provider SDKs are wired directly — the Gateway routes the request.
+All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk.dev) `generateText` helper with `Output.object`. Default model: **`openai/gpt-5-mini` with explicit low reasoning** (override the model with `AI_MODEL`). No provider SDKs are wired directly — the Gateway routes the request.
 
 | Email / page section                                      | Data source (no AI)                                                                                                                                                | LLM / API used                                                                                                                  |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -99,7 +99,7 @@ cp .env.example .env.local
 | `MARKETS_PAGE_SECRET`       | Prod     | Long random string for `/markets/<secret>`; local/dev falls back to `dev-markets-secret`                     |
 | `APP_BASE_URL`              | Prod\*   | Public origin for the email markets CTA (e.g. `https://your-app.vercel.app`); Vercel URL envs used if unset  |
 | `AI_GATEWAY_API_KEY`        | Local    | From the [AI Gateway](https://vercel.com/docs/ai-gateway) dashboard; on Vercel, OIDC can work without this   |
-| `AI_MODEL`                  | No       | Defaults to `google/gemini-2.5-flash`                                                                        |
+| `AI_MODEL`                  | No       | Defaults to `openai/gpt-5-mini`                                                                        |
 | `AI_GATEWAY_MONTHLY_BUDGET` | No       | USD free-credit budget for usage watch (default `5`)                                                         |
 | `BLOB_ACCESS`               | No       | `public` (existing-store default) or `private`; must match the connected Blob store |
 | `BLOB_READ_WRITE_TOKEN`     | Prod\*   | From a [Vercel Blob](https://vercel.com/docs/vercel-blob) store — enables durable snapshots, markets payloads, and usage caches |
@@ -199,7 +199,27 @@ Tests are offline and mock provider responses. The production build needs networ
 
 ## Quotas and models
 
-`DEFAULT_MODEL` is `google/gemini-2.5-flash`; override with `AI_MODEL`. Check the [live Gateway model catalog](https://vercel.com/ai-gateway/models) for model availability, free-credit eligibility, and prices. Model rankings, prices, and plan allowances change; this README does not guarantee a monthly cost.
+`DEFAULT_MODEL` is `openai/gpt-5-mini`; override with `AI_MODEL`. All five calls use explicit `reasoning: "low"` with this model. Google model overrides retain the previous disabled-thinking setting; other overrides use provider defaults. The 60-second deadlines, output-token caps, and source-backed fallbacks remain in place. Reasoning tokens count toward the output-token caps, so high reasoning requires a separate latency and truncation check before enabling it.
+
+As checked on 2026-10-03, [GPT-5 mini](https://vercel.com/ai-gateway/models/gpt-5-mini) is eligible for free AI Gateway credits, at $0.25 per million input tokens and $2 per million output tokens (including reasoning). [Gateway's free tier](https://vercel.com/docs/ai-gateway/pricing) includes $5 monthly; purchasing credits moves the account to the paid tier and ends the recurring free allowance. Hobby hosting does not make model calls unlimited. At these rates, a daily digest averaging 50,000 input tokens and 20,000 total output tokens across all calls costs about $1.58 over 30 runs, before retries or other projects' usage. This is an illustrative budget, not a measured digest cost.
+
+Update any existing `AI_MODEL` in local `.env*` files and Vercel's deployment environments to `openai/gpt-5-mini`, or remove it to use the new default. An existing Gemini override takes precedence over the code default. Check the [live Gateway model catalog](https://vercel.com/ai-gateway/models) for model availability, free-credit eligibility, and prices. Model rankings, prices, and plan allowances change; this README does not guarantee a monthly cost.
+
+The core brief and US translation schemas use required nullable fields for [OpenAI structured-output compatibility](https://developers.openai.com/api/docs/guides/structured-outputs). Core null values normalize to the existing undefined representation, so missing quotes and source indexes retain their previous behavior.
+
+For generation-only timing and cost measurements (spends Gateway credits; no email, live source collection, history writes, or Blob writes):
+
+```bash
+node --import tsx scripts/evaluate-ai-model.ts
+# Allow at least a minute between evaluations on the free tier.
+node --import tsx scripts/evaluate-ai-model.ts --sparse
+# Optional: supply a saved ResearchBundle JSON instead of the synthetic fixture.
+node --import tsx scripts/evaluate-ai-model.ts /absolute/path/to/research.json
+```
+
+Reports are local under `.data/ai-model-evaluation-full.json` and `.data/ai-model-evaluation-sparse.json`. The full synthetic fixture covers all eight tickers, all six people, non-English US trends, Thailand trend selection, superinvestor activity, and seven valuation notes. One successful low-reasoning run on 2026-10-03 completed all five calls in **17.7 seconds**, with 5,848 input tokens and 4,643 output tokens including 960 reasoning tokens. Estimated standard-rate cost: **$0.01075/run, or $0.32 for 30 similar runs**; cache discounts are excluded. All calls finished normally, all seven valuation notes were present, and selected trend text was English. This checks schema compatibility and workload timing; synthetic inputs and a single sample do not establish real-news editorial quality or worst-case latency. The evaluated free-tier account also returned a five-requests-per-minute provider limit during rapid reruns; retain the existing deadlines and fallbacks for rate limits and outages.
+
+The sparse-input check completed its single core call in **12.2 seconds** at an estimated **$0.00297**. Its unavailable Micron feed stayed labeled unavailable, and the brief retained all eight ticker sections without triggering an AI fallback.
 
 Vercel usage-watch defaults in `src/lib/config.ts` reflect the intended Hobby setup. Confirm actual limits against your account and use `AI_GATEWAY_MONTHLY_BUDGET` for your AI budget. Resend counts and plan limits come from its [read-only usage API](https://resend.com/docs/api-reference/usage/retrieve-usage), including sent and received emails. A null limit is displayed as “No cap” and is excluded from percentage alerts. `RESEND_DAILY_LIMIT` and `RESEND_MONTHLY_LIMIT` are no longer used.
 
