@@ -83,10 +83,14 @@ export type GcpBillingReport = {
   apiUsageEndDate: string;
   days: GcpBillingDay[];
   insight?: string;
-  /** Why the window is not current-month MTD, when export is lagging. */
+  /** Provisional status, date basis, and export coverage. */
   freshnessNote?: string;
   period: "month_to_date" | "latest_month" | "trailing";
   source: "bigquery";
+  /** Latest export append, distinct from the date of the usage. */
+  exportedAt?: string;
+  latestUsageDate?: string;
+  comparisonAvailable?: boolean;
   error?: string;
 };
 
@@ -111,9 +115,10 @@ export type GcpBillingRow = {
   credits: number;
   usageAmount?: number;
   usageUnit?: string;
+  exportedAt?: string;
 };
 
-/** Days shown when the current month is still missing priced costs for a live service. */
+/** Length used by legacy saved trailing-window reports. */
 export const TRAILING_BILLING_DAYS = 30;
 
 type BqJobResponse = {
@@ -254,116 +259,14 @@ export function trailingWindow(
   };
 }
 
-const SPEND_EPSILON = 0.005;
-/** Previous-month spend high enough to treat a $0 current-month service as “still pricing”. */
-const RECENT_PAID_SERVICE_MIN = 0.05;
-
-export function latestSpendDay(rows: GcpBillingRow[]): string | null {
-  let latest: string | null = null;
-  for (const row of rows) {
-    if (!row.day || Math.abs(row.usageCost + row.credits) < SPEND_EPSILON) {
-      continue;
-    }
-    if (!latest || row.day > latest) latest = row.day;
-  }
-  return latest;
-}
-
-/**
- * True when this month has some priced rows, but a service that cost money last
- * month still has usage (or $0 export rows) with no priced cost yet — typical
- * Cloud Billing lag at month start.
- */
-export function currentMonthPricingIncomplete(
-  rows: GcpBillingRow[],
-  window: GcpBillingWindow,
-): boolean {
-  if (window.period !== "month_to_date") return false;
-
-  const prevMonthIndex = window.monthIndex === 0 ? 11 : window.monthIndex - 1;
-  const prevYear = window.monthIndex === 0 ? window.year - 1 : window.year;
-  const prevStart = isoDate(prevYear, prevMonthIndex, 1);
-  const prevEnd = isoDate(
-    prevYear,
-    prevMonthIndex,
-    daysInUtcMonth(prevYear, prevMonthIndex),
-  );
-  const currStart = isoDate(window.year, window.monthIndex, 1);
-
-  const stats = new Map<
-    string,
-    { prevCost: number; currCost: number; hasCurrRow: boolean }
-  >();
-
-  for (const row of rows) {
-    if (!row.day || !row.service) continue;
-    const net = row.usageCost + row.credits;
-    let stat = stats.get(row.service);
-    if (!stat) {
-      stat = { prevCost: 0, currCost: 0, hasCurrRow: false };
-      stats.set(row.service, stat);
-    }
-    if (row.day >= prevStart && row.day <= prevEnd) {
-      stat.prevCost += net;
-    }
-    if (row.day >= currStart) {
-      stat.hasCurrRow = true;
-      if (row.day <= window.endDate) stat.currCost += net;
-    }
-  }
-
-  for (const stat of stats.values()) {
-    if (stat.prevCost < RECENT_PAID_SERVICE_MIN) continue;
-    if (!stat.hasCurrRow) continue;
-    if (Math.abs(stat.currCost) >= SPEND_EPSILON) continue;
-    return true;
-  }
-  return false;
-}
-
 export function resolveBillingWindow(
   rows: GcpBillingRow[],
   now = new Date(),
 ): GcpBillingWindow {
-  const spendDay = latestSpendDay(rows);
-  if (!spendDay) return currentMonthToDate(now);
-  const fromSpend = windowFromSpendDate(spendDay, now);
-  if (currentMonthPricingIncomplete(rows, fromSpend)) {
-    return trailingWindow(spendDay, TRAILING_BILLING_DAYS, now);
-  }
-  return fromSpend;
-}
-
-function formatShortUtcDay(iso: string) {
-  const date = new Date(`${iso}T12:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-function utcMonthName(year: number, monthIndex: number) {
-  return new Date(Date.UTC(year, monthIndex, 1)).toLocaleDateString("en-US", {
-    month: "long",
-    timeZone: "UTC",
-  });
-}
-
-function buildFreshnessNote(window: GcpBillingWindow, now = new Date()) {
-  const yesterday = currentMonthToDate(now).endDate;
-  if (window.period === "trailing") {
-    return `This month’s service costs are still being priced in Cloud Billing. Showing the last ${TRAILING_BILLING_DAYS} days so every project stays on the chart.`;
-  }
-  if (window.period === "latest_month") {
-    const currentMonth = utcMonthName(now.getUTCFullYear(), now.getUTCMonth());
-    return `Cloud Billing export is current through ${formatShortUtcDay(window.endDate)}. ${currentMonth} charges have not landed yet.`;
-  }
-  if (window.endDate < yesterday) {
-    return `Cloud Billing export is current through ${formatShortUtcDay(window.endDate)}.`;
-  }
-  return undefined;
+  // A free day is still a reporting day. Keep MTD stable; spend is not
+  // evidence of export freshness or a reason to change the reporting period.
+  void rows;
+  return currentMonthToDate(now);
 }
 
 function eachUtcDate(startDate: string, endDate: string): string[] {
@@ -443,8 +346,8 @@ export function formatSkuUsage(
 ) {
   const n = formatCallCount(quantity);
   if (unit === "tokens") return `${n} tokens`;
-  if (freeMonthly) return `${n} / ${formatCallCount(freeMonthly)} free`;
-  return `${n} calls`;
+  if (freeMonthly) return `${n} / ${formatCallCount(freeMonthly)} free events`;
+  return `${n} billed events`;
 }
 
 function humanizeModelName(raw: string) {
@@ -504,6 +407,7 @@ export function skuUsageUnit(
 ): GcpBillingSkuUnit | null {
   if (/byte/i.test(usageUnit)) return null;
   if (/token/i.test(sku)) return "tokens";
+  if (/gemini|generate_content/i.test(sku) && /input|output/i.test(sku)) return "tokens";
   if (/request|count/i.test(usageUnit)) return "calls";
   return null;
 }
@@ -529,7 +433,7 @@ function buildInsight(services: GcpBillingService[]): string | undefined {
     .sort((a, b) => b.usageCost - a.usageCost)[0];
   if (newest) {
     const project = newest.projectHint
-      ? `, driven by ${formatUsd(newest.usageCost)} from Project ${newest.projectHint}`
+      ? `; largest contributor: Project ${newest.projectHint}`
       : "";
     return `New charge from ${newest.name} at ${formatUsd(newest.usageCost)}${project}.`;
   }
@@ -787,7 +691,7 @@ function reportFromRows(
         bucket.projects.set(project, (bucket.projects.get(project) ?? 0) + net);
       }
       const day = dayCosts.get(row.day) ?? {};
-      day[row.service] = roundUsd((day[row.service] ?? 0) + net);
+      day[row.service] = (day[row.service] ?? 0) + net;
       dayCosts.set(row.day, day);
     } else if (previousDays.has(row.day)) {
       bucket.previous += net;
@@ -828,7 +732,7 @@ function reportFromRows(
     const name = displaySkuName(bucket.service, bucket.sku);
     const quantity = Math.round(bucket.quantity);
     const existing = list.find((sku) => sku.name === name && sku.unit === bucket.unit);
-    const freeMonthly = skuFreeMonthlyCap(bucket.sku) ?? undefined;
+    const freeMonthly = /places api|maps api/i.test(bucket.service) ? skuFreeMonthlyCap(bucket.sku) ?? undefined : undefined;
     if (existing) existing.quantity += quantity;
     else {
       list.push({
@@ -893,6 +797,16 @@ function reportFromRows(
     date: day.date,
     costs: dayCosts.get(day.date) ?? {},
   }));
+  const latestUsageDate = rows.map((r) => r.day).sort().at(-1);
+  const firstUsageDate = rows.map((r) => r.day).sort()[0];
+  const exportedAt = rows.map((r) => r.exportedAt).filter((v): v is string => Boolean(v)).sort().at(-1);
+  const comparisonAvailable = Boolean(firstUsageDate && firstUsageDate <= window.previousStartDate && rows.some(r => previousDays.has(r.day)));
+  const freshnessNote = [
+    "Provisional net costs after credits, grouped by usage date in UTC; not an invoice total. Google Console daily reports use Pacific time.",
+    exportedAt ? `Export last updated ${exportedAt}.` : "Export update time unavailable.",
+    latestUsageDate ? `Latest exported usage: ${latestUsageDate}; missing days are unreported, not verified zero usage.` : "No exported usage rows in the selected range.",
+    comparisonAvailable ? undefined : "Prior-period export coverage is incomplete; comparison unavailable.",
+  ].filter(Boolean).join(" ");
 
   return {
     accountId: account.id,
@@ -911,8 +825,13 @@ function reportFromRows(
     apiUsageStartDate: mtd.startDate,
     apiUsageEndDate: mtd.endDate,
     days,
-    insight: buildInsight(services),
-    freshnessNote: buildFreshnessNote(window, now),
+    insight: comparisonAvailable ? buildInsight(services) : undefined,
+    freshnessNote,
+    exportedAt,
+    latestUsageDate,
+    comparisonAvailable,
+    error: rows.some(r => currentDays.has(r.day)) ? undefined
+      : `No month-to-date usage rows have been exported. Current costs are unavailable. ${freshnessNote}`,
     period: window.period,
     source: "bigquery",
   };
@@ -956,18 +875,18 @@ async function collectFromBigQuery(
       service.description AS service,
       sku.description AS sku,
       IFNULL(project.name, "") AS project,
-      SUM(cost) AS usage_cost,
+      SUM(cost / IF(currency = 'USD', 1, currency_conversion_rate)) AS usage_cost,
       SUM(IFNULL((
         SELECT SUM(CAST(c.amount AS FLOAT64)) FROM UNNEST(credits) c
-      ), 0)) AS credits,
+      ), 0) / IF(currency = 'USD', 1, currency_conversion_rate)) AS credits,
       SUM(IFNULL(usage.amount, 0)) AS usage_amount,
-      ANY_VALUE(usage.unit) AS usage_unit
+      usage.unit AS usage_unit,
+      CAST(MAX(export_time) AS STRING) AS exported_at
     FROM ${fq}
     WHERE DATE(usage_start_time) BETWEEN @start AND @end
       AND billing_account_id = @account
       AND DATE(export_time) >= DATE_SUB(@start, INTERVAL 5 DAY)
-      AND DATE(export_time) <= DATE_ADD(@end, INTERVAL 14 DAY)
-    GROUP BY 1, 2, 3, 4
+    GROUP BY 1, 2, 3, 4, 8
   `;
 
   const rows = await runBqQuery(
@@ -980,23 +899,32 @@ async function collectFromBigQuery(
     signal,
   );
 
-  const parsed: GcpBillingRow[] = rows.map((cols) => ({
-    day: cols[0] ?? "",
-    service: cols[1] || "Unknown service",
-    sku: cols[2] || "Unknown SKU",
-    project: cols[3] ?? "",
-    usageCost: Number.parseFloat(cols[4] ?? "0") || 0,
-    credits: Number.parseFloat(cols[5] ?? "0") || 0,
-    usageAmount: Number.parseFloat(cols[6] ?? "0") || 0,
-    usageUnit: cols[7] ?? "",
-  }));
+  const parsed: GcpBillingRow[] = rows.map((cols) => {
+    const number = (index: number) => {
+      const value = Number(cols[index]);
+      if (cols[index] == null || cols[index] === "" || !Number.isFinite(value)) {
+        throw new Error("Invalid billing cost or quantity; check export currency conversion rates");
+      }
+      return value;
+    };
+    return {
+      day: cols[0] ?? "",
+      service: cols[1] || "Unknown service",
+      sku: cols[2] || "Unknown SKU",
+      project: cols[3] ?? "",
+      usageCost: number(4),
+      credits: number(5),
+      usageAmount: number(6),
+      usageUnit: cols[7] ?? "",
+      exportedAt: cols[8] || undefined,
+    };
+  });
 
-  const spendDay = latestSpendDay(parsed);
-  if (!spendDay) {
+  if (parsed.length === 0) {
     return unavailableReport(
       account,
       currentMonthToDate(now),
-      "Cloud Billing export is enabled. Daily cost rows have not landed in BigQuery yet.",
+      "No usage rows were returned by the billing export. Current costs are unavailable, not a verified $0.",
     );
   }
 
@@ -1004,14 +932,7 @@ async function collectFromBigQuery(
   return reportFromRows(account, window, parsed, now);
 }
 
-/**
- * Cloud Billing grouped by service. Prefers current-month MTD through the
- * latest day with priced charges. If this month is empty, falls back to that
- * latest month. If this month has some priced rows but a service that billed
- * last month is still $0 (export lag), shows the last 30 days instead so
- * both projects stay on the chart.
- * Returns null when Google creds are unset.
- */
+/** Provisional month-to-date usage costs, including zero-cost rows and corrections. */
 export async function collectGcpBilling(): Promise<GcpBillingReport | null> {
   try {
     const account = billingAccount();

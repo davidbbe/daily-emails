@@ -141,3 +141,59 @@ for (const failure of ["http", "repeated-token", "row-count", "deadline"] as con
     assert.deepEqual(report?.services, []);
   });
 }
+
+test("zero-cost exports retain MTD, usage, and freshness without claiming pricing lag", async (t) => {
+  setup(t);
+  const free = row(0);
+  free.f[1].v = "Places API (New)";
+  free.f[2].v = "Nearby Search Enterprise";
+  free.f[6].v = "42";
+  free.f.push({ v: "2026-10-03 03:40:26+00" });
+  t.mock.method(globalThis, "fetch", async () => Response.json({ jobComplete:true, rows:[free] }));
+  const report = await collectGcpBilling();
+  assert.equal(report?.error, undefined);
+  assert.equal(report?.total, 0);
+  assert.equal(report?.period, "month_to_date");
+  assert.equal(report?.apiUsage[0].skus[0].quantity, 42);
+  assert.match(report?.freshnessNote ?? "", /Export last updated/);
+  assert.doesNotMatch(report?.freshnessNote ?? "", /still being priced/);
+});
+
+test("fractional billing rows reconcile with the chart and negative credits survive", async (t) => {
+  setup(t);
+  const rows = Array.from({length:100},()=>row(0.004));
+  const adjustment = row(0);
+  adjustment.f[5].v = "-0.1";
+  rows.push(adjustment);
+  t.mock.method(globalThis, "fetch", async (_input:unknown, init:RequestInit)=> {
+    const query = JSON.parse(String(init.body)).query;
+    assert.match(query,/currency_conversion_rate/);
+    assert.doesNotMatch(query,/DATE\(export_time\) <=/);
+    assert.match(query,/MAX\(export_time\)/);
+    return Response.json({jobComplete:true,rows});
+  });
+  const report = await collectGcpBilling();
+  assert.equal(report?.total, 0.3);
+  const plotted = report!.days.reduce((sum,d)=>sum+Object.values(d.costs).reduce((s,n)=>s+n,0),0);
+  assert.ok(Math.abs(plotted-0.3)<1e-9);
+  assert.equal(report?.savings,0.1);
+  assert.equal(report?.comparisonAvailable,false);
+});
+
+test("Gemini image input/output billing units are tokens and unknown currency costs fail visibly", async (t)=> {
+  setup(t);
+  const r=row(0.1);r.f[1].v="Gemini API";r.f[2].v="Gemini 3.1 Flash Image Image Output";r.f[7].v="count";
+  t.mock.method(globalThis,"fetch",async()=>Response.json({jobComplete:true,rows:[r]}));
+  const report=await collectGcpBilling();
+  assert.equal(report?.apiUsage[0].skus[0].unit,"tokens");
+  assert.equal(report?.apiUsage[0].calls,null);
+  r.f[4].v="";
+  assert.ok((await collectGcpBilling())?.error);
+});
+
+test("historical rows cannot become a verified zero-cost current month",async t=> {
+  setup(t);
+  const old=row(5);old.f[0].v=new Date(Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth(),0)).toISOString().slice(0,10);
+  t.mock.method(globalThis,"fetch",async()=>Response.json({jobComplete:true,rows:[old]}));
+  assert.match((await collectGcpBilling())?.error ?? "",/No month-to-date usage rows/);
+});

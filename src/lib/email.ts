@@ -641,42 +641,7 @@ function billingChangeColor(delta: number | null) {
   return "#64748b";
 }
 
-function niceCostTicks(maxCost: number): number[] {
-  const padded = Math.max(0.5, maxCost * 1.05);
-  if (padded <= 2.2) return [0, 0.5, 1, 1.5, 2];
-  if (padded <= 5) return [0, 1, 2, 3, 4, 5].filter((n) => n <= Math.ceil(padded));
-  const rawStep = padded / 4;
-  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
-  const residual = rawStep / magnitude;
-  const step =
-    residual <= 1.5
-      ? magnitude
-      : residual <= 3
-        ? 2 * magnitude
-        : residual <= 7
-          ? 5 * magnitude
-          : 10 * magnitude;
-  const top = Math.ceil(padded / step) * step;
-  const ticks: number[] = [];
-  for (let v = 0; v <= top + step / 2; v += step) {
-    ticks.push(Math.round(v * 100) / 100);
-  }
-  return ticks;
-}
-
-function formatAxisUsd(value: number) {
-  if (value === 0) return "$0";
-  const decimals = value >= 10 && Number.isInteger(value) ? 0 : 1;
-  return `$${value.toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
-function serviceMarker(service: {
-  color: string;
-  marker: "circle" | "square";
-}) {
+function serviceMarker(service: { color: string; marker: "circle" | "square" }) {
   const radius = service.marker === "circle" ? "999px" : "2px";
   return `<span style="display:inline-block;width:10px;height:10px;border-radius:${radius};background:${service.color};vertical-align:middle;margin-right:8px;"></span>`;
 }
@@ -685,134 +650,58 @@ function dayTotal(day: GcpBillingReport["days"][number]) {
   return Object.values(day.costs ?? {}).reduce((sum, n) => sum + n, 0);
 }
 
+/** Short dated rows stay readable on phones; amounts remain available without CSS. */
 function renderGcpBillingChart(report: GcpBillingReport) {
   const days = report.days ?? [];
-  if (days.length === 0) {
-    return `<div style="font-size:12px;color:#94a3b8;font-style:italic;">No daily cost data.</div>`;
+  if (days.length === 0) return `<div style="font-size:13px;color:#64748b;">No daily cost data.</div>`;
+  const grouped = days.length > 14;
+  const buckets: Array<{ start: string; end: string; total: number; reported: number; count: number }> = [];
+  for (let i = 0; i < days.length; i += grouped ? 7 : 1) {
+    const slice = days.slice(i, i + (grouped ? 7 : 1));
+    buckets.push({ start:slice[0].date, end:slice.at(-1)!.date, total:slice.reduce((s,d)=>s+dayTotal(d),0),
+      reported:slice.filter(d=>Object.keys(d.costs ?? {}).length > 0).length, count:slice.length });
   }
-
-  const maxDay = Math.max(...days.map(dayTotal), 0);
-  const ticks = niceCostTicks(maxDay);
-  const axisMax = ticks[ticks.length - 1] ?? 2;
-  const chartH = 148;
-  const yTicksTopFirst = [...ticks].reverse();
-
-  const yLabels = yTicksTopFirst
-    .map((tick, index) => {
-      const isLast = index === yTicksTopFirst.length - 1;
-      return `<tr>
-        <td style="height:${Math.floor(chartH / yTicksTopFirst.length)}px;vertical-align:${isLast ? "bottom" : "top"};font-size:10px;font-weight:600;color:#94a3b8;text-align:right;padding:0 8px 0 0;white-space:nowrap;">${formatAxisUsd(tick)}</td>
-      </tr>`;
-    })
-    .join("");
-
-  const labelEvery = days.length > 20 ? 3 : 1;
-  const colWidth = `${(100 / days.length).toFixed(2)}%`;
-  const bars = days
-    .map((day) => {
-      const visible = (report.services ?? []).filter(
-        (service) => (day.costs?.[service.name] ?? 0) > 0,
-      );
-      const segments = visible
-        .map((service, segmentIndex) => {
-          const cost = day.costs[service.name] ?? 0;
-          const height = Math.max(3, Math.round((cost / axisMax) * chartH));
-          const radius =
-            segmentIndex === 0 ? "3px 3px 0 0" : "0";
-          return `<div style="height:${height}px;background:${service.color};border-radius:${radius};line-height:1px;font-size:1px;">&nbsp;</div>`;
-        })
-        .join("");
-      return `<td style="padding:0 1px;vertical-align:bottom;width:${colWidth};">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="height:${chartH}px;">
-          <tr>
-            <td style="vertical-align:bottom;height:${chartH}px;">${segments}</td>
-          </tr>
-        </table>
-      </td>`;
-    })
-    .join("");
-  const xLabels = days
-    .map((day, index) => {
-      const showLabel =
-        index % labelEvery === 0 || index === days.length - 1;
-      const dayNum = Number(day.date.slice(8, 10));
-      return `<td style="padding:6px 1px 0 1px;width:${colWidth};font-size:9px;font-weight:600;color:#94a3b8;text-align:center;line-height:1;">${showLabel ? dayNum : "&nbsp;"}</td>`;
-    })
-    .join("");
-
-  const legend = (report.services ?? [])
-    .map(
-      (service) =>
-        `<span style="display:inline-block;margin:0 12px 0 0;font-size:12px;font-weight:600;color:#334155;">${serviceMarker(service)}${escapeHtml(service.name)}</span>`,
-    )
-    .join("");
-
-  const intervalPct = 100 / Math.max(1, ticks.length - 1);
-
-  return `<div style="margin-top:4px;">
-    <div style="margin:0 0 10px 0;">${legend}</div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr>
-        <td style="width:36px;vertical-align:top;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="height:${chartH}px;">${yLabels}</table>
-        </td>
-        <td style="vertical-align:bottom;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="height:${chartH}px;background-color:#f8fafc;background-image:linear-gradient(to top, #e2e8f0 1px, transparent 1px);background-size:100% ${intervalPct}%;border:1px solid #e2e8f0;border-radius:8px;">
-            <tr>${bars}</tr>
-          </table>
-        </td>
-      </tr>
-      <tr>
-        <td style="width:36px;"></td>
-        <td>
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-            <tr>${xLabels}</tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </div>`;
+  const max = Math.max(...buckets.map(b=>Math.abs(b.total)), 0.01);
+  const shortDate = (iso:string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"});
+  const rows = buckets.map(b=> {
+    const width = Math.min(100, Math.max(0, Math.abs(b.total)/max*100));
+    const negative = b.total < 0;
+    const label = b.start === b.end ? shortDate(b.start) : `${shortDate(b.start)}–${shortDate(b.end)}`;
+    const missing = b.reported < b.count;
+    return `<tr>
+      <td style="width:104px;padding:7px 8px 7px 0;font-size:12px;font-weight:600;line-height:1.4;color:#334155;">${escapeHtml(label)}</td>
+      <td style="padding:7px 4px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;border-radius:4px;"><tr>
+          ${width > 0 ? `<td width="${width.toFixed(3)}%" style="height:14px;background:${negative ? "#047857" : "#2563eb"};border-radius:4px;font-size:1px;line-height:1px;">&nbsp;</td>` : ""}
+          ${width < 100 ? `<td style="height:14px;font-size:1px;line-height:1px;">&nbsp;</td>` : ""}
+        </tr></table>
+      </td>
+      <td style="width:86px;padding:7px 0 7px 8px;text-align:right;font-size:13px;font-weight:700;color:${negative ? "#047857" : "#0f172a"};white-space:nowrap;">${b.reported === 0 ? "Unreported" : formatUsd(b.total)}${missing && b.reported > 0 ? "*" : ""}</td>
+    </tr>`;
+  }).join("");
+  return `<div style="font-size:14px;font-weight:700;color:#0f172a;padding-bottom:8px;">${grouped ? "Weekly" : "Daily"} net cost · USD</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+    <div style="padding-top:8px;font-size:12px;line-height:1.5;color:#64748b;">Blue: net charges · Green: net credits. ${grouped ? "Seven-day groups; the last group may be shorter. " : ""}Bars show magnitude; labels retain the sign. ${buckets.some(b=>b.reported<b.count) ? "* Export rows are missing for some dates; totals include reported costs only." : ""}</div>`;
 }
 
 function renderGcpBillingServices(report: GcpBillingReport) {
-  if ((report.services ?? []).length === 0) {
-    return `<div style="font-size:13px;color:#94a3b8;font-style:italic;">No service charges this month.</div>`;
-  }
-
-  const rows = (report.services ?? [])
-    .map((service) => {
-      const delta = billingPercentChange(service.usageCost, service.previousCost);
-      const color = billingChangeColor(delta);
-      const calls =
-        service.calls != null && service.calls > 0
-          ? formatCallCount(service.calls)
-          : "—";
-      return `<tr>
-        <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:middle;">
-          <div style="font-size:14px;font-weight:600;color:#0f172a;">${serviceMarker(service)}${escapeHtml(service.name)}</div>
-        </td>
-        <td style="padding:10px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;text-align:right;white-space:nowrap;">
-          <div style="font-size:14px;font-weight:700;color:#0f172a;">${calls}</div>
-        </td>
-        <td style="padding:10px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;text-align:right;white-space:nowrap;">
-          <div style="font-size:14px;font-weight:700;color:#0f172a;">${formatUsd(service.usageCost)}</div>
-        </td>
-        <td style="padding:10px 0 10px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;text-align:right;white-space:nowrap;">
-          <div style="font-size:13px;font-weight:700;color:${color};">${formatChangePercent(delta)}</div>
-        </td>
-      </tr>`;
-    })
-    .join("");
-
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-    <tr>
-      <td style="padding:0 0 8px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;">Service</td>
-      <td style="padding:0 8px 8px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;text-align:right;">MTD calls</td>
-      <td style="padding:0 8px 8px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;text-align:right;">Usage cost</td>
-      <td style="padding:0 0 8px 8px;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;text-align:right;">% Change</td>
-    </tr>
-    ${rows}
-  </table>`;
+  if ((report.services ?? []).length === 0) return `<div style="font-size:13px;color:#64748b;">No net service charges in the exported rows.</div>`;
+  const rows = report.services.map(service => {
+    const delta = billingPercentChange(service.usageCost, service.previousCost);
+    const comparison = report.comparisonAvailable === false ? "Comparison unavailable" : `${formatChangePercent(delta)} vs prior period`;
+    return `<tr>
+      <td style="padding:12px 8px 12px 0;border-bottom:1px solid #e2e8f0;vertical-align:top;">
+        <div style="font-size:14px;font-weight:600;color:#0f172a;">${serviceMarker(service)}${escapeHtml(service.name)}</div>
+        ${service.projectHint ? `<div style="padding-top:3px;font-size:12px;line-height:1.4;color:#64748b;">Largest contributor: ${escapeHtml(service.projectHint)}</div>` : ""}
+      </td>
+      <td style="padding:12px 0;border-bottom:1px solid #e2e8f0;text-align:right;vertical-align:top;">
+        <div style="font-size:16px;font-weight:700;color:#0f172a;white-space:nowrap;">${formatUsd(service.usageCost)}</div>
+        <div style="padding-top:3px;font-size:12px;line-height:1.4;color:${report.comparisonAvailable === false ? "#64748b" : billingChangeColor(delta)};">${escapeHtml(comparison)}</div>
+      </td>
+    </tr>`;
+  }).join("");
+  return `<div style="font-size:14px;font-weight:700;color:#0f172a;padding-top:12px;">Net cost by service</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>`;
 }
 
 function renderGcpBillingApiCalls(report: GcpBillingReport) {
@@ -830,9 +719,9 @@ function renderGcpBillingApiCalls(report: GcpBillingReport) {
   );
 
   return `<div style="margin-top:4px;padding-top:12px;border-top:1px solid #e2e8f0;">
-    <div style="padding:0 0 2px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;">API calls this month</div>
+    <div style="padding:0 0 2px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;">Billed usage this month</div>
     <div style="padding:0 0 8px 0;font-size:12px;line-height:1.45;color:#64748b;">
-      ${escapeHtml(range)} · from the 1st, including $0 usage. Places Enterprise / Photos are free for the first 1,000 calls; Google bills overage after month end.
+      ${escapeHtml(range)} · from the 1st, including $0 usage. SKU quantities include free usage and can differ from request counts. Free-event allowances shown are standard pricing references; account pricing can differ.
     </div>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
       ${body}
@@ -848,7 +737,7 @@ function skuQuantityColor(quantity: number, freeMonthly: number | undefined, isF
 function renderGcpBillingApiCallGroup(group: GcpBillingApiUsage) {
   const total =
     group.calls != null && group.calls > 0
-      ? `${formatCallCount(group.calls)} calls`
+      ? `${formatCallCount(group.calls)} billed events`
       : "";
   const skuRows = group.skus
     .map((sku, index) => {
@@ -899,7 +788,7 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
     </tr>`;
   }
 
-  const delta = billingPercentChange(report.total, report.previousTotal);
+  const delta = report.comparisonAvailable === false ? null : billingPercentChange(report.total, report.previousTotal);
   const deltaColorValue = billingChangeColor(delta);
   const deltaAbs =
     report.previousTotal > 0 ? formatUsd(report.total - report.previousTotal) : "";
@@ -909,15 +798,15 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
     report.previousEndDate,
   );
   const heroChange =
-    delta === null
+    report.comparisonAvailable === false ? "Comparison unavailable" : delta === null
       ? "New"
       : `${formatHeroChangePercent(delta)}${deltaAbs ? ` (${delta > 0 ? "+" : ""}${deltaAbs})` : ""}`;
 
   const intro =
     report.period === "latest_month"
-      ? `Latest available month for ${escapeHtml(report.accountLabel)}, grouped by service (same days prior month). API calls are counted from the 1st of this month.`
+      ? `Latest available month for ${escapeHtml(report.accountLabel)}, grouped by service (same days prior month). Billed usage is counted from the 1st of this month.`
       : report.period === "trailing"
-        ? `Last ${TRAILING_BILLING_DAYS} days for ${escapeHtml(report.accountLabel)}, grouped by service (prior ${TRAILING_BILLING_DAYS} days). API calls are counted from the 1st of this month.`
+        ? `Last ${TRAILING_BILLING_DAYS} days for ${escapeHtml(report.accountLabel)}, grouped by service (prior ${TRAILING_BILLING_DAYS} days). Billed usage is counted from the 1st of this month.`
         : `Month to date for ${escapeHtml(report.accountLabel)}, grouped by service (same days last month).`;
 
   return `${sectionLabel("Google Cloud Billing")}
@@ -940,7 +829,7 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
                 <tr>
                   <td style="vertical-align:middle;">
                     <div style="font-size:17px;font-weight:700;color:#0f172a;">${escapeHtml(report.accountLabel)}</div>
-                    <div style="margin-top:3px;font-size:12px;color:#64748b;">${escapeHtml(range)}</div>
+                    <div style="margin-top:3px;font-size:12px;color:#64748b;">${escapeHtml(range)} · UTC</div>
                   </td>
                   <td style="vertical-align:middle;text-align:right;">
                     <a href="${escapeHtml(report.reportsUrl)}" style="display:inline-block;font-size:12px;font-weight:700;color:#1a73e8;text-decoration:none;">Open report →</a>
@@ -951,6 +840,7 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
           </tr>
           <tr>
             <td style="padding:8px 18px 4px 18px;">
+              <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;padding-bottom:5px;">Net cost after credits · USD</div>
               <div style="font-size:32px;line-height:1.1;font-weight:750;letter-spacing:-0.03em;color:#0f172a;">${formatUsd(report.total)}</div>
               <div style="margin-top:8px;font-size:14px;font-weight:700;color:${deltaColorValue};">
                 ${escapeHtml(heroChange)}
@@ -992,6 +882,9 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
 
 function usageWatchSummary(usage: UsageReport) {
   if (usage.metrics.length === 0) return "Usage readings are unavailable.";
+  if (usage.metrics.some((m) => m.limitBasis === "unknown")) {
+    return `No verified quota or budget readings are at or above ${usage.thresholdPercent}%. Some caps are unverified${usage.metrics.some(m => !m.available) ? " and some readings are unavailable" : ""}.`;
+  }
   return usage.metrics.some((m) => !m.available)
     ? `No available quota readings are at or above ${usage.thresholdPercent}%. Some usage readings are unavailable.`
     : `All tracked quotas with a cap are under ${usage.thresholdPercent}% of their limits.`;
@@ -999,7 +892,7 @@ function usageWatchSummary(usage: UsageReport) {
 
 function renderUsageWatch(usage: UsageReport) {
   if (usage.watch.length === 0) {
-    const incomplete = usage.metrics.length === 0 || usage.metrics.some((m) => !m.available);
+    const incomplete = usage.metrics.length === 0 || usage.metrics.some((m) => !m.available || m.limitBasis === "unknown");
     const color = incomplete ? "#92400e" : "#047857";
     const background = incomplete ? "#fffbeb" : "#ecfdf5";
     const border = incomplete ? "#fde68a" : "#a7f3d0";
@@ -1047,10 +940,10 @@ function renderUsageWatch(usage: UsageReport) {
 }
 
 function renderUsageRow(m: UsageMetric) {
-  const color = percentColor(m.percent, m.available);
-  const pct = !m.available ? "—" : m.limit == null ? "No cap" : `${m.percent}%`;
+  const color = m.limitBasis === "unknown" ? "#64748b" : percentColor(m.percent, m.available);
+  const pct = !m.available ? "—" : m.limitBasis === "unknown" ? "Cap unverified" : m.limit == null ? "No cap" : `${m.percent}%${m.limitBasis === "budget" ? " of budget" : ""}`;
   const usedLimit = m.available
-    ? `${formatMetricUsed(m)} / ${formatMetricLimit(m)}`
+    ? m.limitBasis === "unknown" ? formatMetricUsed(m) : `${formatMetricUsed(m)} / ${formatMetricLimit(m)}`
     : "n/a";
   const fill = Math.min(100, Math.max(0, m.percent));
   const progress = m.available && m.limit != null
@@ -1058,7 +951,7 @@ function renderUsageRow(m: UsageMetric) {
     : "";
   return `<tr>
     <td class="usage-label" style="padding:12px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
-      <div style="font-size:14px;font-weight:600;color:#0f172a;">${escapeHtml(m.label)}</div>
+      <div style="font-size:14px;font-weight:600;color:#0f172a;">${escapeHtml(m.label)}${m.source === "cached" ? ` <span style="font-size:11px;color:#92400e;">CACHED</span>` : ""}</div>
       <div style="margin-top:2px;font-size:12px;line-height:1.45;color:#64748b;">${escapeHtml(m.detail)}</div>
       ${progress}
     </td>
@@ -1128,17 +1021,28 @@ function renderUsageTable(opts: {
 
 function renderUsageReport(usage: UsageReport) {
   const { vercel, resend } = splitUsageMetrics(usage.metrics);
+  const gateway = vercel.filter(m => m.id === "ai-gateway");
+  const store = vercel.filter(m => m.id === "blob-storage");
+  const platform = vercel.filter(m => m.id !== "ai-gateway" && m.id !== "blob-storage");
   const vercelLogo = `<img src="https://assets.vercel.com/image/upload/q_auto/front/assets/design/vercel-triangle-black.png" width="16" height="14" alt="" style="display:block;border:0;outline:none;text-decoration:none;width:16px;height:14px;" />`;
   const resendLogo = `<img src="https://cdn.resend.com/brand/resend-wordmark-black.png" width="78" height="18" alt="Resend" style="display:block;border:0;outline:none;text-decoration:none;width:78px;height:18px;" />`;
 
   return `
     ${renderUsageTable({
+      headerHtml: renderUsageBrandHeader({ logoHtml: vercelLogo, title: "AI Gateway", subtitle: "Account spend · Credit balance" }),
+      metrics: gateway,
+    })}
+    ${renderUsageTable({
       headerHtml: renderUsageBrandHeader({
         logoHtml: vercelLogo,
-        title: "Vercel",
-        subtitle: "Gateway · Transfer · Blob",
+        title: "Vercel platform",
+        subtitle: "Team usage · All projects",
       }),
-      metrics: vercel,
+      metrics: platform,
+    })}
+    ${renderUsageTable({
+      headerHtml: renderUsageBrandHeader({ logoHtml: vercelLogo, title: "Connected Blob store", subtitle: "Current snapshot" }),
+      metrics: store,
     })}
     ${renderUsageTable({
       headerHtml: renderUsageBrandHeader({
@@ -1562,7 +1466,7 @@ export function renderOperationsText(report: OperationsReport) {
       } else {
         const delta = billingPercentChange(billing.total, billing.previousTotal);
         const hero =
-          delta === null
+          billing.comparisonAvailable === false ? "Comparison unavailable" : delta === null
             ? "New"
             : `${formatHeroChangePercent(delta)} (${formatUsd(billing.total - billing.previousTotal)})`;
         lines.push(`  Total: ${formatUsd(billing.total)} ${hero}`);
@@ -1580,15 +1484,12 @@ export function renderOperationsText(report: OperationsReport) {
           }
         };
         lines.push(
-          `  API calls this month ${formatBillingRange(billing.apiUsageStartDate, billing.apiUsageEndDate)} (from the 1st)`,
+          `  Billed usage this month ${formatBillingRange(billing.apiUsageStartDate, billing.apiUsageEndDate)} (from the 1st)`,
         );
         for (const service of billing.services) {
-          const serviceDelta = billingPercentChange(
-            service.usageCost,
-            service.previousCost,
-          );
+          const serviceDelta = billingPercentChange(service.usageCost, service.previousCost);
           lines.push(
-            `  - ${service.name}: ${formatUsd(service.usageCost)} (${formatChangePercent(serviceDelta)})${service.calls ? ` · ${formatCallCount(service.calls)} calls` : ""}`,
+            `  - ${service.name}: ${formatUsd(service.usageCost)} (${billing.comparisonAvailable === false ? "Comparison unavailable" : formatChangePercent(serviceDelta)})${service.calls ? ` · ${formatCallCount(service.calls)} billed events` : ""}`,
           );
           const group = (billing.apiUsage ?? []).find((g) => g.name === service.name);
           if (group) {
@@ -1599,7 +1500,7 @@ export function renderOperationsText(report: OperationsReport) {
         for (const group of billing.apiUsage ?? []) {
           if (listed.has(group.name)) continue;
           lines.push(
-            `  - ${group.name}${group.calls ? `: ${formatCallCount(group.calls)} calls` : ""}`,
+            `  - ${group.name}${group.calls ? `: ${formatCallCount(group.calls)} billed events` : ""}`,
           );
           skuLines(group);
         }
@@ -1637,7 +1538,7 @@ export function renderOperationsText(report: OperationsReport) {
         continue;
       }
       lines.push(
-        `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.limit == null ? "No cap" : `${m.percent}%`})`,
+        `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.limitBasis === "unknown" ? "Cap unverified" : m.limit == null ? "No cap" : `${m.percent}%${m.limitBasis === "budget" ? " of budget" : ""}`})`,
       );
       lines.push(`  ${m.detail}`);
     }
@@ -1650,7 +1551,7 @@ export function renderOperationsText(report: OperationsReport) {
         continue;
       }
       lines.push(
-        `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.limit == null ? "No cap" : `${m.percent}%`})`,
+        `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.limitBasis === "unknown" ? "Cap unverified" : m.limit == null ? "No cap" : `${m.percent}%${m.limitBasis === "budget" ? " of budget" : ""}`})`,
       );
       lines.push(`  ${m.detail}`);
     }

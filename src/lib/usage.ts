@@ -9,7 +9,6 @@ import {
   AI_GATEWAY_MONTHLY_BUDGET_USD,
   BLOB_HOBBY_ADVANCED_OPS,
   BLOB_HOBBY_SIMPLE_OPS,
-  BLOB_HOBBY_STORAGE_BYTES,
   HOBBY_EDGE_REQUESTS,
   HOBBY_FAST_DATA_TRANSFER_BYTES,
   HOBBY_FUNCTION_INVOCATIONS,
@@ -32,6 +31,9 @@ export type UsageMetric = {
   /** False when the metric could not be collected */
   available: boolean;
   error?: string;
+  /** Unverified plan limits must never be presented as provider caps. */
+  limitBasis?: "provider" | "budget" | "unknown";
+  source?: "live" | "cached";
 };
 
 export type UsageReport = {
@@ -99,7 +101,7 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1000 * 1000 * 1000)).toFixed(2)} GB`;
 }
 
-async function collectAiGateway(): Promise<UsageMetric> {
+export async function collectAiGateway(now = new Date()): Promise<UsageMetric> {
   const budget = gatewayBudgetUsd();
   try {
     const gateway = createGateway({
@@ -111,32 +113,42 @@ async function collectAiGateway(): Promise<UsageMetric> {
         ]),
       }),
     });
-    const credits = await gateway.getCredits();
-    const balance = Number.parseFloat(credits.balance);
-    const totalUsed = Number.parseFloat(credits.totalUsed);
-
-    if (!Number.isFinite(balance) || !Number.isFinite(totalUsed)) {
+    const startDate = `${now.toISOString().slice(0, 7)}-01`;
+    const endDate = now.toISOString().slice(0, 10);
+    const [credits, spend] = await Promise.allSettled([
+      gateway.getCredits(),
+      gateway.getSpendReport({ startDate, endDate, groupBy: "day" }),
+    ]);
+    const balance = credits.status === "fulfilled" ? Number(credits.value.balance) : NaN;
+    const totalUsed = credits.status === "fulfilled" ? Number(credits.value.totalUsed) : NaN;
+    const creditsNote = Number.isFinite(balance) && Number.isFinite(totalUsed)
+      ? `${formatUsd(balance)} credit balance · ${formatUsd(totalUsed)} lifetime spend`
+      : "Credit balance unavailable";
+    if (spend.status === "rejected") {
+      const reason = spend.reason instanceof Error ? spend.reason.message : "Spend report unavailable";
       return unavailable(
         "ai-gateway",
-        "AI Gateway credits",
+        "AI Gateway month-to-date spend",
         budget,
         "USD",
-        "Could not parse Gateway credit response",
+        `${creditsNote} · Monthly spend unavailable: ${reason} Credit balance is not a monthly spend measurement.`,
       );
     }
 
-    // Free monthly pool: used ≈ budget − remaining. Purchased credits
-    // (balance > budget) mean the free allowance is not under pressure.
-    const usedTowardBudget =
-      balance >= budget ? 0 : Math.max(0, budget - balance);
+    const usedTowardBudget = spend.value.results.reduce((sum, row) => sum + row.totalCost, 0);
+    if (!Number.isFinite(usedTowardBudget) || usedTowardBudget < 0) {
+      throw new Error("Invalid Gateway spend report");
+    }
 
     return metric({
       id: "ai-gateway",
-      label: "AI Gateway credits",
+      label: "AI Gateway month-to-date spend",
       used: usedTowardBudget,
       limit: budget,
       unit: "USD",
-      detail: `${formatUsd(balance)} remaining · ${formatUsd(totalUsed)} lifetime used · ${formatUsd(budget)}/mo free budget`,
+      detail: `${startDate}–${endDate} UTC · Gateway account total · ${creditsNote} · ${formatUsd(budget)} configured monthly budget; not a provider cap`,
+      limitBasis: "budget",
+      source: "live",
       available: true,
     });
   } catch (error) {
@@ -161,7 +173,7 @@ function canUseBlob() {
 }
 
 async function collectBlobStorage(): Promise<UsageMetric> {
-  const limit = BLOB_HOBBY_STORAGE_BYTES;
+  const limit = null;
   const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
   if (!canUseBlob()) {
     return unavailable(
@@ -177,6 +189,8 @@ async function collectBlobStorage(): Promise<UsageMetric> {
     let cursor: string | undefined;
     let totalBytes = 0;
     let blobCount = 0;
+    const signal = AbortSignal.timeout(20_000);
+    const cursors = new Set<string>();
 
     do {
       // Pass token explicitly — with BLOB_STORE_ID set locally, the SDK can
@@ -184,23 +198,28 @@ async function collectBlobStorage(): Promise<UsageMetric> {
       const page = await list({
         cursor,
         limit: 1000,
-        abortSignal: AbortSignal.timeout(10_000),
+        abortSignal: signal,
         ...(token ? { token } : {}),
       });
       for (const blob of page.blobs) {
+        if (!Number.isFinite(blob.size) || blob.size < 0) throw new Error("Invalid Blob object size");
         totalBytes += blob.size;
         blobCount += 1;
       }
       cursor = page.hasMore ? page.cursor : undefined;
+      if (page.hasMore && (!cursor || cursors.has(cursor))) throw new Error("Incomplete Blob listing");
+      if (cursor) cursors.add(cursor);
     } while (cursor);
 
     return metric({
       id: "blob-storage",
-      label: "Blob storage",
+      label: "Blob storage · connected store",
       used: totalBytes,
       limit,
       unit: "bytes",
-      detail: `${formatBytes(totalBytes)} across ${blobCount} object${blobCount === 1 ? "" : "s"} · Hobby included ${formatBytes(limit)}`,
+      detail: `${formatBytes(totalBytes)} across ${blobCount} object${blobCount === 1 ? "" : "s"} · current snapshot of this store; excludes other team stores and is not Vercel’s billed storage average`,
+      limitBasis: "unknown",
+      source: "live",
       available: true,
     });
   } catch (error) {
@@ -402,6 +421,7 @@ export function formatMetricUsed(m: UsageMetric) {
 }
 
 export function formatMetricLimit(m: UsageMetric) {
+  if (m.limitBasis === "unknown") return "Cap unverified";
   if (m.limit == null) return "No cap";
   if (m.unit === "USD") return formatUsd(m.limit);
   if (m.unit === "bytes") return formatBytes(m.limit);
@@ -441,9 +461,10 @@ type UsageApiResponse = {
   lastUpdate?: string;
 };
 
-function usageWindow() {
-  const to = new Date();
-  const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+function usageWindow(now = new Date()) {
+  const midnight = new Date(`${now.toISOString().slice(0, 10)}T00:00:00Z`);
+  const to = new Date(midnight.getTime() - 1);
+  const from = new Date(midnight.getTime() - 30 * 24 * 60 * 60 * 1000);
   return {
     from: from.toISOString(),
     to: to.toISOString(),
@@ -514,28 +535,42 @@ async function vercelApiGetJson(apiPath: string): Promise<unknown> {
   });
 }
 
-async function fetchUsageType(type: string): Promise<UsageApiResponse> {
-  const teamId = resolveTeamId();
+async function fetchUsageType(type: string, teamId: string, window: ReturnType<typeof usageWindow>): Promise<UsageApiResponse> {
   if (!teamId) {
     throw new Error(
       "Set VERCEL_TEAM_ID (or link the project so .vercel/project.json has orgId)",
     );
   }
-  const { from, to } = usageWindow();
+  const { from, to } = window;
   const qs = new URLSearchParams({
     teamId,
     type,
     from,
     to,
   });
-  return (await vercelApiGetJson(`/v2/usage?${qs.toString()}`)) as UsageApiResponse;
+  const result = await vercelApiGetJson(`/v2/usage?${qs.toString()}`);
+  const parsed = z.object({ data: z.array(z.record(z.string(), z.unknown())), lastUpdate: z.string().optional() }).safeParse(result);
+  if (!parsed.success) throw new Error(`Invalid Vercel ${type} response; usage unavailable`);
+  const dates = new Set<string>();
+  const data = parsed.data.data.filter(day => {
+    if (typeof day.date !== "string" || !Number.isFinite(Date.parse(day.date))) throw new Error("Invalid Vercel usage date");
+    const date = day.date.slice(0, 10);
+    if (date < from.slice(0, 10) || date > to.slice(0, 10)) return false;
+    if (dates.has(date)) throw new Error("Duplicate Vercel daily bucket");
+    dates.add(date);
+    return true;
+  });
+  if (dates.size !== 30) throw new Error("Vercel returned incomplete daily buckets");
+  return { ...parsed.data, data };
 }
 
 function sumField(days: UsageApiDay[], field: keyof UsageApiDay) {
+  if (days.length === 0) return null;
   let total = 0;
   for (const day of days) {
     const value = day[field];
-    if (typeof value === "number" && Number.isFinite(value)) total += value;
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+    total += value;
   }
   return total;
 }
@@ -546,6 +581,9 @@ const LEGACY_PLATFORM_BLOB_PATHNAME = "agent-dave/platform-usage.json";
 
 type PlatformUsageCache = {
   updatedAt: string;
+  teamId: string;
+  from: string;
+  to: string;
   metrics: Array<{
     id: string;
     label: string;
@@ -553,6 +591,8 @@ type PlatformUsageCache = {
     limit: number | null;
     unit: string;
     detail: string;
+    limitBasis?: UsageMetric["limitBasis"];
+    available: boolean;
   }>;
 };
 
@@ -596,15 +636,18 @@ function platformUnavailable(reason: string): UsageMetric[] {
   ];
 }
 
-async function loadPlatformUsageCache(): Promise<UsageMetric[] | null> {
-  if (!canUseBlob()) return null;
+/** Validate scope and observation age before trusting a fallback. */
+export function parsePlatformUsageCache(text: string, teamId: string, now = new Date()): UsageMetric[] | null {
   try {
-    const text =
-      (await getBlobText(PLATFORM_BLOB_PATHNAME)) ??
-      (await getBlobText(LEGACY_PLATFORM_BLOB_PATHNAME));
-    if (!text) return null;
     const cached = JSON.parse(text) as PlatformUsageCache;
-    if (!Array.isArray(cached.metrics) || cached.metrics.length === 0) {
+    const age = now.getTime() - Date.parse(cached.updatedAt);
+    if (cached.teamId !== teamId || !Number.isFinite(age) || age < 0 || age >= 24 * 60 * 60 * 1000 ||
+        !Number.isFinite(Date.parse(cached.from)) || !Number.isFinite(Date.parse(cached.to)) || Date.parse(cached.to) > Date.parse(cached.updatedAt) ||
+        Date.parse(cached.from) >= Date.parse(cached.to) ||
+        !Array.isArray(cached.metrics) || cached.metrics.length === 0 ||
+        cached.metrics.some(m => !m || typeof m.available !== "boolean" || !Number.isFinite(m.used) || m.used < 0 ||
+          (m.limit !== null && (!Number.isFinite(m.limit) || m.limit < 0)) || typeof m.detail !== "string" ||
+          typeof m.id !== "string" || typeof m.label !== "string" || typeof m.unit !== "string")) {
       return null;
     }
     const asOf = cached.updatedAt
@@ -618,21 +661,39 @@ async function loadPlatformUsageCache(): Promise<UsageMetric[] | null> {
         limit: m.limit,
         unit: m.unit,
         detail: `${m.detail}${asOf}`,
-        available: true,
+        available: m.available,
+        limitBasis: m.limitBasis,
+        source: "cached",
       }),
     );
+  } catch {
+    return null;
+  }
+}
+
+async function loadPlatformUsageCache(teamId: string, now: Date): Promise<UsageMetric[] | null> {
+  if (!canUseBlob()) return null;
+  try {
+    const text =
+      (await getBlobText(PLATFORM_BLOB_PATHNAME)) ??
+      (await getBlobText(LEGACY_PLATFORM_BLOB_PATHNAME));
+    if (!text) return null;
+    return parsePlatformUsageCache(text, teamId, now);
   } catch (error) {
     console.warn("usage: platform Blob cache load failed", error);
     return null;
   }
 }
 
-async function savePlatformUsageCache(metrics: UsageMetric[]) {
+async function savePlatformUsageCache(metrics: UsageMetric[], teamId: string, window: ReturnType<typeof usageWindow>, now: Date) {
   if (!canUseBlob()) return;
   try {
     const token = blobToken();
     const payload: PlatformUsageCache = {
-      updatedAt: new Date().toISOString(),
+      updatedAt: now.toISOString(),
+      teamId,
+      from: window.from,
+      to: window.to,
       metrics: metrics.map((m) => ({
         id: m.id,
         label: m.label,
@@ -640,6 +701,8 @@ async function savePlatformUsageCache(metrics: UsageMetric[]) {
         limit: m.limit,
         unit: m.unit,
         detail: m.detail,
+        available: m.available,
+        limitBasis: m.limitBasis,
       })),
     };
     await put(PLATFORM_BLOB_PATHNAME, JSON.stringify(payload, null, 2), {
@@ -656,106 +719,56 @@ async function savePlatformUsageCache(metrics: UsageMetric[]) {
   }
 }
 
-/** Hobby platform quotas from GET /v2/usage (works without Observability Plus). */
-async function collectPlatformUsage(): Promise<UsageMetric[]> {
-  const { label } = usageWindow();
-
-  try {
-    const [requests, blob] = await Promise.all([
-      fetchUsageType("requests"),
-      fetchUsageType("storage_blob"),
-    ]);
-
-    const requestDays = requests.data ?? [];
-    const blobDays = blob.data ?? [];
-
-    const incoming = sumField(requestDays, "bandwidth_incoming_bytes");
-    const outgoing = sumField(requestDays, "bandwidth_outgoing_bytes");
-    // /v2/usage `bandwidth_*` is Fast Data Transfer (CDN ↔ visitor), not
-    // Fast Origin Transfer. Hobby's /v2/usage types do not expose FOT.
-    const transferBytes = incoming + outgoing;
-    const edgeRequests =
-      sumField(requestDays, "request_hit_count") +
-      sumField(requestDays, "request_miss_count");
-
-    const invocations =
-      sumField(requestDays, "function_invocation_successful_count") +
-      sumField(requestDays, "function_invocation_error_count") +
-      sumField(requestDays, "function_invocation_timeout_count") +
-      sumField(requestDays, "function_invocation_throttle_count");
-
-    const simpleOps = sumField(blobDays, "blob_simple_request_count");
-    const advancedOps = sumField(blobDays, "blob_advanced_request_count");
-    const updatedNote = requests.lastUpdate
-      ? ` · updated ${formatHumanDate(requests.lastUpdate)}`
-      : "";
-
-    const metrics = [
-      metric({
-        id: "fast-data-transfer",
-        label: "Fast Data Transfer",
-        used: transferBytes,
-        limit: HOBBY_FAST_DATA_TRANSFER_BYTES,
-        unit: "bytes",
-        detail: `${formatBytes(outgoing)} out + ${formatBytes(incoming)} in · ${label} (Hobby 100 GB). Origin transfer is not in this API${updatedNote}`,
-        available: true,
-      }),
-      metric({
-        id: "edge-requests",
-        label: "Edge Requests",
-        used: edgeRequests,
-        limit: HOBBY_EDGE_REQUESTS,
-        unit: "requests",
-        detail: `${edgeRequests.toLocaleString("en-US")} / ${HOBBY_EDGE_REQUESTS.toLocaleString("en-US")} · ${label}`,
-        available: true,
-      }),
-      metric({
-        id: "function-invocations",
-        label: "Function invocations",
-        used: invocations,
-        limit: HOBBY_FUNCTION_INVOCATIONS,
-        unit: "invocations",
-        detail: `${invocations.toLocaleString("en-US")} / ${HOBBY_FUNCTION_INVOCATIONS.toLocaleString("en-US")} · ${label}`,
-        available: true,
-      }),
-      metric({
-        id: "blob-simple-ops",
-        label: "Blob simple operations",
-        used: simpleOps,
-        limit: BLOB_HOBBY_SIMPLE_OPS,
-        unit: "ops",
-        detail: `${simpleOps.toLocaleString("en-US")} / ${BLOB_HOBBY_SIMPLE_OPS.toLocaleString("en-US")} · ${label}`,
-        available: true,
-      }),
-      metric({
-        id: "blob-advanced-ops",
-        label: "Blob advanced operations",
-        used: advancedOps,
-        limit: BLOB_HOBBY_ADVANCED_OPS,
-        unit: "ops",
-        detail: `${advancedOps.toLocaleString("en-US")} / ${BLOB_HOBBY_ADVANCED_OPS.toLocaleString("en-US")} · ${label}`,
-        available: true,
-      }),
-    ];
-
-    // Durable cache so Vercel cron can show last sync when VERCEL_TOKEN is unset.
-    await savePlatformUsageCache(metrics);
-    return metrics;
-  } catch (error) {
-    const cached = await loadPlatformUsageCache();
-    if (cached) {
-      console.warn(
-        "usage: platform usage live fetch failed; using Blob cache",
-        error,
-      );
-      return cached;
+/** Independent endpoint failures retain the other live readings. */
+export async function collectPlatformUsage(now = new Date()): Promise<UsageMetric[]> {
+  const window = usageWindow(now);
+  const teamId = resolveTeamId();
+  if (!teamId) return platformUnavailable("Set VERCEL_TEAM_ID or link the project");
+  const [requests, blob, team] = await Promise.allSettled([
+    fetchUsageType("requests", teamId, window),
+    fetchUsageType("storage_blob", teamId, window),
+    vercelApiGetJson(`/v2/teams/${encodeURIComponent(teamId)}`),
+  ]);
+  const planResult = team.status === "fulfilled"
+    ? z.object({ billing: z.object({ plan: z.string() }) }).safeParse(team.value)
+    : null;
+  const plan = planResult?.success ? planResult.data.billing.plan : null;
+  const isHobby = plan === "hobby";
+  const range = `${window.from.slice(0, 10)}–${window.to.slice(0, 10)} UTC · last 30 complete days · all projects in team`;
+  const cached = requests.status === "rejected" || blob.status === "rejected"
+    ? await loadPlatformUsageCache(teamId, now) : null;
+  function reading(id: string, label: string, fields: string[], referenceLimit: number, unit: string,
+    result: PromiseSettledResult<UsageApiResponse>): UsageMetric {
+    const limit = isHobby ? referenceLimit : null;
+    if (result.status === "rejected") {
+      const fallback = cached?.find(m => m.id === id);
+      if (fallback) return { ...fallback, ...(plan ? {limit, percent:roundPercent(fallback.used,limit),limitBasis:isHobby ? "provider" as const : "unknown" as const} : {}) };
+      return unavailable(id, label, limit, unit, `${range} · source unavailable`);
     }
-
-    const message =
-      error instanceof Error ? error.message : "Platform usage unavailable";
-    console.warn("usage: platform usage failed", error);
-    return platformUnavailable(message);
+    const totals = fields.map(field => sumField(result.value.data ?? [], field));
+    if (totals.some(value => value === null)) {
+      return unavailable(id, label, limit, unit, `${range} · API omitted or returned invalid counters; no verified total`);
+    }
+    const used = totals.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+    const updated = result.value.lastUpdate;
+    const asOf = updated && Number.isFinite(Date.parse(updated))
+      ? `provider updated ${new Date(updated).toISOString()}` : "provider update time unavailable";
+    return metric({ id, label, used, limit, unit, available:true, source:"live",
+      limitBasis:isHobby ? "provider" : "unknown",
+      detail:`${range} · ${asOf} · ${isHobby ? "Hobby included allowance" : plan ? `Plan: ${plan}; cap unverified` : "Plan unavailable; cap unverified"}${id === "fast-data-transfer" ? "; CDN transfer only; origin transfer not included" : ""}` });
   }
+  const metrics = [
+    reading("fast-data-transfer", "Fast Data Transfer", ["bandwidth_incoming_bytes", "bandwidth_outgoing_bytes"], HOBBY_FAST_DATA_TRANSFER_BYTES,"bytes",requests),
+    reading("edge-requests", "CDN Requests", ["request_hit_count", "request_miss_count"], HOBBY_EDGE_REQUESTS,"requests",requests),
+    reading("function-invocations", "Function invocations", ["function_invocation_successful_count", "function_invocation_error_count", "function_invocation_timeout_count", "function_invocation_throttle_count"], HOBBY_FUNCTION_INVOCATIONS,"invocations",requests),
+    reading("blob-simple-ops", "Blob simple operations", ["blob_simple_request_count"], BLOB_HOBBY_SIMPLE_OPS,"ops",blob),
+    reading("blob-advanced-ops", "Blob advanced operations", ["blob_advanced_request_count"], BLOB_HOBBY_ADVANCED_OPS,"ops",blob),
+  ];
+  // Never re-date a cached observation after a failed fetch.
+  if (requests.status === "fulfilled" && blob.status === "fulfilled") {
+    await savePlatformUsageCache(metrics, teamId, window, now);
+  }
+  return metrics;
 }
 
 /** Collect AI Gateway, Blob, platform, and Resend usage. Failures are soft. */

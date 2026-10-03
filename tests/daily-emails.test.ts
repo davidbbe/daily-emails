@@ -32,7 +32,7 @@ test("operational data lives exclusively in its own HTML and plain-text email", 
     assert.match(content, /https:\/\/example.com\/markets\/offline-markets-secret/);
   }
   for (const content of [renderOperationsHtml(report), renderOperationsText(report)]) {
-    for (const expected of ["uwhmap.com", "Places API", "Nearby Search Enterprise", "AI Gateway credits", "Resend monthly emails", "Provisional GA4", "Export data can arrive late"]) {
+    for (const expected of ["uwhmap.com", "Places API", "Nearby Search Enterprise", "AI Gateway month-to-date spend", "Resend monthly emails", "Provisional GA4", "Export data can arrive late"]) {
       assert.ok(content.includes(expected), `Missing ${expected}`);
     }
     assert.doesNotMatch(content, /offline-markets-secret|Speeches|WEB TRENDS|REDDIT/);
@@ -154,4 +154,14 @@ test("history write failure does not invalidate either accepted email", async (t
   });
   const deliveries = await sendDailyEmails(briefFixture(), operationsFixture().usage);
   assert.deepEqual(deliveries, { brief: { id: "email-1", error: null }, operations: { id: "email-2", error: null } });
+});
+
+test("billing chart retains negative net credits, full dates and unreported days",()=> {
+  const report=operationsFixture();
+  report.gcpBilling!.days=[{date:"2026-10-01",costs:{"Places API":-0.35}},{date:"2026-10-02",costs:{}}];
+  report.gcpBilling!.comparisonAvailable=false;
+  const html=renderOperationsHtml(report);
+  assert.match(html,/Daily net cost · USD/);assert.match(html,/Oct 1/);assert.match(html,/-\$0.35/);
+  assert.match(html,/Unreported/);assert.match(html,/Comparison unavailable/);
+  assert.match(html,/Net cost by service/);assert.doesNotMatch(html,/MTD calls/);
 });

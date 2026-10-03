@@ -24,9 +24,9 @@ export function operationsFixture(): OperationsReport {
       currency: "USD", total: 8, previousTotal: 10, savings: 0, period: "month_to_date", source: "bigquery",
       services: [
         { name: "Places API", color: "#4185f4", marker: "circle", usageCost: 5, previousCost: 7, calls: 850, projectHint: "Restaurant Roulette" },
-        { name: "Gemini API", color: "#ff5620", marker: "square", usageCost: 3, previousCost: 3, calls: 220, projectHint: "Greeting Card Fun" },
+        { name: "Gemini API", color: "#ff5620", marker: "square", usageCost: 3, previousCost: 3, calls: null, projectHint: "Greeting Card Fun" },
       ],
-      apiUsageStartDate: "2026-10-01", apiUsageEndDate: "2026-10-03",
+      apiUsageStartDate: "2026-10-01", apiUsageEndDate: "2026-10-02",
       apiUsage: [{ name: "Places API", color: "#4185f4", marker: "circle", calls: 850, skus: [{ name: "Nearby Search Enterprise", quantity: 850, unit: "calls", freeMonthly: 1000 }] }],
       days: [{ date: "2026-10-01", costs: { "Places API": 2, "Gemini API": 1 } }, { date: "2026-10-02", costs: { "Places API": 3, "Gemini API": 2 } }],
       freshnessNote: "Export data can arrive late; these totals may change.",
@@ -34,9 +34,9 @@ export function operationsFixture(): OperationsReport {
     usage: {
       collectedAt: "2026-10-03T09:00:00.000Z", thresholdPercent: 50, watch: [quota],
       metrics: [
-        { id: "ai-gateway", label: "AI Gateway credits", used: 2, limit: 5, unit: "USD", percent: 40, available: true, detail: "$2 of the $5 monthly credit budget" },
-        { id: "fast-data-transfer", label: "Fast Data Transfer", used: 12_000_000_000, limit: 100_000_000_000, unit: "bytes", percent: 12, available: true, detail: "Month to date · Vercel platform usage" },
-        { id: "blob-storage", label: "Blob storage", used: 10_000_000, limit: 1_000_000_000, unit: "bytes", percent: 1, available: true, detail: "Current stored data" },
+        { id: "ai-gateway", label: "AI Gateway month-to-date spend", used: 2, limit: 5, unit: "USD", percent: 40, available: true, limitBasis: "budget", source: "live", detail: "Oct 1–3 UTC · measured account spend · $3.00 credit balance · $5 configured budget; not a provider cap" },
+        { id: "fast-data-transfer", label: "Fast Data Transfer", used: 12_000_000_000, limit: 100_000_000_000, unit: "bytes", percent: 12, available: true, source: "live", detail: "Sep 3–Oct 2 UTC · last 30 complete days · all projects in team · Hobby included allowance" },
+        { id: "blob-storage", label: "Blob storage · connected store", used: 10_000_000, limit: null, unit: "bytes", percent: 0, available: true, limitBasis: "unknown", source: "live", detail: "Current snapshot of this store; excludes other team stores and billed storage averages" },
         { ...quota, id: "resend-daily", label: "Resend daily emails", used: 12, limit: 100, percent: 12, detail: "Sent + received · resets 4 Oct 2026" },
         quota,
       ],
