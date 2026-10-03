@@ -6,7 +6,7 @@ import {
 } from "@/lib/analytics";
 import type { DailyBrief } from "@/lib/brief";
 import { GA_ACCOUNTS } from "@/lib/config";
-import { sendBriefEmail } from "@/lib/email";
+import { sendBriefEmail, sendOperationsEmail } from "@/lib/email";
 import { saveMarketsBrief, toMarketsBrief } from "@/lib/markets-brief";
 import { collectRedditTops } from "@/lib/reddit";
 import { collectUsageReport } from "@/lib/usage";
@@ -504,12 +504,19 @@ async function main() {
     console.warn("markets-brief save failed", error);
   });
 
-  const email = await sendBriefEmail(brief, usage);
+  const email = await sendBriefEmail(brief);
+  const operationsEmail = await sendOperationsEmail({
+    generatedAt: brief.generatedAt,
+    sites: brief.sites,
+    gcpBilling: brief.gcpBilling,
+    usage,
+  });
   console.log(
     JSON.stringify(
       {
         ok: true,
-        emailId: email?.id ?? null,
+        emailId: email.id,
+        emailIds: { brief: email.id, operations: operationsEmail.id },
         to: process.env.EMAIL_TO,
         reddit: brief.reddit.map((feed) => ({
           id: feed.id,

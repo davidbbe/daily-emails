@@ -1,6 +1,6 @@
 # Daily Emails
 
-Daily 09:00-UTC email brief for markets, tech people, catalysts, web trends, Reddit tops, and GA4 site overviews.
+Two daily emails at 09:00 UTC: a market and tech digest, and a separate analytics, billing, and usage report.
 
 ## What it does
 
@@ -22,9 +22,9 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
 11. Loads the last successfully delivered slim snapshot (when available); currently records availability, without generating day-over-day movers
 12. Summarizes news, trends, whale activity, and valuation multiples with **Vercel AI Gateway** (`openai/gpt-5-mini` by default)
 13. Saves a **markets brief** payload for the secret hosted page (Blob when configured, otherwise `.data/markets-latest.json`)
-14. Collects and appends **usage** (AI Gateway credits, Blob storage, Resend usage) and a **usage watch** for capped readings ≥50% of their limit
-15. Emails `EMAIL_TO` via **Resend** as an HTML + plain-text digest with a CTA to the full hosted markets page
-16. After confirmed delivery, saves a slim snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`)
+14. Collects **usage** after AI generation and before either email is sent (AI Gateway credits, Vercel platform usage, Blob storage/operations, Resend usage), with a **quota watch** for capped readings ≥50% of their limit
+15. Emails `EMAIL_TO` via **Resend** twice, each with HTML + plain text: the main digest with its hosted markets CTA, and a separate analytics, billing, and usage report
+16. After confirmed main-digest delivery, saves a slim snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`). Both deliveries are attempted even if one fails
 
 Configurable lists live in `src/lib/config.ts` (`TICKERS`, `PEOPLE`, `TREND_REGIONS`, `REDDIT_SUBREDDITS`, `GA_ACCOUNTS`, `GCP_BILLING_ACCOUNT`, `DEFAULT_MODEL`).
 
@@ -45,7 +45,16 @@ https://your-app.vercel.app/markets/<MARKETS_PAGE_SECRET>
 - Sends a `no-referrer` policy to avoid passing the token URL to external links
 - **Storage privacy:** the URL token protects the Next.js page only. JSON in a public Blob store remains accessible directly to anyone who knows its Blob URL. Use a private Blob store with `BLOB_ACCESS=private` to protect stored payloads. This does not convert an existing public store or remove previously published files
 
-## What’s in the email (data + AI)
+## The two daily emails
+
+Both use the existing `EMAIL_FROM`, `EMAIL_TO`, and cron schedule; no new environment variables or second cron job are needed.
+
+- **Markets, News & Trends · date**: markets-page CTA, speeches and announcements, web trends, and Reddit. Market details remain on the saved hosted page.
+- **Analytics, Billing & Usage · date**: a dedicated operations layout with reporting-site count, cloud-spend overview (with its actual date range), quota watch near the top, GA4 site cards, Cloud Billing costs and monthly API/SKU usage, and Vercel/AI Gateway/Blob/Resend usage with progress bars. Cards stack on mobile. Missing reports are labeled unavailable; provisional and cached readings retain their notes.
+
+Each email has its own payload-derived Resend idempotency key. The cron response preserves `emailId` for the main digest and adds `emailIds` and `deliveries` for both emails. It returns HTTP 500 on a partial failure with the accepted email's ID and the failed email's error; `ok: true` requires both IDs. History follows acceptance of the main digest, even if the operations delivery fails. Generating a different payload on a later run can still send another email; this does not guarantee one pair per calendar day.
+
+## What’s in the emails (data + AI)
 
 All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk.dev) `generateText` helper with `Output.object`. Default model: **`openai/gpt-5-mini` with explicit low reasoning** (override the model with `AI_MODEL`). No provider SDKs are wired directly — the Gateway routes the request.
 
@@ -63,10 +72,10 @@ All LLM calls go through **Vercel AI Gateway** using the [AI SDK](https://ai-sdk
 | **Web trends · Thailand**                                 | Google Trends Trending Now (`geo=TH`); Sports filtered                                                                                                             | English title + 1–2 sentence description for the **3 most important** items (no local-language text)                            |
 | **Also rising in 2+ regions**                             | —                                                                                                                                                                  | **No LLM** — string match on English titles                                                                                     |
 | **Reddit**                                                | Reddit Atom RSS — top 6 per sub (`pics`, `generativeAI`, `CursedAI`, `aiArt`); day → week → hot fallback | **No LLM** — subreddits in 2 columns; posts in a 3-column grid with larger thumbnails                                           |
-| **Google Analytics**                                      | GA4 Data API — yesterday KPIs (vs prior day), 7-day users bar chart, and month-to-date totals for `uwhmap.com`, `greetingcardfun.com`, `tvroulette.app`            | **No LLM** — skipped when `GOOGLE_CLIENT_EMAIL` / `GOOGLE_PRIVATE_KEY` are unset                                                |
-| **Google Cloud Billing**                                  | Costs: month-to-date (through yesterday UTC) for billing account `016802-8E2106-038F4F` covering **AI Greeting Card** and **Restaurant Roulette** — daily stacked bars by service vs the same days last month. If this month’s costs are still being priced, last 30 days instead. **API calls** are always counted from the **1st of this month** (including $0 rows) so monthly free caps (1,000 for Places Enterprise / Photos) stay on a calendar clock. | **No LLM** — BigQuery Standard usage cost export. Shows a setup card until `GCP_BILLING_BQ_TABLE` is set                         |
-| **Usage watch**                                           | AI Gateway, Fast Data Transfer, Edge Requests, Blob size/ops, function invocations, Resend                                                                         | **No LLM** — flags capped usage ≥50%; Resend limits come from its usage API                                                                        |
-| **Delivery**                                              | —                                                                                                                                                                  | **Resend API** sends HTML + plain-text email                                                                                    |
+| **Google Analytics** _(operations email)_                                      | GA4 Data API — yesterday KPIs (vs prior day), 7-day users bar chart, and month-to-date totals for `uwhmap.com`, `greetingcardfun.com`, `tvroulette.app`, `restaurantroulette.app`            | **No LLM** — shows unavailable when Google credentials are unset                                                |
+| **Google Cloud Billing** _(operations email)_                                  | Costs: month-to-date (through yesterday UTC) for billing account `016802-8E2106-038F4F` covering **AI Greeting Card** and **Restaurant Roulette** — daily stacked bars by service vs the same days last month. If this month’s costs are still being priced, last 30 days instead. **API calls** are always counted from the **1st of this month** (including $0 rows) so monthly free caps (1,000 for Places Enterprise / Photos) stay on a calendar clock. | **No LLM** — BigQuery Standard usage cost export. Shows a setup card until `GCP_BILLING_BQ_TABLE` is set                         |
+| **Usage watch** _(operations email)_                                           | AI Gateway, Fast Data Transfer, Edge Requests, Blob size/ops, function invocations, Resend                                                                         | **No LLM** — flags capped usage ≥50%; Resend limits come from its usage API                                                                        |
+| **Delivery**                                              | —                                                                                                                                                                  | **Resend API** sends two HTML + plain-text emails                                                                                    |
 
 In practice that means **up to five** Gateway model calls per daily run:
 
@@ -116,7 +125,7 @@ cp .env.example .env.local
 
 ### Google Analytics
 
-Optional. Without these env vars the brief still sends — the analytics block is omitted.
+Optional. Without these env vars both emails still send — the operations email labels Google Analytics data as unavailable.
 
 1. In [Google Cloud Console](https://console.cloud.google.com/), create (or pick) a project
 2. Enable **Google Analytics Data API** and **Google Analytics Admin API**
@@ -124,7 +133,9 @@ Optional. Without these env vars the brief still sends — the analytics block i
 4. In Google Analytics (as the property owner), open each account under `GA_ACCOUNTS` → **Admin → Account access management** → add the service account email as **Viewer**
 5. Redeploy / restart so the env vars are available
 
-Account IDs and email labels live in `src/lib/config.ts` (`GA_ACCOUNTS`). Each account is expected to have a single GA4 property; the Admin API resolves the property id at runtime.
+Account IDs, exact GA4 property IDs, and email labels live in `src/lib/config.ts` (`GA_ACCOUNTS`). The Admin API reads each configured property's timezone and verifies its account; the collector does not select an arbitrary first property.
+
+The operations report includes `uwhmap.com`, `greetingcardfun.com`, `tvroulette.app`, and `restaurantroulette.app`. Restaurant Roulette uses account `344920077`, property `477168801`. Give the existing reporting service account (`GOOGLE_CLIENT_EMAIL`) **Viewer** access in **Admin → Property access management** for that property. Until access is granted, its card shows a permission error and the other sites continue reporting normally.
 
 ### Google Cloud Billing
 
@@ -158,7 +169,7 @@ Trigger a real send (replace `YOUR_CRON_SECRET` with the value in `.env.local`):
 curl -H "Authorization: Bearer YOUR_CRON_SECRET" http://localhost:3000/api/daily-brief
 ```
 
-`CRON_SECRET` is optional only outside production; if set, its bearer header is required in development too. This GET fetches live data, spends AI credits, saves the markets payload, and sends email. HEAD returns 405 without running the job.
+`CRON_SECRET` is optional only outside production; if set, its bearer header is required in development too. This GET fetches live data, spends AI credits, saves the markets payload, and sends both daily emails. HEAD returns 405 without running the job.
 
 In production, call with:
 
@@ -186,13 +197,21 @@ npm run lint
 npm run build
 ```
 
-Tests are offline and mock provider responses. The production build needs network access for Google fonts. The scripts `scripts/send-test-email.ts` and `scripts/send-live-test-email.ts` send real email and can update shared Blob data; use them only for intentional live sends.
+Generate local previews with synthetic data, without provider requests or delivery:
+
+```bash
+node --import tsx scripts/preview-emails.ts
+# Open .data/email-preview/brief.html and operations.html.
+# Matching .txt previews are saved alongside them.
+```
+
+Tests are offline and mock provider responses. The production build needs network access for Google fonts. The scripts `scripts/send-test-email.ts` and `scripts/send-live-test-email.ts` send both real emails and can update shared Blob data; use them only for intentional live sends.
 
 - News feed failures are isolated per ticker/person and labeled as unavailable, rather than a verified quiet session.
 - Reddit batches, fallback windows, rate-limit waits, and retries share a 60-second budget; completed feeds survive a timeout.
 - Missing Resend configuration fails before research or AI spending. A send counts as successful only when Resend returns an email ID.
 - Identical email payloads share a Resend idempotency key, protecting retries within [Resend's 24-hour window](https://resend.com/docs/dashboard/emails/idempotency-keys). Regenerating a new brief changes the payload; this is not a distributed lock or a guarantee of one run per calendar day.
-- Markets persistence is best-effort before sending, so the CTA can load immediately. History is updated only after delivery. Missing Blob on Vercel leaves the markets page empty and history unavailable.
+- Markets persistence is best-effort before sending, so the CTA can load immediately. History is updated only after confirmed main-digest delivery. Missing Blob on Vercel leaves the markets page empty and history unavailable.
 - GA4 always reports property-local yesterday, including zero activity, with a provisional-data note. Recent values can change during processing; zero activity is not treated as proof of a delay.
 - Billing discovery selects only the configured account's export, and queries filter by billing account. Dataset/table discovery and query results follow every page within a shared 60-second budget. Later-page failures, repeated tokens, and row-count mismatches produce an unavailable report instead of incomplete totals. Set `GCP_BILLING_BQ_TABLE` to skip discovery.
 - Saved snapshots currently record `hasPreviousBrief`; no day-over-day news-mover comparison is generated.
@@ -226,4 +245,4 @@ Vercel usage-watch defaults in `src/lib/config.ts` reflect the intended Hobby se
 - Cron configuration is `0 9 * * *` (09:00 UTC). Hosting-plan timing and limits are documented in [Vercel Cron usage](https://vercel.com/docs/cron-jobs/usage-and-pricing).
 - Platform usage requires `VERCEL_TOKEN` on Vercel; local runs may use the authenticated Vercel CLI. Without live access, the email can use the last successful Blob cache.
 - Blob storage size comes from `list()`; operation counts come from platform usage. `BLOB_ACCESS` applies consistently to markets, history, and usage caches. See [private storage setup](https://vercel.com/docs/vercel-blob/private-storage).
-- Resend `GET /usage` supports sending-only keys. Validated responses are cached with their observation and provider reset times; fallback readings are visibly dated. Daily and monthly readings expire independently at `resets_at` and then show unavailable until refreshed. Old last-send caches lack reset times and are ignored until a successful usage fetch replaces them. Usage is collected before sending this digest, so it excludes that delivery. Cache failures cannot invalidate live readings or email delivery.
+- Resend `GET /usage` supports sending-only keys. Validated responses are cached with their observation and provider reset times; fallback readings are visibly dated. Daily and monthly readings expire independently at `resets_at` and then show unavailable until refreshed. Old last-send caches lack reset times and are ignored until a successful usage fetch replaces them. Usage is collected before sending either daily email, so it excludes both deliveries. Normal daily delivery now uses two Resend sends per run. Cache failures cannot invalidate live readings or email delivery.

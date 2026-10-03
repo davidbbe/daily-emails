@@ -6,7 +6,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Daily Emails working guide
 
-This is a Next.js App Router app that sends one daily digest through Vercel Cron,
+This is a Next.js App Router app that sends two daily emails through Vercel Cron,
 AI Gateway, and Resend. See `README.md` for setup and `.env.example` for variables.
 
 ## Map
@@ -15,6 +15,7 @@ AI Gateway, and Resend. See `README.md` for setup and `.env.example` for variabl
 - `src/lib/research.ts`: parallel collection; individual feed failures are isolated.
 - `src/lib/brief.ts`, `trends.ts`, `whale-brief.ts`, `valuation.ts`: structured AI output.
 - `src/lib/email.ts`: Gmail HTML and plain-text rendering, then Resend delivery.
+- `src/lib/delivery.ts`: independent main-digest and operations delivery; history after main-digest acceptance.
 - `src/lib/history.ts`, `markets-brief.ts`, `usage.ts`: Blob persistence; local `.data/` fallback.
 - `src/app/markets/[token]/page.tsx`: token-protected saved daily brief.
 - `src/lib/config.ts`: watchlists, regions, sites, quotas, and model defaults.
@@ -54,4 +55,6 @@ AI Gateway, and Resend. See `README.md` for setup and `.env.example` for variabl
 - Emails are opened in Gmail. Keep table layouts, critical inline styles, escaped
   dynamic text, and plain text. See `.cursor/rules/gmail-email-design.mdc` for design rules.
 - Keep market details on the hosted page and its CTA in the email.
+- Keep GA4, Cloud Billing, and all provider usage in the operations email only.
+- Attempt both daily deliveries; report partial failure with each delivery ID/error.
 - Update README and the env template when behavior or configuration changes.

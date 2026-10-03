@@ -1,6 +1,7 @@
 import { generateDailyBrief } from "@/lib/brief";
-import { getEmailConfiguration, sendBriefEmail } from "@/lib/email";
-import { loadPreviousBrief, savePreviousBrief, toSnapshot } from "@/lib/history";
+import { getEmailConfiguration } from "@/lib/email";
+import { sendDailyEmails } from "@/lib/delivery";
+import { loadPreviousBrief } from "@/lib/history";
 import {
   saveMarketsBrief,
   toMarketsBrief,
@@ -44,15 +45,16 @@ export async function GET(request: Request) {
     });
     // Collect after the brief so AI Gateway balance includes today's spend.
     const usage = await collectUsageReport();
-    const email = await sendBriefEmail(brief, usage);
-    // History represents the last successfully delivered brief, including retries.
-    await savePreviousBrief(toSnapshot(brief)).catch((error) => {
-      console.warn("daily-brief: previous-brief save failed", error);
-    });
+    const deliveries = await sendDailyEmails(brief, usage);
+    const ok = Boolean(deliveries.brief.id && deliveries.operations.id);
 
     return Response.json({
-      ok: true,
-      emailId: email?.id ?? null,
+      ok,
+      ...(ok ? {} : { error: "One or more daily emails failed" }),
+      // Keep emailId for callers using the original main-digest response.
+      emailId: deliveries.brief.id,
+      emailIds: { brief: deliveries.brief.id, operations: deliveries.operations.id },
+      deliveries,
       model: brief.model,
       generatedAt: brief.generatedAt,
       hasPreviousBrief: brief.hasPreviousBrief,
@@ -161,7 +163,7 @@ export async function GET(request: Request) {
           detail: m.detail,
         })),
       },
-    });
+    }, { status: ok ? 200 : 500 });
   } catch (error) {
     console.error("daily-brief failed", error);
     return Response.json(

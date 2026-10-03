@@ -14,7 +14,7 @@ import {
   type TrendRegionId,
 } from "@/lib/config";
 import { collectEarningsCalendar } from "@/lib/earnings";
-import { sendBriefEmail } from "@/lib/email";
+import { sendBriefEmail, sendOperationsEmail } from "@/lib/email";
 import { saveMarketsBrief, toMarketsBrief } from "@/lib/markets-brief";
 import { loadPreviousBrief } from "@/lib/history";
 import {
@@ -200,13 +200,20 @@ async function main() {
 
   console.log("Collecting usage + sending...");
   const usage = await collectUsageReport();
-  const email = await sendBriefEmail(brief, usage);
+  const email = await sendBriefEmail(brief);
+  const operationsEmail = await sendOperationsEmail({
+    generatedAt: brief.generatedAt,
+    sites: brief.sites,
+    gcpBilling: brief.gcpBilling,
+    usage,
+  });
 
   console.log(
     JSON.stringify(
       {
         ok: true,
-        emailId: email?.id ?? null,
+        emailId: email.id,
+        emailIds: { brief: email.id, operations: operationsEmail.id },
         to: process.env.EMAIL_TO,
         model: brief.model,
         sentiment: brief.sentiment.valueDial,

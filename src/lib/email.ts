@@ -37,6 +37,23 @@ import {
 const FONT =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
+/** Operational reports have their own email; no market or AI-generated content. */
+export type OperationsReport = {
+  generatedAt: string;
+  sites: SiteAnalytics[];
+  gcpBilling: GcpBillingReport | null;
+  usage: UsageReport;
+};
+
+const ANALYTICS_UNAVAILABLE = "Google Analytics data is unavailable. Check the Google service account configuration and property access.";
+const BILLING_UNAVAILABLE = "Cloud Billing data is unavailable. Check the Google service account and billing export configuration.";
+
+function renderUnavailableSection(title: string, detail: string, reportsUrl?: string) {
+  return `${sectionLabel(escapeHtml(title))}<tr><td style="padding:0 0 14px 0;">
+    <div style="padding:16px 18px;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;color:#92400e;font-size:13px;line-height:1.5;">${escapeHtml(detail)}${reportsUrl ? `<br /><a href="${escapeHtml(reportsUrl)}" style="display:inline-block;padding:10px 0;font-size:12px;font-weight:700;color:#1a73e8;text-decoration:none;">Open report →</a>` : ""}</div>
+  </td></tr>`;
+}
+
 function briefWindowLabel(brief: DailyBrief) {
   return `Past ${brief.windowHours} hours`;
 }
@@ -855,8 +872,8 @@ function renderGcpBillingSection(report: GcpBillingReport | null | undefined) {
   try {
     return renderGcpBillingSectionInner(report);
   } catch (error) {
-    console.warn("gcp-billing: email section failed; omitting", error);
-    return "";
+    console.warn("gcp-billing: email section failed", error);
+    return renderUnavailableSection("Google Cloud Billing", BILLING_UNAVAILABLE, report.reportsUrl);
   }
 }
 
@@ -874,6 +891,7 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
             <td style="padding:16px 18px;">
               <div style="font-size:16px;font-weight:700;color:#0f172a;">${escapeHtml(report.accountLabel)}</div>
               <div style="margin-top:8px;font-size:13px;line-height:1.45;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;">${escapeHtml(report.error)}</div>
+              <a href="${escapeHtml(report.reportsUrl)}" style="display:inline-block;padding:10px 0;font-size:12px;font-weight:700;color:#1a73e8;text-decoration:none;">Open report →</a>
             </td>
           </tr>
         </table>
@@ -973,6 +991,7 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
 }
 
 function usageWatchSummary(usage: UsageReport) {
+  if (usage.metrics.length === 0) return "Usage readings are unavailable.";
   return usage.metrics.some((m) => !m.available)
     ? `No available quota readings are at or above ${usage.thresholdPercent}%. Some usage readings are unavailable.`
     : `All tracked quotas with a cap are under ${usage.thresholdPercent}% of their limits.`;
@@ -980,9 +999,13 @@ function usageWatchSummary(usage: UsageReport) {
 
 function renderUsageWatch(usage: UsageReport) {
   if (usage.watch.length === 0) {
+    const incomplete = usage.metrics.length === 0 || usage.metrics.some((m) => !m.available);
+    const color = incomplete ? "#92400e" : "#047857";
+    const background = incomplete ? "#fffbeb" : "#ecfdf5";
+    const border = incomplete ? "#fde68a" : "#a7f3d0";
     return `<tr>
       <td style="padding:0 0 14px 0;">
-        <div style="font-size:14px;line-height:1.5;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:14px 16px;">
+        <div style="font-size:14px;line-height:1.5;color:${color};background:${background};border:1px solid ${border};border-radius:12px;padding:14px 16px;">
           ${escapeHtml(usageWatchSummary(usage))}
         </div>
       </td>
@@ -1029,12 +1052,17 @@ function renderUsageRow(m: UsageMetric) {
   const usedLimit = m.available
     ? `${formatMetricUsed(m)} / ${formatMetricLimit(m)}`
     : "n/a";
+  const fill = Math.min(100, Math.max(0, m.percent));
+  const progress = m.available && m.limit != null
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px;background:#e2e8f0;border-radius:4px;"><tr>${fill > 0 ? `<td width="${fill}%" style="height:5px;background:${color};border-radius:4px;font-size:1px;line-height:1px;">&nbsp;</td>` : ""}${fill < 100 ? `<td width="${100 - fill}%" style="height:5px;font-size:1px;line-height:1px;">&nbsp;</td>` : ""}</tr></table>`
+    : "";
   return `<tr>
-    <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
+    <td class="usage-label" style="padding:12px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
       <div style="font-size:14px;font-weight:600;color:#0f172a;">${escapeHtml(m.label)}</div>
       <div style="margin-top:2px;font-size:12px;line-height:1.45;color:#64748b;">${escapeHtml(m.detail)}</div>
+      ${progress}
     </td>
-    <td style="padding:10px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top;text-align:right;white-space:nowrap;">
+    <td class="usage-value" style="padding:12px 0 12px 12px;border-bottom:1px solid #f1f5f9;vertical-align:top;text-align:right;white-space:nowrap;">
       <div style="font-size:13px;font-weight:600;color:#334155;">${escapeHtml(usedLimit)}</div>
       <div style="margin-top:2px;font-size:15px;font-weight:700;color:${color};">${pct}</div>
     </td>
@@ -1104,7 +1132,6 @@ function renderUsageReport(usage: UsageReport) {
   const resendLogo = `<img src="https://cdn.resend.com/brand/resend-wordmark-black.png" width="78" height="18" alt="Resend" style="display:block;border:0;outline:none;text-decoration:none;width:78px;height:18px;" />`;
 
   return `
-    ${renderUsageWatch(usage)}
     ${renderUsageTable({
       headerHtml: renderUsageBrandHeader({
         logoHtml: vercelLogo,
@@ -1122,7 +1149,7 @@ function renderUsageReport(usage: UsageReport) {
     })}`;
 }
 
-export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
+export function renderBriefHtml(brief: DailyBrief) {
   const date = formatHumanDate(brief.generatedAt);
   const dateShort = formatHumanDate(brief.generatedAt, { withTime: false });
   const marketsUrl = getMarketsPageUrl();
@@ -1268,12 +1295,6 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
                 : ""
             }
 
-            ${renderSitesSection(brief.sites ?? [])}
-
-            ${renderGcpBillingSection(brief.gcpBilling)}
-
-            ${usage ? `${sectionLabel("Usage")}${renderUsageReport(usage)}` : ""}
-
             <tr>
               <td style="padding:22px 8px 10px 8px;text-align:center;">
                 <div style="font-size:12px;line-height:1.6;color:#94a3b8;">
@@ -1289,7 +1310,7 @@ export function renderBriefHtml(brief: DailyBrief, usage?: UsageReport) {
 </html>`;
 }
 
-export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
+export function renderBriefText(brief: DailyBrief) {
   const lines = [
     "Daily Market & Tech Brief",
     `${briefWindowLabel(brief)} · ${formatHumanDate(brief.generatedAt)} · ${brief.model}`,
@@ -1377,9 +1398,97 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
     }
   }
 
-  if (brief.sites?.length) {
+  return lines.join("\n");
+}
+
+function renderOverviewStat(label: string, value: string, detail: string) {
+  return `<td class="stack-col" width="33.33%" style="width:33.33%;padding:0 5px;vertical-align:top;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #dbe3ec;border-radius:14px;">
+      <tr><td style="padding:16px 14px;">
+        <div style="font-size:10px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;">${escapeHtml(label)}</div>
+        <div style="margin-top:8px;font-size:26px;line-height:1.2;font-weight:750;color:#0f172a;">${escapeHtml(value)}</div>
+        <div style="margin-top:6px;font-size:12px;line-height:1.5;color:#64748b;">${escapeHtml(detail)}</div>
+      </td></tr>
+    </table>
+  </td>`;
+}
+
+export function renderOperationsHtml(report: OperationsReport) {
+  const { usage, gcpBilling: billing } = report;
+  const date = formatHumanDate(report.generatedAt);
+  const dateShort = formatHumanDate(report.generatedAt, { withTime: false });
+  const siteCount = report.sites.filter((site) => !site.error).length;
+  const unavailable = usage.metrics.filter((metric) => !metric.available).length;
+  const billingRange = billing && !billing.error
+    ? formatBillingRange(billing.startDate, billing.endDate)
+    : "Report unavailable";
+  const preheader = `Site performance, cloud costs and provider quotas · ${usage.watch.length} quota readings to watch · ${dateShort}`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>Analytics, Billing &amp; Usage · ${escapeHtml(dateShort)}</title>
+    <style type="text/css">
+      @media only screen and (max-width:620px) {
+        .stack-col { display:block !important;width:100% !important;max-width:100% !important;box-sizing:border-box !important;padding-left:0 !important;padding-right:0 !important; }
+        .stack-col + .stack-col { padding-top:10px !important; }
+        .operations-hero { padding:24px 20px !important; }
+        .usage-label,.usage-value { display:block !important;width:100% !important;box-sizing:border-box !important;white-space:normal !important;text-align:left !important; }
+        .usage-label { border-bottom:0 !important;padding-bottom:4px !important; }
+        .usage-value { padding:0 0 12px !important; }
+      }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background:#f1f5f9;font-family:${FONT};">
+    <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${escapeHtml(preheader)}</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:28px 12px;">
+      <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:760px;margin:0 auto;">
+          <tr><td style="padding:0 0 18px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#134e4a;background-image:linear-gradient(135deg,#0f172a,#134e4a);border-radius:18px;">
+              <tr><td class="operations-hero" style="padding:28px 28px 26px;">
+                <div style="font-size:11px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:#99f6e4;">Daily Emails · Operations</div>
+                <div style="margin-top:10px;font-size:28px;line-height:1.2;font-weight:750;color:#ffffff;">Analytics, Billing &amp; Usage</div>
+                <div style="margin-top:10px;font-size:14px;line-height:1.5;color:#ccfbf1;">Site performance, cloud costs and provider quotas.</div>
+                <div style="margin-top:14px;font-size:12px;line-height:1.5;color:#cbd5e1;">${escapeHtml(date)}</div>
+              </td></tr>
+            </table>
+          </td></tr>
+          <tr><td style="padding:0 0 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+              ${renderOverviewStat("Sites reporting", report.sites.length ? `${siteCount} / ${report.sites.length}` : "Unavailable", "Yesterday in each timezone")}
+              ${renderOverviewStat("Cloud spend", billing && !billing.error ? formatUsd(billing.total) : "Unavailable", billingRange)}
+              ${renderOverviewStat("Quota watch", String(usage.watch.length), usage.metrics.length ? `${unavailable} unavailable · alert at ${usage.thresholdPercent}%` : "Readings unavailable")}
+            </tr></table>
+          </td></tr>
+          ${sectionLabel("Quota watch", { first: true })}
+          ${renderUsageWatch(usage)}
+          ${report.sites.length ? renderSitesSection(report.sites) : renderUnavailableSection("Google Analytics", ANALYTICS_UNAVAILABLE)}
+          ${billing ? renderGcpBillingSection(billing) : renderUnavailableSection("Google Cloud Billing", BILLING_UNAVAILABLE)}
+          ${sectionLabel("Provider usage")}
+          <tr><td style="padding:0 4px 12px;font-size:12px;line-height:1.5;color:#64748b;">Observed ${escapeHtml(formatHumanDate(usage.collectedAt))}. Usage is collected before both daily emails are sent. Cached readings and reset times are labeled below.</td></tr>
+          ${renderUsageReport(usage)}
+          <tr><td style="padding:20px 8px 8px;text-align:center;font-size:12px;line-height:1.6;color:#64748b;">Daily Emails · Analytics, billing and usage<br />Each report keeps its own date range and freshness notes.</td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+}
+
+export function renderOperationsText(report: OperationsReport) {
+  const { usage } = report;
+  const lines = [
+    "Daily Analytics, Billing & Usage",
+    formatHumanDate(report.generatedAt),
+    `Usage observed ${formatHumanDate(usage.collectedAt)}; collected before both daily emails are sent.`,
+  ];
+  if (report.sites?.length) {
     lines.push("", "GOOGLE ANALYTICS");
-    for (const site of brief.sites) {
+    for (const site of report.sites) {
       lines.push("", site.label);
       if (site.error) {
         lines.push(`  Error: ${site.error}`);
@@ -1436,105 +1545,114 @@ export function renderBriefText(brief: DailyBrief, usage?: UsageReport) {
         );
       }
     }
+  } else {
+    lines.push("", "GOOGLE ANALYTICS", ANALYTICS_UNAVAILABLE);
   }
 
-  if (brief.gcpBilling) {
-    const billing = brief.gcpBilling;
-    lines.push("", "GOOGLE CLOUD BILLING");
-    lines.push(
-      `${billing.accountLabel} · ${billing.period === "latest_month" ? "latest month" : billing.period === "trailing" ? `last ${TRAILING_BILLING_DAYS} days` : "month to date"} ${formatBillingRange(billing.startDate, billing.endDate)}`,
-    );
-    if (billing.error) {
-      lines.push(`  Error: ${billing.error}`);
-    } else {
-      const delta = billingPercentChange(billing.total, billing.previousTotal);
-      const hero =
-        delta === null
-          ? "New"
-          : `${formatHeroChangePercent(delta)} (${formatUsd(billing.total - billing.previousTotal)})`;
-      lines.push(`  Total: ${formatUsd(billing.total)} ${hero}`);
+  if (report.gcpBilling) {
+    const billing = report.gcpBilling;
+    const billingStart = lines.length;
+    try {
+      lines.push("", "GOOGLE CLOUD BILLING");
       lines.push(
-        `  vs ${formatBillingRange(billing.previousStartDate, billing.previousEndDate)}`,
+        `${billing.accountLabel} · ${billing.period === "latest_month" ? "latest month" : billing.period === "trailing" ? `last ${TRAILING_BILLING_DAYS} days` : "month to date"} ${formatBillingRange(billing.startDate, billing.endDate)}`,
       );
-      if (billing.insight) lines.push(`  ${billing.insight}`);
-      if (billing.freshnessNote) lines.push(`  ${billing.freshnessNote}`);
-      const listed = new Set<string>();
-      const skuLines = (group: { skus: GcpBillingReport["apiUsage"][number]["skus"] }) => {
-        for (const sku of group.skus) {
-          lines.push(
-            `      ${sku.name}: ${formatSkuUsage(sku.quantity, sku.unit, sku.freeMonthly)}`,
-          );
-        }
-      };
-      lines.push(
-        `  API calls this month ${formatBillingRange(billing.apiUsageStartDate, billing.apiUsageEndDate)} (from the 1st)`,
-      );
-      for (const service of billing.services) {
-        const serviceDelta = billingPercentChange(
-          service.usageCost,
-          service.previousCost,
-        );
+      if (billing.error) {
+        lines.push(`  Error: ${billing.error}`);
+      } else {
+        const delta = billingPercentChange(billing.total, billing.previousTotal);
+        const hero =
+          delta === null
+            ? "New"
+            : `${formatHeroChangePercent(delta)} (${formatUsd(billing.total - billing.previousTotal)})`;
+        lines.push(`  Total: ${formatUsd(billing.total)} ${hero}`);
         lines.push(
-          `  - ${service.name}: ${formatUsd(service.usageCost)} (${formatChangePercent(serviceDelta)})${service.calls ? ` · ${formatCallCount(service.calls)} calls` : ""}`,
+          `  vs ${formatBillingRange(billing.previousStartDate, billing.previousEndDate)}`,
         );
-        const group = (billing.apiUsage ?? []).find((g) => g.name === service.name);
-        if (group) {
-          listed.add(group.name);
+        if (billing.insight) lines.push(`  ${billing.insight}`);
+        if (billing.freshnessNote) lines.push(`  ${billing.freshnessNote}`);
+        const listed = new Set<string>();
+        const skuLines = (group: { skus: GcpBillingReport["apiUsage"][number]["skus"] }) => {
+          for (const sku of group.skus) {
+            lines.push(
+              `      ${sku.name}: ${formatSkuUsage(sku.quantity, sku.unit, sku.freeMonthly)}`,
+            );
+          }
+        };
+        lines.push(
+          `  API calls this month ${formatBillingRange(billing.apiUsageStartDate, billing.apiUsageEndDate)} (from the 1st)`,
+        );
+        for (const service of billing.services) {
+          const serviceDelta = billingPercentChange(
+            service.usageCost,
+            service.previousCost,
+          );
+          lines.push(
+            `  - ${service.name}: ${formatUsd(service.usageCost)} (${formatChangePercent(serviceDelta)})${service.calls ? ` · ${formatCallCount(service.calls)} calls` : ""}`,
+          );
+          const group = (billing.apiUsage ?? []).find((g) => g.name === service.name);
+          if (group) {
+            listed.add(group.name);
+            skuLines(group);
+          }
+        }
+        for (const group of billing.apiUsage ?? []) {
+          if (listed.has(group.name)) continue;
+          lines.push(
+            `  - ${group.name}${group.calls ? `: ${formatCallCount(group.calls)} calls` : ""}`,
+          );
           skuLines(group);
         }
       }
-      for (const group of billing.apiUsage ?? []) {
-        if (listed.has(group.name)) continue;
-        lines.push(
-          `  - ${group.name}${group.calls ? `: ${formatCallCount(group.calls)} calls` : ""}`,
-        );
-        skuLines(group);
-      }
-      lines.push(`  ${billing.reportsUrl}`);
+    } catch (error) {
+      console.warn("gcp-billing: email text failed", error);
+      lines.splice(billingStart);
+      lines.push("", "GOOGLE CLOUD BILLING", BILLING_UNAVAILABLE);
+    }
+    lines.push(`  ${billing.reportsUrl}`);
+  } else {
+    lines.push("", "GOOGLE CLOUD BILLING", BILLING_UNAVAILABLE);
+  }
+
+  lines.push("", "USAGE WATCH");
+  if (usage.watch.length === 0) {
+    lines.push(
+      usageWatchSummary(usage),
+    );
+  } else {
+    for (const m of usage.watch) {
+      lines.push(
+        `- ${m.label}: ${m.percent}% (${formatMetricUsed(m)} / ${formatMetricLimit(m)})`,
+      );
+      lines.push(`  ${m.detail}`);
     }
   }
 
-  if (usage) {
-    lines.push("", "USAGE WATCH");
-    if (usage.watch.length === 0) {
+  const { vercel, resend } = splitUsageMetrics(usage.metrics);
+  if (vercel.length > 0) {
+    lines.push("", "VERCEL USAGE");
+    for (const m of vercel) {
+      if (!m.available) {
+        lines.push(`- ${m.label}: unavailable — ${m.detail}`);
+        continue;
+      }
       lines.push(
-        usageWatchSummary(usage),
+        `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.limit == null ? "No cap" : `${m.percent}%`})`,
       );
-    } else {
-      for (const m of usage.watch) {
-        lines.push(
-          `- ${m.label}: ${m.percent}% (${formatMetricUsed(m)} / ${formatMetricLimit(m)})`,
-        );
-        lines.push(`  ${m.detail}`);
-      }
+      lines.push(`  ${m.detail}`);
     }
-
-    const { vercel, resend } = splitUsageMetrics(usage.metrics);
-    if (vercel.length > 0) {
-      lines.push("", "VERCEL USAGE");
-      for (const m of vercel) {
-        if (!m.available) {
-          lines.push(`- ${m.label}: unavailable — ${m.detail}`);
-          continue;
-        }
-        lines.push(
-          `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.limit == null ? "No cap" : `${m.percent}%`})`,
-        );
-        lines.push(`  ${m.detail}`);
+  }
+  if (resend.length > 0) {
+    lines.push("", "RESEND USAGE");
+    for (const m of resend) {
+      if (!m.available) {
+        lines.push(`- ${m.label}: unavailable — ${m.detail}`);
+        continue;
       }
-    }
-    if (resend.length > 0) {
-      lines.push("", "RESEND USAGE");
-      for (const m of resend) {
-        if (!m.available) {
-          lines.push(`- ${m.label}: unavailable — ${m.detail}`);
-          continue;
-        }
-        lines.push(
-          `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.limit == null ? "No cap" : `${m.percent}%`})`,
-        );
-        lines.push(`  ${m.detail}`);
-      }
+      lines.push(
+        `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.limit == null ? "No cap" : `${m.percent}%`})`,
+      );
+      lines.push(`  ${m.detail}`);
     }
   }
 
@@ -1549,32 +1667,10 @@ export function getEmailConfiguration() {
   return { apiKey, from: getEmailFrom(), to: getEmailTo() };
 }
 
-export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
+async function sendEmail(kind: "brief" | "operations", subject: string, html: string, text: string) {
   const { apiKey, from, to } = getEmailConfiguration();
-
-  const dateLabel = formatHumanDate(brief.generatedAt, { withTime: false });
-  let html: string;
-  let text: string;
-  try {
-    html = renderBriefHtml(brief, usage);
-    text = renderBriefText(brief, usage);
-  } catch (error) {
-    if (!brief.gcpBilling) throw error;
-    console.warn("gcp-billing: brief render failed; sending without it", error);
-    const fallback = { ...brief, gcpBilling: null };
-    html = renderBriefHtml(fallback, usage);
-    text = renderBriefText(fallback, usage);
-  }
-  // Delivery uses a bounded request and a payload-derived retry key.
-  const body = JSON.stringify({
-    from,
-    to: [to],
-    subject: `Daily Brief · ${dateLabel}`,
-    html,
-    text,
-  });
-  // Identical payload retries share a key; a new generated brief remains a new send.
-  const idempotencyKey = `daily-brief/${createHash("sha256").update(body).digest("hex")}`;
+  const body = JSON.stringify({ from, to: [to], subject, html, text });
+  const idempotencyKey = `daily-${kind}/${createHash("sha256").update(body).digest("hex")}`;
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -1603,4 +1699,16 @@ export async function sendBriefEmail(brief: DailyBrief, usage?: UsageReport) {
   }
 
   return { id: payload.id };
+}
+
+export async function sendBriefEmail(brief: DailyBrief) {
+  getEmailConfiguration();
+  const dateLabel = formatHumanDate(brief.generatedAt, { withTime: false });
+  return sendEmail("brief", `Markets, News & Trends · ${dateLabel}`, renderBriefHtml(brief), renderBriefText(brief));
+}
+
+export async function sendOperationsEmail(report: OperationsReport) {
+  getEmailConfiguration();
+  const dateLabel = formatHumanDate(report.generatedAt, { withTime: false });
+  return sendEmail("operations", `Analytics, Billing & Usage · ${dateLabel}`, renderOperationsHtml(report), renderOperationsText(report));
 }

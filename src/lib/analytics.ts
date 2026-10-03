@@ -60,7 +60,7 @@ export type SiteAnalytics = {
 
 type AdminProperty = {
   name?: string;
-  displayName?: string;
+  account?: string;
   timeZone?: string;
 };
 
@@ -119,38 +119,39 @@ function metricsFromValues(
 async function resolveProperty(
   accessToken: string,
   accountId: string,
+  configuredPropertyId: string,
 ): Promise<ResolvedProperty> {
-  const url = new URL(`${ADMIN_API}/properties`);
-  url.searchParams.set("filter", `parent:accounts/${accountId}`);
-  url.searchParams.set("pageSize", "1");
+  const response = await fetch(
+    `${ADMIN_API}/properties/${configuredPropertyId}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
 
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    signal: AbortSignal.timeout(15_000),
-  });
-
-  const payload = (await response.json().catch(() => null)) as {
-    properties?: AdminProperty[];
+  const payload = (await response.json().catch(() => null)) as (AdminProperty & {
     error?: { message?: string };
-  } | null;
+  }) | null;
 
   if (!response.ok) {
     throw new Error(
       payload?.error?.message ||
-        `Admin API ${response.status} for account ${accountId}`,
+        `Admin API ${response.status} for property ${configuredPropertyId}`,
     );
   }
 
-  const property = payload?.properties?.[0];
-  const name = property?.name; // properties/123456
-  const propertyId = name?.replace(/^properties\//, "");
-  if (!property || !propertyId) {
-    throw new Error(`No GA4 property found under account ${accountId}`);
+  if (
+    payload?.name !== `properties/${configuredPropertyId}` ||
+    payload.account !== `accounts/${accountId}`
+  ) {
+    throw new Error(
+      `GA4 property ${configuredPropertyId} does not match configured account ${accountId}`,
+    );
   }
 
   return {
-    propertyId,
-    timeZone: property.timeZone?.trim() || DEFAULT_TIME_ZONE,
+    propertyId: configuredPropertyId,
+    timeZone: payload.timeZone?.trim() || DEFAULT_TIME_ZONE,
   };
 }
 
@@ -348,12 +349,14 @@ async function collectOneSite(
   accessToken: string,
   accountId: string,
   label: string,
+  configuredPropertyId: string,
   now = new Date(),
 ): Promise<SiteAnalytics> {
   try {
     const { propertyId, timeZone } = await resolveProperty(
       accessToken,
       accountId,
+      configuredPropertyId,
     );
     try {
       const today = calendarDayInZone(now, timeZone);
@@ -393,7 +396,7 @@ async function collectOneSite(
     return siteShell(
       accountId,
       label,
-      "",
+      configuredPropertyId,
       DEFAULT_TIME_ZONE,
       addIsoDays(today, -1),
       error instanceof Error ? error.message : "Property resolve failed",
@@ -402,8 +405,8 @@ async function collectOneSite(
 }
 
 /**
- * Yesterday + month-to-date GA4 overview for configured accounts.
- * Returns [] when credentials are missing (section omitted from email).
+ * Yesterday + month-to-date GA4 overview for configured properties.
+ * Returns [] when credentials are missing (email labels the report unavailable).
  */
 export async function collectSiteAnalytics(
   now = new Date(),
@@ -422,7 +425,13 @@ export async function collectSiteAnalytics(
 
   return Promise.all(
     GA_ACCOUNTS.map((account) =>
-      collectOneSite(accessToken, account.accountId, account.label, now),
+      collectOneSite(
+        accessToken,
+        account.accountId,
+        account.label,
+        account.propertyId,
+        now,
+      ),
     ),
   );
 }

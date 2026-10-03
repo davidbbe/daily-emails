@@ -10,7 +10,7 @@ const originalCwd = process.cwd();
 const workspace = await mkdtemp(path.join(tmpdir(), "daily-emails-usage-"));
 process.chdir(workspace);
 const { collectResendQuota } = await import("@/lib/usage");
-const { renderBriefHtml, renderBriefText } = await import("@/lib/email");
+const { renderOperationsHtml, renderOperationsText } = await import("@/lib/email");
 after(async () => { process.chdir(originalCwd); await rm(workspace, { recursive: true, force: true }); });
 const cachePath = path.join(workspace, ".data/resend-usage.json");
 const now = new Date("2026-10-03T09:00:00Z");
@@ -50,7 +50,7 @@ test("Resend GET /usage reads provider limits and persists dated reset times", a
   assert.equal(metrics[1].percent, 60);
   assert.match(metrics[0].detail, /sent \+ received/);
   assert.match(metrics[0].detail, /observed 3 Oct 2026/);
-  assert.match(metrics[0].detail, /before this digest's send/);
+  assert.match(metrics[0].detail, /before both daily emails are sent/);
   assert.deepEqual(JSON.parse(await readFile(cachePath, "utf8")), { updatedAt: now.toISOString(), ...windows });
 });
 
@@ -68,8 +68,8 @@ test("cached daily and monthly counters expire separately exactly at reset", asy
   const nextMonth = await collectResendQuota(new Date(windows.monthly.resets_at));
   assert.ok(nextMonth.every((m) => !m.available));
   const usage = { collectedAt: now.toISOString(), thresholdPercent: 50, metrics: nextMonth, watch: [] };
-  assert.match(renderBriefText(briefFixture(), usage), /Some usage readings are unavailable/);
-  assert.doesNotMatch(renderBriefHtml(briefFixture(), usage), /All tracked quotas.*under/);
+  assert.match(renderOperationsText({ ...briefFixture(), usage }), /Some usage readings are unavailable/);
+  assert.doesNotMatch(renderOperationsHtml({ ...briefFixture(), usage }), /All tracked quotas.*under/);
 });
 
 test("an uncapped Resend plan renders No cap without a fake usage percentage", async (t) => {
@@ -80,8 +80,8 @@ test("an uncapped Resend plan renders No cap without a fake usage percentage", a
   assert.equal(metrics[0].available, true);
   assert.equal(metrics[0].percent, 0);
   const usage = { collectedAt: now.toISOString(), thresholdPercent: 50, metrics: [metrics[0]], watch: [] };
-  assert.match(renderBriefHtml(briefFixture(), usage), /No cap/);
-  const text = renderBriefText(briefFixture(), usage);
+  assert.match(renderOperationsHtml({ ...briefFixture(), usage }), /No cap/);
+  const text = renderOperationsText({ ...briefFixture(), usage });
   assert.match(text, /No cap/);
   assert.doesNotMatch(text, /\(0%\)/);
 });

@@ -270,11 +270,12 @@ export const REDDIT_SUBREDDITS = [
 
 export type RedditSubredditId = (typeof REDDIT_SUBREDDITS)[number]["id"];
 
-/** GA4 accounts in the Google Analytics email section (display order) */
+/** Exact GA4 account/property pairs in the operations email (display order). */
 export const GA_ACCOUNTS = [
-  { accountId: "292152311", label: "uwhmap.com" },
-  { accountId: "390992554", label: "greetingcardfun.com" },
-  { accountId: "220211668", label: "tvroulette.app" },
+  { accountId: "292152311", propertyId: "414858018", label: "uwhmap.com" },
+  { accountId: "390992554", propertyId: "532595081", label: "greetingcardfun.com" },
+  { accountId: "220211668", propertyId: "376889710", label: "tvroulette.app" },
+  { accountId: "344920077", propertyId: "477168801", label: "restaurantroulette.app" },
 ] as const;
 
 /** Cloud Billing account shown in the daily email (covers both GCP projects). */

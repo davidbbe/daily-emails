@@ -2,6 +2,47 @@ import type { DailyBrief } from "@/lib/brief";
 import type { ResearchBundle } from "@/lib/research";
 import { emptyInsiderBrief } from "@/lib/openinsider";
 import { emptyWhaleResearch } from "@/lib/whales";
+import type { OperationsReport } from "@/lib/email";
+
+export function operationsFixture(): OperationsReport {
+  const metrics = { activeUsers: 120, sessions: 160, screenPageViews: 380, bounceRate: 0.35, averageSessionDuration: 95 };
+  const quota = { id: "resend-monthly", label: "Resend monthly emails", used: 1800, limit: 3000, unit: "emails", percent: 60, available: true, detail: "Sent + received · observed 3 Oct 2026 · resets 1 Nov 2026" };
+  return {
+    generatedAt: "2026-10-03T09:00:00.000Z",
+    sites: ["uwhmap.com", "greetingcardfun.com", "tvroulette.app", "restaurantroulette.app"].map((label, index) => ({
+      accountId: `account-${index}`, propertyId: `property-${index}`, label,
+      date: "2026-10-02", previousDate: "2026-10-01", monthStart: "2026-10-01", timeZone: "UTC",
+      metrics, previous: { ...metrics, activeUsers: 100, sessions: 150, screenPageViews: 400 },
+      monthToDate: { ...metrics, activeUsers: 220, sessions: 310, screenPageViews: 780 },
+      dailySeries: Array.from({ length: 7 }, (_, i) => ({ date: new Date(Date.UTC(2026, 8, 26 + i)).toISOString().slice(0, 10), activeUsers: [70, 90, 80, 110, 100, 100, 120][i], sessions: 160, screenPageViews: 380 })),
+      freshnessNote: "Provisional GA4 data; recent values may change during processing.",
+    })),
+    gcpBilling: {
+      accountId: "offline-account", accountLabel: "Greeting Card Fun & Restaurant Roulette",
+      reportsUrl: "https://console.cloud.google.com/billing/offline-account/reports",
+      startDate: "2026-10-01", endDate: "2026-10-02", previousStartDate: "2026-09-01", previousEndDate: "2026-09-02",
+      currency: "USD", total: 8, previousTotal: 10, savings: 0, period: "month_to_date", source: "bigquery",
+      services: [
+        { name: "Places API", color: "#4185f4", marker: "circle", usageCost: 5, previousCost: 7, calls: 850, projectHint: "Restaurant Roulette" },
+        { name: "Gemini API", color: "#ff5620", marker: "square", usageCost: 3, previousCost: 3, calls: 220, projectHint: "Greeting Card Fun" },
+      ],
+      apiUsageStartDate: "2026-10-01", apiUsageEndDate: "2026-10-03",
+      apiUsage: [{ name: "Places API", color: "#4185f4", marker: "circle", calls: 850, skus: [{ name: "Nearby Search Enterprise", quantity: 850, unit: "calls", freeMonthly: 1000 }] }],
+      days: [{ date: "2026-10-01", costs: { "Places API": 2, "Gemini API": 1 } }, { date: "2026-10-02", costs: { "Places API": 3, "Gemini API": 2 } }],
+      freshnessNote: "Export data can arrive late; these totals may change.",
+    },
+    usage: {
+      collectedAt: "2026-10-03T09:00:00.000Z", thresholdPercent: 50, watch: [quota],
+      metrics: [
+        { id: "ai-gateway", label: "AI Gateway credits", used: 2, limit: 5, unit: "USD", percent: 40, available: true, detail: "$2 of the $5 monthly credit budget" },
+        { id: "fast-data-transfer", label: "Fast Data Transfer", used: 12_000_000_000, limit: 100_000_000_000, unit: "bytes", percent: 12, available: true, detail: "Month to date · Vercel platform usage" },
+        { id: "blob-storage", label: "Blob storage", used: 10_000_000, limit: 1_000_000_000, unit: "bytes", percent: 1, available: true, detail: "Current stored data" },
+        { ...quota, id: "resend-daily", label: "Resend daily emails", used: 12, limit: 100, percent: 12, detail: "Sent + received · resets 4 Oct 2026" },
+        quota,
+      ],
+    },
+  };
+}
 
 export function researchFixture(): ResearchBundle {
   return {

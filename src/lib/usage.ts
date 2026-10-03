@@ -271,7 +271,7 @@ function buildResendMetrics(
       limit: counter.limit,
       unit: "emails",
       available: true,
-      detail: `${amount} (sent + received) · ${observation} · resets ${formatHumanDate(counter.resets_at)} · collected before this digest's send`,
+      detail: `${amount} (sent + received) · ${observation} · resets ${formatHumanDate(counter.resets_at)} · collected before both daily emails are sent`,
     });
   });
 }
