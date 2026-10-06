@@ -306,7 +306,10 @@ export const AI_GATEWAY_MONTHLY_BUDGET_USD = 5;
 /** Hobby Blob included storage (1 GB, SI) for near-limit watch */
 export const BLOB_HOBBY_STORAGE_BYTES = 1_000_000_000;
 
-/** Hobby Blob included operations (per month / rolling window) */
+/** Hobby Blob Data Transfer included (10 GB, SI). */
+export const BLOB_HOBBY_DATA_TRANSFER_BYTES = 10_000_000_000;
+
+/** Hobby Blob included operations over the rolling 30-day window. */
 export const BLOB_HOBBY_SIMPLE_OPS = 10_000;
 export const BLOB_HOBBY_ADVANCED_OPS = 2_000;
 

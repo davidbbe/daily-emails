@@ -13,7 +13,7 @@ import {
   getMarketsPageUrl,
   PEOPLE,
 } from "@/lib/config";
-import { formatHumanDate, formatTimeZoneAbbr } from "@/lib/dates";
+import { formatHumanDate, formatHumanDatesInText, formatTimeZoneAbbr } from "@/lib/dates";
 import {
   formatCallCount,
   formatChangePercent,
@@ -533,7 +533,7 @@ function renderSiteCard(site: SiteAnalytics) {
             </table>
             ${
               site.freshnessNote
-                ? `<div style="margin-top:10px;font-size:12px;line-height:1.45;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 10px;">${escapeHtml(site.freshnessNote)}</div>`
+                ? `<div style="margin-top:10px;font-size:12px;line-height:1.45;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 10px;">${escapeHtml(formatHumanDatesInText(site.freshnessNote))}</div>`
                 : ""
             }
           </td>
@@ -848,7 +848,7 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
               </div>
               ${
                 report.freshnessNote
-                  ? `<div style="margin-top:8px;font-size:12px;line-height:1.45;color:#64748b;">${escapeHtml(report.freshnessNote)}</div>`
+                  ? `<div style="margin-top:8px;font-size:12px;line-height:1.45;color:#64748b;">${escapeHtml(formatHumanDatesInText(report.freshnessNote))}</div>`
                   : ""
               }
             </td>
@@ -911,7 +911,7 @@ function renderUsageWatch(usage: UsageReport) {
       return `<tr>
         <td style="padding:8px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
           <div style="font-size:14px;font-weight:600;color:#0f172a;">${escapeHtml(m.label)}</div>
-          <div style="margin-top:2px;font-size:13px;color:#475569;">${escapeHtml(m.detail)}</div>
+          <div style="margin-top:2px;font-size:13px;color:#475569;">${escapeHtml(formatHumanDatesInText(m.detail))}</div>
         </td>
         <td style="padding:8px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;text-align:right;white-space:nowrap;">
           <span style="font-size:16px;font-weight:700;color:${color};">${m.percent}%</span>
@@ -940,10 +940,11 @@ function renderUsageWatch(usage: UsageReport) {
 }
 
 function renderUsageRow(m: UsageMetric) {
-  const color = m.limitBasis === "unknown" ? "#64748b" : percentColor(m.percent, m.available);
-  const pct = !m.available ? "—" : m.limitBasis === "unknown" ? "Cap unverified" : m.limit == null ? "No cap" : `${m.percent}%${m.limitBasis === "budget" ? " of budget" : ""}`;
+  const isSnapshot = m.limitBasis === "snapshot";
+  const color = m.limitBasis === "unknown" || isSnapshot ? "#64748b" : percentColor(m.percent, m.available);
+  const pct = !m.available ? "—" : isSnapshot ? "Snapshot only" : m.limitBasis === "unknown" ? "Cap unverified" : m.limit == null ? "No cap" : `${m.percent}%${m.limitBasis === "budget" ? " of budget" : ""}`;
   const usedLimit = m.available
-    ? m.limitBasis === "unknown" ? formatMetricUsed(m) : `${formatMetricUsed(m)} / ${formatMetricLimit(m)}`
+    ? m.limitBasis === "unknown" || isSnapshot ? formatMetricUsed(m) : `${formatMetricUsed(m)} / ${formatMetricLimit(m)}`
     : "n/a";
   const fill = Math.min(100, Math.max(0, m.percent));
   const progress = m.available && m.limit != null
@@ -952,7 +953,7 @@ function renderUsageRow(m: UsageMetric) {
   return `<tr>
     <td class="usage-label" style="padding:12px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;">
       <div style="font-size:14px;font-weight:600;color:#0f172a;">${escapeHtml(m.label)}${m.source === "cached" ? ` <span style="font-size:11px;color:#92400e;">CACHED</span>` : ""}</div>
-      <div style="margin-top:2px;font-size:12px;line-height:1.45;color:#64748b;">${escapeHtml(m.detail)}</div>
+      <div style="margin-top:2px;font-size:12px;line-height:1.45;color:#64748b;">${escapeHtml(formatHumanDatesInText(m.detail))}</div>
       ${progress}
     </td>
     <td class="usage-value" style="padding:12px 0 12px 12px;border-bottom:1px solid #f1f5f9;vertical-align:top;text-align:right;white-space:nowrap;">
@@ -1414,7 +1415,7 @@ export function renderOperationsText(report: OperationsReport) {
         `  Yesterday (${formatHumanDate(site.date, { withTime: false })})`,
       );
       if (site.freshnessNote) {
-        lines.push(`  ${site.freshnessNote}`);
+        lines.push(`  ${formatHumanDatesInText(site.freshnessNote)}`);
       }
       lines.push(
         `  Users: ${Math.round(site.metrics.activeUsers)} (${usersDelta})`,
@@ -1474,7 +1475,7 @@ export function renderOperationsText(report: OperationsReport) {
           `  vs ${formatBillingRange(billing.previousStartDate, billing.previousEndDate)}`,
         );
         if (billing.insight) lines.push(`  ${billing.insight}`);
-        if (billing.freshnessNote) lines.push(`  ${billing.freshnessNote}`);
+        if (billing.freshnessNote) lines.push(`  ${formatHumanDatesInText(billing.freshnessNote)}`);
         const listed = new Set<string>();
         const skuLines = (group: { skus: GcpBillingReport["apiUsage"][number]["skus"] }) => {
           for (const sku of group.skus) {
@@ -1525,7 +1526,7 @@ export function renderOperationsText(report: OperationsReport) {
       lines.push(
         `- ${m.label}: ${m.percent}% (${formatMetricUsed(m)} / ${formatMetricLimit(m)})`,
       );
-      lines.push(`  ${m.detail}`);
+      lines.push(`  ${formatHumanDatesInText(m.detail)}`);
     }
   }
 
@@ -1534,26 +1535,26 @@ export function renderOperationsText(report: OperationsReport) {
     lines.push("", "VERCEL USAGE");
     for (const m of vercel) {
       if (!m.available) {
-        lines.push(`- ${m.label}: unavailable — ${m.detail}`);
+        lines.push(`- ${m.label}: unavailable — ${formatHumanDatesInText(m.detail)}`);
         continue;
       }
       lines.push(
-        `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.limitBasis === "unknown" ? "Cap unverified" : m.limit == null ? "No cap" : `${m.percent}%${m.limitBasis === "budget" ? " of budget" : ""}`})`,
+        `- ${m.label}: ${formatMetricUsed(m)}${m.limitBasis === "snapshot" ? "" : ` / ${formatMetricLimit(m)}`} (${m.limitBasis === "snapshot" ? "Snapshot only" : m.limitBasis === "unknown" ? "Cap unverified" : m.limit == null ? "No cap" : `${m.percent}%${m.limitBasis === "budget" ? " of budget" : ""}`})`,
       );
-      lines.push(`  ${m.detail}`);
+      lines.push(`  ${formatHumanDatesInText(m.detail)}`);
     }
   }
   if (resend.length > 0) {
     lines.push("", "RESEND USAGE");
     for (const m of resend) {
       if (!m.available) {
-        lines.push(`- ${m.label}: unavailable — ${m.detail}`);
+        lines.push(`- ${m.label}: unavailable — ${formatHumanDatesInText(m.detail)}`);
         continue;
       }
       lines.push(
-        `- ${m.label}: ${formatMetricUsed(m)} / ${formatMetricLimit(m)} (${m.limitBasis === "unknown" ? "Cap unverified" : m.limit == null ? "No cap" : `${m.percent}%${m.limitBasis === "budget" ? " of budget" : ""}`})`,
+        `- ${m.label}: ${formatMetricUsed(m)}${m.limitBasis === "snapshot" ? "" : ` / ${formatMetricLimit(m)}`} (${m.limitBasis === "snapshot" ? "Snapshot only" : m.limitBasis === "unknown" ? "Cap unverified" : m.limit == null ? "No cap" : `${m.percent}%${m.limitBasis === "budget" ? " of budget" : ""}`})`,
       );
-      lines.push(`  ${m.detail}`);
+      lines.push(`  ${formatHumanDatesInText(m.detail)}`);
     }
   }
 

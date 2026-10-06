@@ -2,6 +2,7 @@ import {
   GCP_BILLING_ACCOUNT,
   type GcpBillingAccountConfig,
 } from "@/lib/config";
+import { formatHumanDate } from "@/lib/dates";
 import {
   getGoogleAccessToken,
   getGoogleCloudProjectId,
@@ -803,8 +804,8 @@ function reportFromRows(
   const comparisonAvailable = Boolean(firstUsageDate && firstUsageDate <= window.previousStartDate && rows.some(r => previousDays.has(r.day)));
   const freshnessNote = [
     "Provisional net costs after credits, grouped by usage date in UTC; not an invoice total. Google Console daily reports use Pacific time.",
-    exportedAt ? `Export last updated ${exportedAt}.` : "Export update time unavailable.",
-    latestUsageDate ? `Latest exported usage: ${latestUsageDate}; missing days are unreported, not verified zero usage.` : "No exported usage rows in the selected range.",
+    exportedAt ? `Export last updated ${formatHumanDate(exportedAt)}.` : "Export update time unavailable.",
+    latestUsageDate ? `Latest exported usage: ${formatHumanDate(latestUsageDate, { withTime: false })}; missing days are unreported, not verified zero usage.` : "No exported usage rows in the selected range.",
     comparisonAvailable ? undefined : "Prior-period export coverage is incomplete; comparison unavailable.",
   ].filter(Boolean).join(" ");
 

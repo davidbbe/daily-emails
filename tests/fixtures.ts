@@ -7,6 +7,7 @@ import type { OperationsReport } from "@/lib/email";
 export function operationsFixture(): OperationsReport {
   const metrics = { activeUsers: 120, sessions: 160, screenPageViews: 380, bounceRate: 0.35, averageSessionDuration: 95 };
   const quota = { id: "resend-monthly", label: "Resend monthly emails", used: 1800, limit: 3000, unit: "emails", percent: 60, available: true, detail: "Sent + received · observed 3 Oct 2026 · resets 1 Nov 2026" };
+  const advancedQuota = { id: "blob-advanced-ops", label: "Blob advanced operations", used: 1362, limit: 2_000, unit: "ops", percent: 68.1, available: true, limitBasis: "provider", source: "live", detail: "3 Sept 2026, 09:00 UTC–3 Oct 2026, 09:00 UTC · rolling last 30 days, including today · all stores in team · Hobby included allowance" };
   return {
     generatedAt: "2026-10-03T09:00:00.000Z",
     sites: ["uwhmap.com", "greetingcardfun.com", "tvroulette.app", "restaurantroulette.app"].map((label, index) => ({
@@ -32,11 +33,15 @@ export function operationsFixture(): OperationsReport {
       freshnessNote: "Export data can arrive late; these totals may change.",
     },
     usage: {
-      collectedAt: "2026-10-03T09:00:00.000Z", thresholdPercent: 50, watch: [quota],
+      collectedAt: "2026-10-03T09:00:00.000Z", thresholdPercent: 50, watch: [quota, advancedQuota],
       metrics: [
         { id: "ai-gateway", label: "AI Gateway month-to-date spend", used: 2, limit: 5, unit: "USD", percent: 40, available: true, limitBasis: "budget", source: "live", detail: "Oct 1–3 UTC · measured account spend · $3.00 credit balance · $5 configured budget; not a provider cap" },
-        { id: "fast-data-transfer", label: "Fast Data Transfer", used: 12_000_000_000, limit: 100_000_000_000, unit: "bytes", percent: 12, available: true, source: "live", detail: "Sep 3–Oct 2 UTC · last 30 complete days · all projects in team · Hobby included allowance" },
-        { id: "blob-storage", label: "Blob storage · connected store", used: 10_000_000, limit: null, unit: "bytes", percent: 0, available: true, limitBasis: "unknown", source: "live", detail: "Current snapshot of this store; excludes other team stores and billed storage averages" },
+        { id: "fast-data-transfer", label: "Fast Data Transfer", used: 12_000_000_000, limit: 100_000_000_000, unit: "bytes", percent: 12, available: true, source: "live", detail: "3 Sept 2026, 09:00 UTC–3 Oct 2026, 09:00 UTC · rolling last 30 days, including today · all projects in team · Hobby included allowance" },
+        { id: "blob-simple-ops", label: "Blob simple operations", used: 2681, limit: 10_000, unit: "ops", percent: 26.8, available: true, limitBasis: "provider", source: "live", detail: "3 Sept 2026, 09:00 UTC–3 Oct 2026, 09:00 UTC · rolling last 30 days, including today · all stores in team · Hobby included allowance" },
+        advancedQuota,
+        { id: "blob-team-storage", label: "Blob storage · rolling team average", used: 70_000_000, limit: 1_000_000_000, unit: "bytes", percent: 7, available: true, limitBasis: "provider", source: "live", detail: "3 Sept 2026, 09:00 UTC–3 Oct 2026, 09:00 UTC · provider average over this rolling window; dashboard Latest value may differ" },
+        { id: "blob-data-transfer", label: "Blob Data Transfer", used: 120_000_000, limit: 10_000_000_000, unit: "bytes", percent: 1.2, available: true, limitBasis: "provider", source: "live", detail: "3 Sept 2026, 09:00 UTC–3 Oct 2026, 09:00 UTC · rolling last 30 days · all team stores" },
+        { id: "blob-storage", label: "Blob storage · connected store", used: 10_000_000, limit: null, unit: "bytes", percent: 0, available: true, limitBasis: "snapshot", source: "live", detail: "Current snapshot of this store; excludes other team stores and billed storage averages" },
         { ...quota, id: "resend-daily", label: "Resend daily emails", used: 12, limit: 100, percent: 12, detail: "Sent + received · resets 4 Oct 2026" },
         quota,
       ],

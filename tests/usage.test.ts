@@ -3,7 +3,7 @@ import test, { after, type TestContext } from "node:test";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { briefFixture } from "./fixtures";
+import { operationsFixture } from "./fixtures";
 
 // Give persistence a private temporary directory; never touch real local caches.
 const originalCwd = process.cwd();
@@ -22,7 +22,8 @@ const windows = {
 async function setup(t: TestContext) {
   const oldEnv = { ...process.env };
   t.after(() => { process.env = oldEnv; });
-  process.env.RESEND_API_KEY = "offline-send-only-key";
+  process.env.RESEND_API_KEY = "offline-full-access-key";
+  delete process.env.RESEND_USAGE_API_KEY;
   for (const key of ["BLOB_READ_WRITE_TOKEN", "BLOB_STORE_ID", "VERCEL", "AWS_LAMBDA_FUNCTION_NAME"]) delete process.env[key];
   t.mock.method(console, "warn", () => {});
   await rm(cachePath, { force: true });
@@ -40,7 +41,7 @@ test("Resend GET /usage reads provider limits and persists dated reset times", a
   t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init: RequestInit) => {
     assert.equal(String(input), "https://api.resend.com/usage");
     assert.equal(init.method ?? "GET", "GET");
-    assert.equal(new Headers(init.headers).get("Authorization"), "Bearer offline-send-only-key");
+    assert.equal(new Headers(init.headers).get("Authorization"), "Bearer offline-full-access-key");
     assert.ok(init.signal);
     return Response.json({ emails: windows });
   });
@@ -68,8 +69,29 @@ test("cached daily and monthly counters expire separately exactly at reset", asy
   const nextMonth = await collectResendQuota(new Date(windows.monthly.resets_at));
   assert.ok(nextMonth.every((m) => !m.available));
   const usage = { collectedAt: now.toISOString(), thresholdPercent: 50, metrics: nextMonth, watch: [] };
-  assert.match(renderOperationsText({ ...briefFixture(), usage }), /Some usage readings are unavailable/);
-  assert.doesNotMatch(renderOperationsHtml({ ...briefFixture(), usage }), /All tracked quotas.*under/);
+  assert.match(renderOperationsText({ ...operationsFixture(), usage }), /Some usage readings are unavailable/);
+  assert.doesNotMatch(renderOperationsHtml({ ...operationsFixture(), usage }), /All tracked quotas.*under/);
+});
+
+test("Resend usage uses a separate full-access key and explains restricted-key failures", async (t) => {
+  await setup(t);
+  process.env.RESEND_API_KEY = "offline-send-only-key";
+  process.env.RESEND_USAGE_API_KEY = " offline-usage-key ";
+  t.mock.method(globalThis, "fetch", async (_input: unknown, init: RequestInit) => {
+    assert.equal(new Headers(init.headers).get("Authorization"), "Bearer offline-usage-key");
+    return Response.json({ emails: windows });
+  });
+  assert.ok((await collectResendQuota(now)).every(m => m.available));
+  assert.equal(process.env.RESEND_API_KEY, "offline-send-only-key");
+  await rm(cachePath, { force: true });
+  t.mock.method(globalThis, "fetch", async () => Response.json({ name: "restricted_api_key", message: "This API key is restricted to only send emails" }, { status: 401 }));
+  const metrics = await collectResendQuota(now);
+  assert.ok(metrics.every(m => !m.available));
+  assert.match(metrics[0].detail, /full-access key.*RESEND_USAGE_API_KEY/);
+  await cache({ updatedAt: now.toISOString(), ...windows });
+  const cached = await collectResendQuota(now);
+  assert.equal(cached[0].source, "cached");
+  assert.match(cached[0].detail, /Live refresh failed:.*full-access key/);
 });
 
 test("an uncapped Resend plan renders No cap without a fake usage percentage", async (t) => {
@@ -80,10 +102,10 @@ test("an uncapped Resend plan renders No cap without a fake usage percentage", a
   assert.equal(metrics[0].available, true);
   assert.equal(metrics[0].percent, 0);
   const usage = { collectedAt: now.toISOString(), thresholdPercent: 50, metrics: [metrics[0]], watch: [] };
-  assert.match(renderOperationsHtml({ ...briefFixture(), usage }), /No cap/);
-  const text = renderOperationsText({ ...briefFixture(), usage });
+  assert.match(renderOperationsHtml({ ...operationsFixture(), usage }), /No cap/);
+  const text = renderOperationsText({ ...operationsFixture(), usage });
   assert.match(text, /No cap/);
-  assert.doesNotMatch(text, /\(0%\)/);
+  assert.doesNotMatch(text, /Resend daily emails:.*\(0%\)/);
 });
 
 test("invalid live data falls back to validated cache; legacy and future caches are not current readings", async (t) => {
@@ -106,65 +128,122 @@ test("live Resend usage survives a cache write failure", async (t) => {
 });
 
 const { collectPlatformUsage, parsePlatformUsageCache, collectAiGateway } = await import("@/lib/usage");
-function platformDays() {
-  return Array.from({length:30},(_,i)=>({
-    date:new Date(Date.UTC(2026,8,3+i)).toISOString(),
-    bandwidth_incoming_bytes:2,bandwidth_outgoing_bytes:8,request_hit_count:3,request_miss_count:1,
-    function_invocation_successful_count:1,function_invocation_error_count:0,function_invocation_timeout_count:0,function_invocation_throttle_count:0,
-    blob_simple_request_count:5,blob_advanced_request_count:2,
-  }));
+const totals: Record<string, number> = {
+  fast_data_transfer: 300, edge_requests: 120, function_invocations: 30,
+  blob_simple_operations: 2681, blob_advanced_operations: 1362,
+  blob_storage_size: 74_040_845, blob_data_transfer: 113_739_797,
+};
+function meter(body: Record<string, unknown>) {
+  return { metric: { slug: body.metric }, from: body.from, to: body.to,
+    queriedAt: body.to, filterBy: {}, results: { format: "scalar", totalValue: totals[String(body.metric)] } };
 }
-async function platformSetup(t:TestContext) {
-  await setup(t);process.env.VERCEL_TOKEN="offline-token";process.env.VERCEL_TEAM_ID="offline-team";
+async function platformSetup(t: TestContext) {
+  await setup(t);
+  process.env.VERCEL_TOKEN = "offline-token";
+  process.env.VERCEL_TEAM_ID = "offline-team";
 }
-test("Vercel sums exactly 30 complete UTC dates and confirms Hobby scope",async t=> {
+test("Vercel dashboard meters use an exact rolling 30 days including today", async t => {
   await platformSetup(t);
-  const data=platformDays();
-  t.mock.method(globalThis,"fetch",async (input:string|URL|Request)=> {
-    const url=new URL(String(input));
-    if(url.pathname.includes("/teams/")) return Response.json({billing:{plan:"hobby"}});
-    assert.equal(url.searchParams.get("from"),"2026-09-03T00:00:00.000Z");
-    assert.equal(url.searchParams.get("to"),"2026-10-02T23:59:59.999Z");
-    return Response.json({data:[...data,{...data[0],date:"2026-10-03T00:00:00.000Z",bandwidth_outgoing_bytes:999}],lastUpdate:"2026-10-03T08:00:00Z"});
-  });
-  const metrics=await collectPlatformUsage(now);
-  assert.equal(metrics[0].used,300);assert.equal(metrics[1].used,120);assert.equal(metrics[3].used,150);
-  assert.ok(metrics.every(m=>m.available));assert.match(metrics[3].detail,/provider updated 2026-10-03T08:00:00/);
-  assert.match(metrics[0].detail,/all projects in team/);assert.equal(metrics[1].label,"CDN Requests");
-});
-test("missing Vercel counters are unavailable, not zero; Blob survives request failure",async t=> {
-  await platformSetup(t);
-  t.mock.method(globalThis,"fetch",async (input:string|URL|Request)=> {
-    const url=new URL(String(input));
-    if(url.pathname.includes("/teams/"))return Response.json({billing:{plan:"hobby"}});
-    return url.searchParams.get("type")==="requests"?new Response("",{status:503}):Response.json({data:platformDays()});
-  });
-  let metrics=await collectPlatformUsage(now);
-  assert.ok(metrics.slice(0,3).every(m=>!m.available));assert.ok(metrics.slice(3).every(m=>m.available));
-  t.mock.method(globalThis,"fetch",async(input:string|URL|Request)=> {
-    if(String(input).includes("/teams/"))return Response.json({billing:{plan:"pro"}});
-    return Response.json({data:platformDays().map(d=>({...d,request_hit_count:undefined}))});
-  });
-  metrics=await collectPlatformUsage(now);
-  assert.equal(metrics[1].available,false);assert.equal(metrics[0].limit,null);assert.equal(metrics[0].limitBasis,"unknown");
-  const report={...briefFixture(),usage:{collectedAt:now.toISOString(),thresholdPercent:50,metrics,watch:[]}};
-  assert.match(renderOperationsHtml(report),/Cap unverified/);
-});
-test("malformed, duplicate or incomplete Vercel buckets never produce a verified total",async t=> {
-  await platformSetup(t);
-  for(const data of [undefined,[],platformDays().slice(1),[...platformDays(),platformDays()[0]]]) {
-    t.mock.method(globalThis,"fetch",async(input:string|URL|Request)=>String(input).includes("/teams/")?Response.json({billing:{plan:"hobby"}}):Response.json({data}));
-    assert.ok((await collectPlatformUsage(now)).every(m=>!m.available));
+  for (const at of [now, new Date("2026-11-01T00:01:23.456Z"), new Date("2026-10-04T09:00:00Z")]) {
+    const seen: string[] = [];
+    t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.pathname.includes("/teams/")) return Response.json({ billing: { plan: "hobby" } });
+      assert.equal(url.pathname, "/v1/usage-metrics/query");
+      assert.equal(url.searchParams.get("teamId"), "offline-team");
+      assert.equal(init.method, "POST"); // Read-only queries; no email or provider mutations.
+      const body = JSON.parse(String(init.body));
+      seen.push(body.metric);
+      assert.equal(body.to, at.toISOString());
+      assert.equal(body.from, new Date(at.getTime() - 30 * 86400000).toISOString());
+      assert.equal(body.format, "scalar");
+      assert.deepEqual(body.views, { total: { groupBy: [] } });
+      return Response.json(meter(body));
+    });
+    const metrics = await collectPlatformUsage(at);
+    assert.deepEqual(seen.sort(), Object.keys(totals).sort());
+    assert.ok(metrics.every(m => m.available));
+    assert.equal(metrics[3].used, 2681); // The old simple-request counter was 11,493.
+    assert.equal(metrics[3].percent, 26.8);
+    assert.equal(metrics[4].used, 1362);
+    assert.equal(metrics[5].used, totals.blob_storage_size);
+    assert.equal(metrics[6].used, totals.blob_data_transfer);
+    assert.match(metrics[5].detail, /provider average.*Latest value may differ/);
+    assert.match(metrics[3].detail, /rolling last 30 days, including today/);
+    assert.doesNotMatch(metrics[3].detail, /complete days|2026-\d{2}-\d{2}/);
   }
 });
-test("platform cache expires at 24 hours, rejects other teams, legacy and invalid counters",()=> {
-  const payload={teamId:"offline-team",updatedAt:now.toISOString(),from:"2026-09-03T00:00:00Z",to:"2026-10-02T23:59:59.999Z",metrics:[{id:"edge-requests",label:"CDN Requests",used:20,limit:100,unit:"requests",available:true,detail:"dated snapshot"}]};
-  const parse=(p:unknown,team="offline-team",at=now)=>parsePlatformUsageCache(JSON.stringify(p),team,at);
-  assert.equal(parse(payload)?.[0].source,"cached");assert.equal(parse(payload)?.[0].percent,20);
-  assert.equal(parse(payload,"another-team"),null);assert.equal(parse(payload,"offline-team",new Date(now.getTime()+86400000)),null);
-  assert.equal(parse({...payload,updatedAt:"2099-01-01T00:00:00Z"}),null);
-  assert.equal(parse({...payload,teamId:undefined}),null);
-  assert.equal(parse({...payload,metrics:[{...payload.metrics[0],used:-1}]}),null);
+test("a single failed or missing Vercel meter preserves the other live readings", async t => {
+  await platformSetup(t);
+  for (const failed of Object.keys(totals)) {
+    t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init: RequestInit) => {
+      if (String(input).includes("/teams/")) return Response.json({ billing: { plan: "hobby" } });
+      const body = JSON.parse(String(init.body));
+      return body.metric === failed ? new Response("", { status: 503 }) : Response.json(meter(body));
+    });
+    const metrics = await collectPlatformUsage(now);
+    assert.equal(metrics.filter(m => m.available).length, 6);
+    assert.equal(metrics.find(m => m.id === "blob-simple-ops")?.available, failed !== "blob_simple_operations");
+  }
+});
+test("other or unverified Vercel plans never use Hobby quota percentages", async t => {
+  await platformSetup(t);
+  for (const team of [{ billing: { plan: "pro" } }, {}]) {
+    t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init: RequestInit) =>
+      String(input).includes("/teams/") ? Response.json(team) : Response.json(meter(JSON.parse(String(init.body)))));
+    const metrics = await collectPlatformUsage(now);
+    assert.ok(metrics.every(m => m.available && m.limit === null && m.limitBasis === "unknown"));
+    const report = { ...operationsFixture(), usage: { collectedAt: now.toISOString(), thresholdPercent: 50, metrics, watch: [] } };
+    assert.match(renderOperationsHtml(report), /Cap unverified/);
+  }
+});
+test("invalid, scoped, stale or mismatched Vercel meters never produce a quota total; zero remains valid", async t => {
+  await platformSetup(t);
+  const mutations = [
+    (m: ReturnType<typeof meter>) => ({ ...m, results: {} }),
+    (m: ReturnType<typeof meter>) => ({ ...m, results: { ...m.results, totalValue: -1 } }),
+    (m: ReturnType<typeof meter>) => ({ ...m, metric: { slug: "legacy_counter" } }),
+    (m: ReturnType<typeof meter>) => ({ ...m, from: "2026-09-03T00:00:00Z" }),
+    (m: ReturnType<typeof meter>) => ({ ...m, to: "2026-10-02T23:59:59Z" }),
+    (m: ReturnType<typeof meter>) => ({ ...m, to: "2026-10-04T09:00:00Z" }),
+    (m: ReturnType<typeof meter>) => ({ ...m, filterBy: { resourceId: ["one-store"] } }),
+    (m: ReturnType<typeof meter>) => ({ ...m, queriedAt: "invalid" }),
+    (m: ReturnType<typeof meter>) => ({ ...m, results: { ...m.results, format: "timeseries" } }),
+  ];
+  for (const mutate of mutations) {
+    t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init: RequestInit) =>
+      String(input).includes("/teams/") ? Response.json({ billing: { plan: "hobby" } }) : Response.json(mutate(meter(JSON.parse(String(init.body))))));
+    assert.ok((await collectPlatformUsage(now)).every(m => !m.available));
+  }
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init: RequestInit) =>
+    String(input).includes("/teams/") ? Response.json({ billing: { plan: "hobby" } }) : Response.json({ ...meter(JSON.parse(String(init.body))), results: { format: "scalar", totalValue: 0 } }));
+  assert.ok((await collectPlatformUsage(now)).every(m => m.available && m.used === 0));
+});
+
+test("HTML and plain text format dates in older notes without rewriting URLs", () => {
+  const brief = operationsFixture();
+  const detail = "2026-09-06–2026-10-05 UTC · provider updated 2026-10-06T10:00:15.011Z · https://example.com/2026-10-06";
+  brief.usage = { collectedAt: now.toISOString(), thresholdPercent: 50, watch: [], metrics: [{ id: "blob-storage", label: "Blob storage · connected store", used: 24_770_000, limit: null, unit: "bytes", percent: 0, available: true, limitBasis: "snapshot", detail }] };
+  for (const rendered of [renderOperationsHtml(brief), renderOperationsText(brief)]) {
+    assert.match(rendered, /6 Sept 2026–5 Oct 2026 UTC/);
+    assert.match(rendered, /6 Oct 2026, 10:00 UTC/);
+    assert.match(rendered, /Snapshot only/);
+    assert.match(rendered, /https:\/\/example.com\/2026-10-06/);
+    assert.doesNotMatch(rendered, /Cap unverified|No cap|provider updated 2026-/);
+  }
+});
+test("platform cache expires at 24 hours and rejects old sources, other teams and invalid counters", () => {
+  const payload = { version: 2, teamId: "offline-team", updatedAt: now.toISOString(), from: "2026-09-03T09:00:00.000Z", to: now.toISOString(), metrics: [{ id: "edge-requests", label: "CDN Requests", used: 20, limit: 100, unit: "requests", available: true, detail: "dated snapshot" }] };
+  const parse = (p: unknown, team = "offline-team", at = now) => parsePlatformUsageCache(JSON.stringify(p), team, at);
+  assert.equal(parse(payload)?.[0].source, "cached");
+  assert.equal(parse(payload)?.[0].percent, 20);
+  assert.equal(parse(payload, "another-team"), null);
+  assert.equal(parse(payload, "offline-team", new Date(now.getTime() + 86400000)), null);
+  assert.equal(parse({ ...payload, updatedAt: "2099-01-01T00:00:00Z" }), null);
+  assert.equal(parse({ ...payload, version: undefined }), null);
+  assert.equal(parse({ ...payload, version: 1 }), null);
+  assert.equal(parse({ ...payload, teamId: undefined }), null);
+  assert.equal(parse({ ...payload, metrics: [{ ...payload.metrics[0], used: -1 }] }), null);
 });
 test("Gateway budget uses actual MTD spend even with purchased credits",async t=> {
   await platformSetup(t);process.env.AI_GATEWAY_API_KEY="offline-key";

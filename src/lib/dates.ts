@@ -109,3 +109,11 @@ export function formatHumanDate(
     timeZoneName: "short",
   });
 }
+
+/** Format dates embedded in provider notes, including notes from older caches. */
+export function formatHumanDatesInText(text: string): string {
+  return text.replace(/https?:\/\/\S+|\b\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?\b/g, (value) => {
+    if (value.startsWith("http")) return value;
+    return formatHumanDate(value, { withTime: value.includes("T") });
+  });
+}

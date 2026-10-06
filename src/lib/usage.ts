@@ -8,14 +8,16 @@ import { z } from "zod";
 import {
   AI_GATEWAY_MONTHLY_BUDGET_USD,
   BLOB_HOBBY_ADVANCED_OPS,
+  BLOB_HOBBY_DATA_TRANSFER_BYTES,
   BLOB_HOBBY_SIMPLE_OPS,
+  BLOB_HOBBY_STORAGE_BYTES,
   HOBBY_EDGE_REQUESTS,
   HOBBY_FAST_DATA_TRANSFER_BYTES,
   HOBBY_FUNCTION_INVOCATIONS,
   USAGE_WATCH_THRESHOLD,
   getBlobAccess,
 } from "@/lib/config";
-import { formatHumanDate } from "@/lib/dates";
+import { formatHumanDate, formatHumanDatesInText } from "@/lib/dates";
 
 export type UsageMetric = {
   id: string;
@@ -32,7 +34,7 @@ export type UsageMetric = {
   available: boolean;
   error?: string;
   /** Unverified plan limits must never be presented as provider caps. */
-  limitBasis?: "provider" | "budget" | "unknown";
+  limitBasis?: "provider" | "budget" | "unknown" | "snapshot";
   source?: "live" | "cached";
 };
 
@@ -65,7 +67,7 @@ function metric(partial: Omit<UsageMetric, "percent"> & { percent?: number }): U
   const percent =
     partial.percent ??
     (partial.available ? roundPercent(partial.used, partial.limit) : 0);
-  return { ...partial, percent };
+  return { ...partial, detail: formatHumanDatesInText(partial.detail), percent };
 }
 
 function unavailable(
@@ -218,7 +220,7 @@ async function collectBlobStorage(): Promise<UsageMetric> {
       limit,
       unit: "bytes",
       detail: `${formatBytes(totalBytes)} across ${blobCount} object${blobCount === 1 ? "" : "s"} · current snapshot of this store; excludes other team stores and is not Vercel’s billed storage average`,
-      limitBasis: "unknown",
+      limitBasis: "snapshot",
       source: "live",
       available: true,
     });
@@ -290,6 +292,8 @@ function buildResendMetrics(
       limit: counter.limit,
       unit: "emails",
       available: true,
+      source,
+      limitBasis: "provider",
       detail: `${amount} (sent + received) · ${observation} · resets ${formatHumanDate(counter.resets_at)} · collected before both daily emails are sent`,
     });
   });
@@ -382,20 +386,25 @@ async function saveResendCache(payload: ResendQuotaCache) {
   }
 }
 
-/** Read-only account usage, supported by sending-only keys too. */
+/** Read-only account usage requires a full-access key; sending can keep its own key. */
 export async function collectResendQuota(now?: Date): Promise<UsageMetric[]> {
   const unavailableMetrics = (reason: string) => (["daily", "monthly"] as const).map(
     (period) => unavailable(`resend-${period}`, `Resend ${period} emails`, null, "emails", reason),
   );
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  if (!apiKey) return unavailableMetrics("RESEND_API_KEY not set");
+  const apiKey = process.env.RESEND_USAGE_API_KEY?.trim() || process.env.RESEND_API_KEY?.trim();
+  if (!apiKey) return unavailableMetrics("Set RESEND_USAGE_API_KEY to a full-access Resend key (or use a full-access RESEND_API_KEY)");
 
   try {
     const response = await fetch("https://api.resend.com/usage", {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) throw new Error(`Resend usage API ${response.status}`);
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(`Resend usage API ${response.status}: usage requires a valid full-access key. Set RESEND_USAGE_API_KEY; the sending key can remain in RESEND_API_KEY.`);
+      }
+      throw new Error(`Resend usage API ${response.status}`);
+    }
     const result = resendUsageSchema.safeParse(await response.json());
     if (!result.success) throw new Error("Resend usage API returned invalid counters, limits, or reset times");
     const observedAt = now ?? new Date();
@@ -405,9 +414,9 @@ export async function collectResendQuota(now?: Date): Promise<UsageMetric[]> {
     await saveResendCache(cache).catch((error) => console.warn("usage: Resend cache save failed", error));
     return metrics;
   } catch (error) {
-    const cached = await loadCachedResendQuota(now);
-    if (cached) return cached;
     const message = error instanceof Error ? error.message : "Resend usage unavailable";
+    const cached = await loadCachedResendQuota(now);
+    if (cached) return cached.map(m => ({ ...m, detail: `${m.detail} · Live refresh failed: ${message}` }));
     console.warn("usage: Resend quota failed", error);
     return unavailableMetrics(message);
   }
@@ -421,6 +430,7 @@ export function formatMetricUsed(m: UsageMetric) {
 }
 
 export function formatMetricLimit(m: UsageMetric) {
+  if (m.limitBasis === "snapshot") return "Snapshot only";
   if (m.limitBasis === "unknown") return "Cap unverified";
   if (m.limit == null) return "No cap";
   if (m.unit === "USD") return formatUsd(m.limit);
@@ -444,39 +454,21 @@ function resolveTeamId() {
   }
 }
 
-type UsageApiDay = Record<string, unknown> & {
-  date?: string;
-  bandwidth_incoming_bytes?: number;
-  bandwidth_outgoing_bytes?: number;
-  function_invocation_successful_count?: number;
-  function_invocation_error_count?: number;
-  function_invocation_timeout_count?: number;
-  function_invocation_throttle_count?: number;
-  blob_simple_request_count?: number;
-  blob_advanced_request_count?: number;
-};
-
-type UsageApiResponse = {
-  data?: UsageApiDay[];
-  lastUpdate?: string;
-};
-
+/** Hobby allowances use a moving 30-day window, including today's partial usage. */
 function usageWindow(now = new Date()) {
-  const midnight = new Date(`${now.toISOString().slice(0, 10)}T00:00:00Z`);
-  const to = new Date(midnight.getTime() - 1);
-  const from = new Date(midnight.getTime() - 30 * 24 * 60 * 60 * 1000);
   return {
-    from: from.toISOString(),
-    to: to.toISOString(),
-    label: "last 30 days",
+    from: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    to: now.toISOString(),
   };
 }
 
-async function vercelApiGetJson(apiPath: string): Promise<unknown> {
+async function vercelApiGetJson(apiPath: string, body?: Record<string, unknown>): Promise<unknown> {
   const token = process.env.VERCEL_TOKEN?.trim();
   if (token) {
     const response = await fetch(`https://api.vercel.com${apiPath}`, {
-      headers: { Authorization: `Bearer ${token}` },
+      method: body ? "POST" : "GET",
+      headers: { Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+      ...(body ? { body: JSON.stringify(body) } : {}),
       signal: AbortSignal.timeout(10_000),
     });
     const text = await response.text();
@@ -499,15 +491,17 @@ async function vercelApiGetJson(apiPath: string): Promise<unknown> {
   return await new Promise((resolve, reject) => {
     const child = spawn(
       "vercel",
-      ["api", apiPath, "--raw"],
-      { stdio: ["ignore", "pipe", "pipe"], timeout: 10_000 },
+      ["api", apiPath, "--raw", ...(body ? ["--method", "POST", "--input", "-"] : [])],
+      { stdio: [body ? "pipe" : "ignore", "pipe", "pipe"], timeout: 10_000 },
     );
+    child.stdin?.on("error", reject);
+    if (body) child.stdin?.end(JSON.stringify(body));
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => {
+    child.stdout!.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
     });
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr!.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
     });
     child.on("error", reject);
@@ -535,51 +529,43 @@ async function vercelApiGetJson(apiPath: string): Promise<unknown> {
   });
 }
 
-async function fetchUsageType(type: string, teamId: string, window: ReturnType<typeof usageWindow>): Promise<UsageApiResponse> {
-  if (!teamId) {
-    throw new Error(
-      "Set VERCEL_TEAM_ID (or link the project so .vercel/project.json has orgId)",
-    );
+const usageMeterSchema = z.object({
+  metric: z.object({ slug: z.string() }),
+  from: z.iso.datetime(),
+  to: z.iso.datetime(),
+  queriedAt: z.iso.datetime(),
+  filterBy: z.record(z.string(), z.unknown()),
+  results: z.object({ format: z.literal("scalar"), totalValue: z.number().finite().nonnegative() }),
+});
+
+/** Dashboard metered totals; legacy /v2/usage Blob counters include different operations. */
+async function fetchUsageMeter(slug: string, teamId: string, window: ReturnType<typeof usageWindow>) {
+  const result = await vercelApiGetJson(
+    `/v1/usage-metrics/query?teamId=${encodeURIComponent(teamId)}`,
+    { metric: slug, ...window, format: "scalar", views: { total: { groupBy: [] } } },
+  );
+  const parsed = usageMeterSchema.safeParse(result);
+  if (!parsed.success) throw new Error("Invalid Vercel usage meter; no verified total");
+  const meter = parsed.data;
+  const end = Date.parse(meter.to);
+  if (meter.metric.slug !== slug || Date.parse(meter.from) !== Date.parse(window.from) ||
+      end > Date.parse(window.to) || end < Date.parse(window.to) - 60_000 ||
+      Date.parse(meter.queriedAt) < end || Date.parse(meter.queriedAt) > Date.parse(window.to) + 60_000 ||
+      Object.keys(meter.filterBy).length > 0) {
+    throw new Error("Vercel usage meter returned a different reporting window or scope");
   }
-  const { from, to } = window;
-  const qs = new URLSearchParams({
-    teamId,
-    type,
-    from,
-    to,
-  });
-  const result = await vercelApiGetJson(`/v2/usage?${qs.toString()}`);
-  const parsed = z.object({ data: z.array(z.record(z.string(), z.unknown())), lastUpdate: z.string().optional() }).safeParse(result);
-  if (!parsed.success) throw new Error(`Invalid Vercel ${type} response; usage unavailable`);
-  const dates = new Set<string>();
-  const data = parsed.data.data.filter(day => {
-    if (typeof day.date !== "string" || !Number.isFinite(Date.parse(day.date))) throw new Error("Invalid Vercel usage date");
-    const date = day.date.slice(0, 10);
-    if (date < from.slice(0, 10) || date > to.slice(0, 10)) return false;
-    if (dates.has(date)) throw new Error("Duplicate Vercel daily bucket");
-    dates.add(date);
-    return true;
-  });
-  if (dates.size !== 30) throw new Error("Vercel returned incomplete daily buckets");
-  return { ...parsed.data, data };
+  return meter;
 }
 
-function sumField(days: UsageApiDay[], field: keyof UsageApiDay) {
-  if (days.length === 0) return null;
-  let total = 0;
-  for (const day of days) {
-    const value = day[field];
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
-    total += value;
-  }
-  return total;
-}
+// Invalidate old complete-day/legacy-counter caches after changing the meter source.
+const PLATFORM_CACHE_VERSION = 2;
 
 const PLATFORM_BLOB_PATHNAME = "daily-emails/platform-usage.json";
 /** Pre-rename path — read fallback until the next successful save. */
 const LEGACY_PLATFORM_BLOB_PATHNAME = "agent-dave/platform-usage.json";
 
 type PlatformUsageCache = {
+  version: number;
   updatedAt: string;
   teamId: string;
   from: string;
@@ -633,6 +619,8 @@ function platformUnavailable(reason: string): UsageMetric[] {
       "ops",
       reason,
     ),
+    unavailable("blob-team-storage", "Blob storage · rolling team average", null, "bytes", reason),
+    unavailable("blob-data-transfer", "Blob Data Transfer", null, "bytes", reason),
   ];
 }
 
@@ -641,9 +629,10 @@ export function parsePlatformUsageCache(text: string, teamId: string, now = new 
   try {
     const cached = JSON.parse(text) as PlatformUsageCache;
     const age = now.getTime() - Date.parse(cached.updatedAt);
-    if (cached.teamId !== teamId || !Number.isFinite(age) || age < 0 || age >= 24 * 60 * 60 * 1000 ||
-        !Number.isFinite(Date.parse(cached.from)) || !Number.isFinite(Date.parse(cached.to)) || Date.parse(cached.to) > Date.parse(cached.updatedAt) ||
-        Date.parse(cached.from) >= Date.parse(cached.to) ||
+    if (cached.version !== PLATFORM_CACHE_VERSION || cached.teamId !== teamId || !Number.isFinite(age) || age < 0 || age >= 24 * 60 * 60 * 1000 ||
+        !Number.isFinite(Date.parse(cached.from)) || !Number.isFinite(Date.parse(cached.to)) ||
+        Date.parse(cached.to) !== Date.parse(cached.updatedAt) ||
+        Date.parse(cached.to) - Date.parse(cached.from) !== 30 * 24 * 60 * 60 * 1000 ||
         !Array.isArray(cached.metrics) || cached.metrics.length === 0 ||
         cached.metrics.some(m => !m || typeof m.available !== "boolean" || !Number.isFinite(m.used) || m.used < 0 ||
           (m.limit !== null && (!Number.isFinite(m.limit) || m.limit < 0)) || typeof m.detail !== "string" ||
@@ -690,6 +679,7 @@ async function savePlatformUsageCache(metrics: UsageMetric[], teamId: string, wi
   try {
     const token = blobToken();
     const payload: PlatformUsageCache = {
+      version: PLATFORM_CACHE_VERSION,
       updatedAt: now.toISOString(),
       teamId,
       from: window.from,
@@ -719,55 +709,46 @@ async function savePlatformUsageCache(metrics: UsageMetric[], teamId: string, wi
   }
 }
 
-/** Independent endpoint failures retain the other live readings. */
+/** Each meter fails independently, preserving available readings and dated fallbacks. */
 export async function collectPlatformUsage(now = new Date()): Promise<UsageMetric[]> {
   const window = usageWindow(now);
   const teamId = resolveTeamId();
   if (!teamId) return platformUnavailable("Set VERCEL_TEAM_ID or link the project");
-  const [requests, blob, team] = await Promise.allSettled([
-    fetchUsageType("requests", teamId, window),
-    fetchUsageType("storage_blob", teamId, window),
-    vercelApiGetJson(`/v2/teams/${encodeURIComponent(teamId)}`),
-  ]);
-  const planResult = team.status === "fulfilled"
-    ? z.object({ billing: z.object({ plan: z.string() }) }).safeParse(team.value)
-    : null;
-  const plan = planResult?.success ? planResult.data.billing.plan : null;
-  const isHobby = plan === "hobby";
-  const range = `${window.from.slice(0, 10)}–${window.to.slice(0, 10)} UTC · last 30 complete days · all projects in team`;
-  const cached = requests.status === "rejected" || blob.status === "rejected"
-    ? await loadPlatformUsageCache(teamId, now) : null;
-  function reading(id: string, label: string, fields: string[], referenceLimit: number, unit: string,
-    result: PromiseSettledResult<UsageApiResponse>): UsageMetric {
-    const limit = isHobby ? referenceLimit : null;
-    if (result.status === "rejected") {
-      const fallback = cached?.find(m => m.id === id);
-      if (fallback) return { ...fallback, ...(plan ? {limit, percent:roundPercent(fallback.used,limit),limitBasis:isHobby ? "provider" as const : "unknown" as const} : {}) };
-      return unavailable(id, label, limit, unit, `${range} · source unavailable`);
-    }
-    const totals = fields.map(field => sumField(result.value.data ?? [], field));
-    if (totals.some(value => value === null)) {
-      return unavailable(id, label, limit, unit, `${range} · API omitted or returned invalid counters; no verified total`);
-    }
-    const used = totals.reduce<number>((sum, value) => sum + (value ?? 0), 0);
-    const updated = result.value.lastUpdate;
-    const asOf = updated && Number.isFinite(Date.parse(updated))
-      ? `provider updated ${new Date(updated).toISOString()}` : "provider update time unavailable";
-    return metric({ id, label, used, limit, unit, available:true, source:"live",
-      limitBasis:isHobby ? "provider" : "unknown",
-      detail:`${range} · ${asOf} · ${isHobby ? "Hobby included allowance" : plan ? `Plan: ${plan}; cap unverified` : "Plan unavailable; cap unverified"}${id === "fast-data-transfer" ? "; CDN transfer only; origin transfer not included" : ""}` });
-  }
-  const metrics = [
-    reading("fast-data-transfer", "Fast Data Transfer", ["bandwidth_incoming_bytes", "bandwidth_outgoing_bytes"], HOBBY_FAST_DATA_TRANSFER_BYTES,"bytes",requests),
-    reading("edge-requests", "CDN Requests", ["request_hit_count", "request_miss_count"], HOBBY_EDGE_REQUESTS,"requests",requests),
-    reading("function-invocations", "Function invocations", ["function_invocation_successful_count", "function_invocation_error_count", "function_invocation_timeout_count", "function_invocation_throttle_count"], HOBBY_FUNCTION_INVOCATIONS,"invocations",requests),
-    reading("blob-simple-ops", "Blob simple operations", ["blob_simple_request_count"], BLOB_HOBBY_SIMPLE_OPS,"ops",blob),
-    reading("blob-advanced-ops", "Blob advanced operations", ["blob_advanced_request_count"], BLOB_HOBBY_ADVANCED_OPS,"ops",blob),
+  const definitions = [
+    { id: "fast-data-transfer", label: "Fast Data Transfer", slug: "fast_data_transfer", limit: HOBBY_FAST_DATA_TRANSFER_BYTES, unit: "bytes" },
+    { id: "edge-requests", label: "CDN Requests", slug: "edge_requests", limit: HOBBY_EDGE_REQUESTS, unit: "requests" },
+    { id: "function-invocations", label: "Function invocations", slug: "function_invocations", limit: HOBBY_FUNCTION_INVOCATIONS, unit: "invocations" },
+    { id: "blob-simple-ops", label: "Blob simple operations", slug: "blob_simple_operations", limit: BLOB_HOBBY_SIMPLE_OPS, unit: "ops" },
+    { id: "blob-advanced-ops", label: "Blob advanced operations", slug: "blob_advanced_operations", limit: BLOB_HOBBY_ADVANCED_OPS, unit: "ops" },
+    { id: "blob-team-storage", label: "Blob storage · rolling team average", slug: "blob_storage_size", limit: BLOB_HOBBY_STORAGE_BYTES, unit: "bytes" },
+    { id: "blob-data-transfer", label: "Blob Data Transfer", slug: "blob_data_transfer", limit: BLOB_HOBBY_DATA_TRANSFER_BYTES, unit: "bytes" },
   ];
-  // Never re-date a cached observation after a failed fetch.
-  if (requests.status === "fulfilled" && blob.status === "fulfilled") {
-    await savePlatformUsageCache(metrics, teamId, window, now);
-  }
+  const [readings, team] = await Promise.all([
+    Promise.allSettled(definitions.map(d => fetchUsageMeter(d.slug, teamId, window))),
+    vercelApiGetJson(`/v2/teams/${encodeURIComponent(teamId)}`).catch(() => null),
+  ]);
+  const planResult = z.object({ billing: z.object({ plan: z.string() }) }).safeParse(team);
+  const plan = planResult.success ? planResult.data.billing.plan : null;
+  const isHobby = plan === "hobby";
+  const cached = readings.some(r => r.status === "rejected") ? await loadPlatformUsageCache(teamId, now) : null;
+  const metrics = definitions.map((d, index) => {
+    const result = readings[index];
+    const limit = isHobby ? d.limit : null;
+    if (result.status === "rejected") {
+      const fallback = cached?.find(m => m.id === d.id && m.available);
+      if (fallback) return { ...fallback, ...(plan ? { limit, percent: roundPercent(fallback.used, limit), limitBasis: isHobby ? "provider" as const : "unknown" as const } : {}) };
+      return unavailable(d.id, d.label, limit, d.unit, "Rolling last 30 days · all projects/stores in team · metered usage unavailable");
+    }
+    const meter = result.value;
+    const range = `${formatHumanDate(meter.from, { withTime: true })}–${formatHumanDate(meter.to, { withTime: true })}`;
+    const note = d.id === "blob-team-storage" ? "; provider average over this rolling window; dashboard Latest value may differ"
+      : d.id === "fast-data-transfer" ? "; CDN transfer only; origin transfer not included" : "";
+    return metric({ id: d.id, label: d.label, used: meter.results.totalValue, limit, unit: d.unit,
+      available: true, source: "live", limitBasis: isHobby ? "provider" : "unknown",
+      detail: `${range} · rolling last 30 days, including today · all projects/stores in team · queried ${formatHumanDate(meter.queriedAt, { withTime: true })} · ${isHobby ? "Hobby included allowance" : plan ? `Plan: ${plan}; cap unverified` : "Plan unavailable; cap unverified"}${note}` });
+  });
+  // Never re-date cached observations after a partial outage.
+  if (readings.every(r => r.status === "fulfilled")) await savePlatformUsageCache(metrics, teamId, window, now);
   return metrics;
 }
 
