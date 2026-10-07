@@ -32,12 +32,13 @@ test("operational data lives exclusively in its own HTML and plain-text email", 
     assert.match(content, /https:\/\/example.com\/markets\/offline-markets-secret/);
   }
   for (const content of [renderOperationsHtml(report), renderOperationsText(report)]) {
-    for (const expected of ["uwhmap.com", "Places API", "Nearby Search Enterprise", "AI Gateway month-to-date spend", "Resend monthly emails", "Provisional GA4", "Export data can arrive late"]) {
+    for (const expected of ["uwhmap.com", "Places API", "Nearby Search Enterprise", "AI Gateway month-to-date spend", "Resend monthly emails", "Export data can arrive late"]) {
       assert.ok(content.includes(expected), `Missing ${expected}`);
     }
     assert.doesNotMatch(content, /offline-markets-secret|Speeches|WEB TRENDS|REDDIT/);
     assert.ok(content.includes(report.gcpBilling!.reportsUrl));
     assert.match(content, /before both daily emails are sent/);
+    assert.doesNotMatch(content, /Provisional GA4/);
   }
 });
 

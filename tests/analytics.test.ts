@@ -58,7 +58,8 @@ for (const users of [0, 12]) {
     const report = { ...briefFixture(), sites, usage: { collectedAt: "2026-10-03T01:00:00Z", thresholdPercent: 50, metrics: [], watch: [] } };
     assert.match(renderOperationsHtml(report), /Yesterday · 1 Oct 2026/);
     assert.match(renderOperationsText(report), /Yesterday \(1 Oct 2026\)/);
-    assert.match(renderOperationsText(report), /Provisional GA4/);
+    assert.doesNotMatch(renderOperationsHtml(report), /Provisional GA4/);
+    assert.doesNotMatch(renderOperationsText(report), /Provisional GA4/);
     assert.match(renderOperationsHtml(report), /restaurantroulette.app/);
     assert.match(renderOperationsText(report), /restaurantroulette.app/);
   });

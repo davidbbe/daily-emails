@@ -347,11 +347,6 @@ function deltaColor(delta: number | null) {
   return delta > 0 ? "#047857" : "#b42318";
 }
 
-function deltaBadgeBg(delta: number | null) {
-  if (delta === null || delta === 0) return "#f1f5f9";
-  return delta > 0 ? "#ecfdf5" : "#fef2f2";
-}
-
 function formatCount(n: number) {
   return Math.round(n).toLocaleString("en-US");
 }
@@ -377,41 +372,21 @@ function siteAccent(label: string) {
   return accents[hash] ?? accents[0];
 }
 
-function renderDeltaBadge(delta: number | null) {
-  const label = formatDeltaPercent(delta);
-  return `<span style="display:inline-block;font-size:11px;font-weight:700;letter-spacing:0.02em;color:${deltaColor(delta)};background:${deltaBadgeBg(delta)};border-radius:999px;padding:3px 8px;vertical-align:middle;">${escapeHtml(label)} vs prior day</span>`;
-}
-
 function renderHeroKpi(
   label: string,
   value: string,
-  delta?: number | null,
-  opts?: { emphasize?: boolean },
+  delta: number | null,
+  first = false,
 ) {
-  const valueSize = opts?.emphasize ? "26px" : "20px";
-  const deltaHtml =
-    delta === undefined
-      ? ""
-      : `<div style="margin-top:6px;">${renderDeltaBadge(delta)}</div>`;
-  return `<td class="stack-col" style="padding:0 6px;vertical-align:top;width:33.33%;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;">
-      <tr>
-        <td style="padding:12px 12px 14px 12px;">
-          <div style="font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;">${escapeHtml(label)}</div>
-          <div style="margin-top:6px;font-size:${valueSize};line-height:1.15;font-weight:700;color:#0f172a;">${escapeHtml(value)}</div>
-          ${deltaHtml}
-        </td>
-      </tr>
-    </table>
+  return `<td width="33.33%" style="width:33.33%;padding:10px 6px 8px;vertical-align:top;text-align:center;${first ? "" : "border-left:1px solid #e2e8f0;"}">
+    <div style="font-size:11px;line-height:15px;font-weight:600;color:#64748b;">${escapeHtml(label)}</div>
+    <div style="margin-top:3px;line-height:26px;white-space:nowrap;"><span style="font-size:22px;font-weight:700;color:#0f172a;vertical-align:middle;">${escapeHtml(value)}</span><span style="margin-left:6px;font-size:12px;font-weight:700;color:${deltaColor(delta)};vertical-align:middle;">${escapeHtml(formatDeltaPercent(delta))}</span></div>
   </td>`;
 }
 
 function renderSecondaryMetric(label: string, value: string) {
-  return `<td class="stack-col" style="padding:0 4px;vertical-align:top;width:50%;">
-    <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;">
-      <div style="font-size:10px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8;">${escapeHtml(label)}</div>
-      <div style="margin-top:4px;font-size:15px;font-weight:700;color:#334155;">${escapeHtml(value)}</div>
-    </div>
+  return `<td width="50%" style="width:50%;padding:8px 6px;text-align:center;font-size:12px;line-height:18px;color:#64748b;">
+    ${escapeHtml(label)}&nbsp; <strong style="color:#334155;white-space:nowrap;">${escapeHtml(value)}</strong>
   </td>`;
 }
 
@@ -531,31 +506,25 @@ function renderSiteCard(site: SiteAnalytics) {
                 </td>
               </tr>
             </table>
-            ${
-              site.freshnessNote
-                ? `<div style="margin-top:10px;font-size:12px;line-height:1.45;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 10px;">${escapeHtml(formatHumanDatesInText(site.freshnessNote))}</div>`
-                : ""
-            }
           </td>
         </tr>
         <tr>
-          <td style="padding:8px 12px 4px 12px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <td style="padding:8px 18px 4px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;">
               <tr>
-                ${renderHeroKpi("Users", formatCount(site.metrics.activeUsers), usersDelta, { emphasize: true })}
+                ${renderHeroKpi("Users", formatCount(site.metrics.activeUsers), usersDelta, true)}
                 ${renderHeroKpi("Sessions", formatCount(site.metrics.sessions), sessionsDelta)}
                 ${renderHeroKpi("Pageviews", formatCount(site.metrics.screenPageViews), viewsDelta)}
               </tr>
-            </table>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:8px 14px 4px 14px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-              <tr>
-                ${renderSecondaryMetric("Bounce rate", formatBounceRate(site.metrics.bounceRate))}
-                ${renderSecondaryMetric("Avg duration", formatSessionDuration(site.metrics.averageSessionDuration))}
-              </tr>
+              <tr><td colspan="3" style="padding:0 6px 8px;text-align:center;font-size:11px;line-height:15px;color:#64748b;">Change vs prior day</td></tr>
+              <tr><td colspan="3" style="border-top:1px solid #e2e8f0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;">
+                  <tr>
+                    ${renderSecondaryMetric("Bounce rate", formatBounceRate(site.metrics.bounceRate))}
+                    ${renderSecondaryMetric("Avg duration", formatSessionDuration(site.metrics.averageSessionDuration))}
+                  </tr>
+                </table>
+              </td></tr>
             </table>
           </td>
         </tr>
@@ -999,9 +968,10 @@ function renderUsageBrandHeader(opts: {
 function renderUsageTable(opts: {
   headerHtml: string;
   metrics: UsageMetric[];
+  rowsHtml?: string;
 }) {
   if (opts.metrics.length === 0) return "";
-  const rows = opts.metrics.map(renderUsageRow).join("");
+  const rows = opts.rowsHtml ?? opts.metrics.map(renderUsageRow).join("");
   return `<tr>
     <td style="padding:0 0 14px 0;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
@@ -1020,6 +990,51 @@ function renderUsageTable(opts: {
   </tr>`;
 }
 
+function renderPlatformUsageTable(metrics: UsageMetric[], logoHtml: string) {
+  const live = metrics.filter(m => m.available && m.source !== "cached");
+  const parts = (m: UsageMetric) => formatHumanDatesInText(m.detail).split(/ · |; /);
+  const range = (m: UsageMetric) => parts(m).find(p => /^\d.*UTC.*[–—].*UTC$/.test(p));
+  const ranges = new Set(live.map(range).filter(Boolean));
+  const sharedRange = ranges.size === 1 ? [...ranges][0] : undefined;
+  const hobby = live.some(m => parts(m).includes("Hobby included allowance"));
+  const notes = [
+    hobby ? "Limits shown are Hobby allowances." : "",
+    metrics.some(m => m.id === "fast-data-transfer") ? "Fast transfer: CDN only." : "",
+    metrics.some(m => m.id === "blob-team-storage") ? "Storage: rolling team average; dashboard Latest may differ." : "",
+  ].filter(Boolean).join(" ");
+  const rows = metrics.map(m => {
+    const unknown = m.limitBasis === "unknown";
+    const status = !m.available ? "Unavailable" : unknown ? "Cap unverified" : m.limit == null ? "No cap" : `${m.percent}%`;
+    const amount = (value: number, formatted: string) => m.unit === "bytes" || m.unit === "USD" ? formatted : formatCount(value);
+    const used = amount(m.used, formatMetricUsed(m));
+    const limit = m.limit == null ? "" : amount(m.limit, formatMetricLimit(m));
+    const value = !m.available ? "—" : unknown || m.limit == null ? used : `${used} / ${limit}`;
+    // Keep full dated cache/error context; only trim known boilerplate from live readings.
+    const detail = !m.available || m.source === "cached" ? formatHumanDatesInText(m.detail) : parts(m).filter(p =>
+      p !== sharedRange &&
+      !/^rolling last 30 days|^all (projects|stores|team stores)|^queried /i.test(p) &&
+      p !== "Hobby included allowance" &&
+      !/^(CDN transfer only|origin transfer not included|provider average over this rolling window|dashboard Latest value may differ)$/.test(p)
+    ).join(" · ");
+    return `<tr>
+      <td style="padding:8px 6px 8px 0;border-bottom:1px solid #f1f5f9;font-size:12px;line-height:17px;font-weight:600;color:#0f172a;vertical-align:top;">${escapeHtml(m.label)}${m.source === "cached" ? ' <span style="font-size:10px;color:#92400e;">CACHED</span>' : ""}</td>
+      <td style="padding:8px 6px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:12px;line-height:17px;color:#334155;vertical-align:top;">${escapeHtml(value)}</td>
+      <td style="padding:8px 0 8px 6px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:12px;line-height:17px;font-weight:700;color:${unknown ? "#64748b" : percentColor(m.percent, m.available)};vertical-align:top;">${escapeHtml(status)}</td>
+    </tr>${detail ? `<tr><td colspan="3" style="padding:0 0 8px;font-size:11px;line-height:15px;color:#64748b;">${escapeHtml(detail)}</td></tr>` : ""}`;
+  }).join("");
+  const heading = `<tr>
+    <th scope="col" width="42%" style="padding:6px 6px 6px 0;text-align:left;font-size:10px;color:#64748b;">Metric</th>
+    <th scope="col" width="43%" style="padding:6px;text-align:right;font-size:10px;color:#64748b;">Used / limit</th>
+    <th scope="col" width="15%" style="padding:6px 0 6px 6px;text-align:right;font-size:10px;color:#64748b;">Usage</th>
+  </tr>`;
+  return renderUsageTable({
+    headerHtml: `${renderUsageBrandHeader({logoHtml, title: "Vercel platform"})}
+      <div style="margin-top:5px;font-size:11px;line-height:16px;color:#64748b;">Rolling 30 days, including today · All projects &amp; stores${sharedRange ? `<br />Live readings: ${escapeHtml(sharedRange)}` : ""}</div>`,
+    metrics,
+    rowsHtml: `${heading}${rows}${notes ? `<tr><td colspan="3" style="padding:8px 0 2px;font-size:10px;line-height:15px;color:#64748b;">${escapeHtml(notes)}</td></tr>` : ""}`,
+  });
+}
+
 function renderUsageReport(usage: UsageReport) {
   const { vercel, resend } = splitUsageMetrics(usage.metrics);
   const gateway = vercel.filter(m => m.id === "ai-gateway");
@@ -1033,14 +1048,7 @@ function renderUsageReport(usage: UsageReport) {
       headerHtml: renderUsageBrandHeader({ logoHtml: vercelLogo, title: "AI Gateway", subtitle: "Account spend · Credit balance" }),
       metrics: gateway,
     })}
-    ${renderUsageTable({
-      headerHtml: renderUsageBrandHeader({
-        logoHtml: vercelLogo,
-        title: "Vercel platform",
-        subtitle: "Team usage · All projects",
-      }),
-      metrics: platform,
-    })}
+    ${renderPlatformUsageTable(platform, vercelLogo)}
     ${renderUsageTable({
       headerHtml: renderUsageBrandHeader({ logoHtml: vercelLogo, title: "Connected Blob store", subtitle: "Current snapshot" }),
       metrics: store,
@@ -1414,9 +1422,6 @@ export function renderOperationsText(report: OperationsReport) {
       lines.push(
         `  Yesterday (${formatHumanDate(site.date, { withTime: false })})`,
       );
-      if (site.freshnessNote) {
-        lines.push(`  ${formatHumanDatesInText(site.freshnessNote)}`);
-      }
       lines.push(
         `  Users: ${Math.round(site.metrics.activeUsers)} (${usersDelta})`,
       );

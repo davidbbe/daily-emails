@@ -50,9 +50,11 @@ https://your-app.vercel.app/markets/<MARKETS_PAGE_SECRET>
 Both use the existing `EMAIL_FROM`, `EMAIL_TO`, and cron schedule; no new environment variables or second cron job are needed.
 
 - **Markets, News & Trends · date**: markets-page CTA, speeches and announcements, web trends, and Reddit. Market details remain on the saved hosted page.
-- **Analytics, Billing & Usage · date**: a dedicated operations layout with reporting-site count, cloud-spend overview (with its actual date range), quota watch near the top, GA4 site cards, Cloud Billing costs and monthly API/SKU usage, and Vercel/AI Gateway/Blob/Resend usage with progress bars. Cards stack on mobile. Missing reports are labeled unavailable; provisional and cached readings retain their notes.
+- **Analytics, Billing & Usage · date**: a dedicated operations layout with reporting-site count, cloud-spend overview (with its actual date range), quota watch near the top, GA4 site cards, Cloud Billing costs and monthly API/SKU usage, and Vercel/AI Gateway/Blob/Resend usage with progress bars. GA4 daily metrics share a compact three-column panel on desktop and mobile, with each value and its change vs prior day on the same line and a slim bounce-rate/duration row. Missing reports are labeled unavailable; billing and usage retain their freshness notes.
 
 Each email has its own payload-derived Resend idempotency key. The cron response preserves `emailId` for the main digest and adds `emailIds` and `deliveries` for both emails. It returns HTTP 500 on a partial failure with the accepted email's ID and the failed email's error; `ok: true` requires both IDs. History follows acceptance of the main digest, even if the operations delivery fails. Generating a different payload on a later run can still send another email; this does not guarantee one pair per calendar day.
+
+Vercel platform usage uses a compact metric / used-limit / percentage table. Live readings share their date range and scope once; cached readings and failures retain their individual dated details. CDN-only transfer and average storage definitions appear in a short footer. Plain text retains the full usage details.
 
 ## What’s in the emails (data + AI)
 
@@ -212,7 +214,7 @@ Tests are offline and mock provider responses. The production build needs networ
 - Missing Resend configuration fails before research or AI spending. A send counts as successful only when Resend returns an email ID.
 - Identical email payloads share a Resend idempotency key, protecting retries within [Resend's 24-hour window](https://resend.com/docs/dashboard/emails/idempotency-keys). Regenerating a new brief changes the payload; this is not a distributed lock or a guarantee of one run per calendar day.
 - Markets persistence is best-effort before sending, so the CTA can load immediately. History is updated only after confirmed main-digest delivery. Missing Blob on Vercel leaves the markets page empty and history unavailable.
-- GA4 always reports property-local yesterday, including zero activity, with a provisional-data note. Recent values can change during processing; zero activity is not treated as proof of a delay.
+- GA4 always reports property-local yesterday, including zero activity. Recent values remain provisional in collected data, but the repeated processing notice is omitted from both email formats. Zero activity is not treated as proof of a delay.
 - Billing discovery selects only the configured account's export, and queries filter by billing account. Dataset/table discovery and query results follow every page within a shared 60-second budget. Later-page failures, repeated tokens, and row-count mismatches produce an unavailable report instead of incomplete totals. Set `GCP_BILLING_BQ_TABLE` to skip discovery.
 - Saved snapshots currently record `hasPreviousBrief`; no day-over-day news-mover comparison is generated.
 

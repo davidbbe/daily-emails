@@ -220,6 +220,24 @@ test("invalid, scoped, stale or mismatched Vercel meters never produce a quota t
   assert.ok((await collectPlatformUsage(now)).every(m => m.available && m.used === 0));
 });
 
+test("compact platform usage shares live dates but retains cache dates and failures", () => {
+  const report = operationsFixture();
+  const range = "3 Sept 2026, 09:00 UTC–3 Oct 2026, 09:00 UTC";
+  report.usage.watch = [];
+  report.usage.metrics = [
+    { id: "edge-requests", label: "CDN Requests", used: 10, limit: 100, unit: "requests", percent: 10, available: true, source: "live", limitBasis: "provider", detail: `${range} · rolling last 30 days, including today · all projects/stores in team · Hobby included allowance` },
+    { id: "function-invocations", label: "Function invocations", used: 20, limit: 100, unit: "invocations", percent: 20, available: true, source: "live", limitBasis: "provider", detail: `${range} · rolling last 30 days, including today · all projects/stores in team · Hobby included allowance` },
+    { id: "blob-simple-ops", label: "Blob simple operations", used: 5, limit: null, unit: "ops", percent: 0, available: true, source: "cached", limitBasis: "unknown", detail: "2 Oct 2026, 09:00 UTC · cached observation; Live refresh failed: meter timeout" },
+    { id: "blob-advanced-ops", label: "Blob advanced operations", used: 0, limit: 2000, unit: "ops", percent: 0, available: false, detail: "Meter unavailable: permission denied" },
+  ];
+  const html = renderOperationsHtml(report);
+  assert.equal(html.split(range).length - 1, 1);
+  for (const text of ["10 / 100", "20 / 100", "10%", "20%", "CACHED", "2 Oct 2026, 09:00 UTC", "meter timeout", "Cap unverified", "Unavailable", "permission denied"]) {
+    assert.ok(html.includes(text), `Missing ${text}`);
+  }
+  assert.doesNotMatch(html, />0%</);
+});
+
 test("HTML and plain text format dates in older notes without rewriting URLs", () => {
   const brief = operationsFixture();
   const detail = "2026-09-06–2026-10-05 UTC · provider updated 2026-10-06T10:00:15.011Z · https://example.com/2026-10-06";
