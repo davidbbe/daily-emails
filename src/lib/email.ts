@@ -26,6 +26,7 @@ import {
   type GcpBillingReport,
 } from "@/lib/gcp-billing";
 import type { RedditSubFeed, RedditWindow } from "@/lib/reddit";
+import { estimatedOverage, recordedRequests, type RapidApiUsageReport } from "@/lib/rapidapi-usage";
 import { looksNonEnglish, type BriefTrendItem } from "@/lib/trends";
 import {
   formatMetricLimit,
@@ -940,6 +941,7 @@ function splitUsageMetrics(metrics: UsageMetric[]) {
   const vercel: UsageMetric[] = [];
   const resend: UsageMetric[] = [];
   for (const m of metrics) {
+    if (m.id === "rapidapi-unogs-daily") continue;
     if (isResendUsageMetric(m)) resend.push(m);
     else vercel.push(m);
   }
@@ -1060,6 +1062,55 @@ function renderUsageReport(usage: UsageReport) {
       }),
       metrics: resend,
     })}`;
+}
+
+function renderRapidApiUsage(report?: RapidApiUsageReport) {
+  if (!report) return "";
+  const snapshot = report.snapshot;
+  const dashboard = "https://rapidapi.com/console/5745913/billing/subscriptions-and-usage";
+  if (!report.available || !snapshot) return renderUnavailableSection("RapidAPI · TV Roulette", report.detail, dashboard);
+  const tracking = snapshot.trackingStartedAt
+    ? `Tracking started ${formatHumanDate(snapshot.trackingStartedAt)}.`
+    : "Tracking has not started yet.";
+  return `${sectionLabel("RapidAPI · TV Roulette")}
+    <tr><td style="padding:0 0 14px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;"><tr><td style="padding:18px;">
+      <div style="font-size:17px;font-weight:700;color:#0f172a;">unogsNG · TV Roulette</div>
+      <div style="padding:6px 0 12px;font-size:12px;line-height:1.6;color:#64748b;">${snapshot.dailyLimit.toLocaleString("en-US")} requests per subscription day · ${formatUsd(snapshot.overageRateUsd)} per extra request (configured plan). The allowance resets each day; it is not pooled across the month.${snapshot.dailyCapEnforced ? ` TV Roulette enforces a ${snapshot.dailyLimit}-request daily cap.` : ""}<br />Observed ${escapeHtml(formatHumanDate(snapshot.observedAt))}. ${escapeHtml(tracking)}</div>
+      ${snapshot.periods.map((period, index) => {
+        if (index > 0 && !period.days.some(day => day.requests != null)) return "";
+        const rows = period.days.map(day => {
+          const over = day.requests == null ? null : Math.max(0, day.requests - snapshot.dailyLimit) * snapshot.overageRateUsd;
+          const color = over != null && over > 0 ? "#b45309" : "#334155";
+          const status = day.status === "untracked" ? "Untracked" : day.status === "upcoming" ? "Upcoming" : day.status === "partial" ? "Partial" : "";
+          return `<tr style="color:${color};"><td style="padding:5px 0;">${escapeHtml(formatHumanDate(day.start, { withTime: false }))}${status ? `<br /><span style="font-size:10px;color:#94a3b8;">${status}</span>` : ""}</td><td style="text-align:right;">${day.requests == null ? "—" : day.requests.toLocaleString("en-US")}</td><td style="text-align:right;">${over == null ? "—" : formatUsd(over)}</td></tr>`;
+        }).join("");
+        return `<div style="padding:12px 0 6px;font-size:13px;font-weight:700;color:#0f172a;">${index === 0 ? "Current billing period" : "Previous billing period"}</div>
+          <div style="font-size:12px;line-height:1.6;color:#475569;">Billing start: ${escapeHtml(formatHumanDate(period.start))}<br />Billing end: ${escapeHtml(formatHumanDate(period.end))} (exclusive)<br /><strong>${recordedRequests(period).toLocaleString("en-US")} recorded requests · ${formatUsd(estimatedOverage(period, snapshot))} estimated overage</strong></div>
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px;border-collapse:collapse;font-size:12px;line-height:1.4;color:#334155;"><thead><tr><th scope="col" style="padding:6px 0;text-align:left;font-size:11px;color:#64748b;">Day starting (UTC)</th><th scope="col" style="padding:6px 0;text-align:right;font-size:11px;color:#64748b;">Recorded</th><th scope="col" style="padding:6px 0;text-align:right;font-size:11px;color:#64748b;">Est. overage</th></tr></thead><tbody>${rows}</tbody></table>`;
+      }).join("")}
+      <div style="padding-top:12px;font-size:11px;line-height:1.6;color:#64748b;">Each row is a 24-hour quota window starting at ${escapeHtml(snapshot.billingAnchor.slice(11, 19))} UTC, not midnight. Partial windows include today or the start of tracking. ${escapeHtml(report.detail)}</div>
+      <a href="${dashboard}" style="display:inline-block;padding:12px 0 0;font-size:12px;font-weight:700;color:#1a73e8;text-decoration:none;">Open RapidAPI billing →</a>
+    </td></tr></table></td></tr>`;
+}
+
+function rapidApiUsageText(report?: RapidApiUsageReport): string[] {
+  if (!report) return [];
+  const lines = ["", "RAPIDAPI · UNOGSNG · TV ROULETTE"];
+  const snapshot = report.snapshot;
+  if (!report.available || !snapshot) return [...lines, `Unavailable: ${report.detail}`];
+  lines.push(`${snapshot.dailyLimit} requests per subscription day · ${formatUsd(snapshot.overageRateUsd)} per extra request (configured plan). The allowance resets daily.${snapshot.dailyCapEnforced ? ` TV Roulette enforces a ${snapshot.dailyLimit}-request daily cap.` : ""}`,
+    `Observed ${formatHumanDate(snapshot.observedAt)}. ${snapshot.trackingStartedAt ? `Tracking started ${formatHumanDate(snapshot.trackingStartedAt)}.` : "Tracking has not started yet."}`);
+  snapshot.periods.forEach((period, index) => {
+    if (index > 0 && !period.days.some(day => day.requests != null)) return;
+    lines.push(index === 0 ? "Current billing period" : "Previous billing period",
+      `Billing start: ${formatHumanDate(period.start)}`,
+      `Billing end: ${formatHumanDate(period.end)} (exclusive)`,
+      `${recordedRequests(period)} recorded requests · ${formatUsd(estimatedOverage(period, snapshot))} estimated overage`);
+    for (const day of period.days) lines.push(`- ${formatHumanDate(day.start)}–${formatHumanDate(day.end)}: ${day.requests == null ? day.status : `${day.requests} recorded requests · ${formatUsd(Math.max(0, day.requests - snapshot.dailyLimit) * snapshot.overageRateUsd)} estimated overage · ${day.status}`}`);
+  });
+  lines.push("Each row is a 24-hour subscription quota window, not a midnight calendar day.", report.detail,
+    "https://rapidapi.com/console/5745913/billing/subscriptions-and-usage");
+  return lines;
 }
 
 export function renderBriefHtml(brief: DailyBrief) {
@@ -1381,6 +1432,7 @@ export function renderOperationsHtml(report: OperationsReport) {
           ${renderUsageWatch(usage)}
           ${report.sites.length ? renderSitesSection(report.sites) : renderUnavailableSection("Google Analytics", ANALYTICS_UNAVAILABLE)}
           ${billing ? renderGcpBillingSection(billing) : renderUnavailableSection("Google Cloud Billing", BILLING_UNAVAILABLE)}
+          ${renderRapidApiUsage(usage.rapidApi)}
           ${sectionLabel("Provider usage")}
           <tr><td style="padding:0 4px 12px;font-size:12px;line-height:1.5;color:#64748b;">Observed ${escapeHtml(formatHumanDate(usage.collectedAt))}. Usage is collected before both daily emails are sent. Cached readings and reset times are labeled below.</td></tr>
           ${renderUsageReport(usage)}
@@ -1535,6 +1587,7 @@ export function renderOperationsText(report: OperationsReport) {
     }
   }
 
+  lines.push(...rapidApiUsageText(usage.rapidApi));
   const { vercel, resend } = splitUsageMetrics(usage.metrics);
   if (vercel.length > 0) {
     lines.push("", "VERCEL USAGE");

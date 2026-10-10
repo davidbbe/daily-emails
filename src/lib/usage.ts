@@ -18,6 +18,7 @@ import {
   getBlobAccess,
 } from "@/lib/config";
 import { formatHumanDate, formatHumanDatesInText } from "@/lib/dates";
+import { collectRapidApiUsage, rapidApiDailyMetric, type RapidApiUsageReport } from "@/lib/rapidapi-usage";
 
 export type UsageMetric = {
   id: string;
@@ -34,7 +35,7 @@ export type UsageMetric = {
   available: boolean;
   error?: string;
   /** Unverified plan limits must never be presented as provider caps. */
-  limitBasis?: "provider" | "budget" | "unknown" | "snapshot";
+  limitBasis?: "provider" | "budget" | "configured" | "unknown" | "snapshot";
   source?: "live" | "cached";
 };
 
@@ -44,6 +45,7 @@ export type UsageReport = {
   metrics: UsageMetric[];
   /** Metrics at or above the watch threshold */
   watch: UsageMetric[];
+  rapidApi?: RapidApiUsageReport;
 };
 
 function envNumber(name: string, fallback: number) {
@@ -754,12 +756,13 @@ export async function collectPlatformUsage(now = new Date()): Promise<UsageMetri
 
 /** Collect AI Gateway, Blob, platform, and Resend usage. Failures are soft. */
 export async function collectUsageReport(): Promise<UsageReport> {
-  const [aiGateway, blobStorage, platformMetrics, resendMetrics] =
+  const [aiGateway, blobStorage, platformMetrics, resendMetrics, rapidApi] =
     await Promise.all([
       collectAiGateway(),
       collectBlobStorage(),
       collectPlatformUsage(),
       collectResendQuota(),
+      collectRapidApiUsage(),
     ]);
 
   const metrics = [
@@ -767,6 +770,7 @@ export async function collectUsageReport(): Promise<UsageReport> {
     ...platformMetrics,
     blobStorage,
     ...resendMetrics,
+    rapidApiDailyMetric(rapidApi),
   ];
   const thresholdPercent = USAGE_WATCH_THRESHOLD;
   const watch = metrics.filter(
@@ -778,5 +782,6 @@ export async function collectUsageReport(): Promise<UsageReport> {
     thresholdPercent,
     metrics,
     watch,
+    rapidApi,
   };
 }

@@ -22,7 +22,7 @@ Every day at **09:00 UTC** (Hobby timing may land anytime in the 09:00–09:59 w
 11. Loads the last successfully delivered slim snapshot (when available); currently records availability, without generating day-over-day movers
 12. Summarizes news, trends, whale activity, and valuation multiples with **Vercel AI Gateway** (`openai/gpt-5-mini` by default)
 13. Saves a **markets brief** payload for the secret hosted page (Blob when configured, otherwise `.data/markets-latest.json`)
-14. Collects **usage** after AI generation and before either email is sent (AI Gateway credits, Vercel platform usage, Blob storage/operations, Resend usage), with a **quota watch** for capped readings ≥50% of their limit
+14. Collects **usage** after AI generation and before either email is sent (AI Gateway credits, Vercel platform usage, Blob storage/operations, Resend usage, and TV Roulette's recorded unogsNG requests), with a **quota watch** for capped readings ≥50% of their limit
 15. Emails `EMAIL_TO` via **Resend** twice, each with HTML + plain text: the main digest with its hosted markets CTA, and a separate analytics, billing, and usage report
 16. After confirmed main-digest delivery, saves a slim snapshot (Vercel Blob when configured, otherwise `.data/previous-brief.json`). Both deliveries are attempted even if one fails
 
@@ -189,6 +189,20 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://your-app.vercel.app/api/dai
 6. After the first successful run, open `/markets/<MARKETS_PAGE_SECRET>`
 
 Optional: override `AI_MODEL` after checking current Gateway availability and pricing.
+
+## RapidAPI unogsNG usage (TV Roulette)
+
+The operations email includes subscription billing start/end timestamps and every 24-hour quota day in the current cycle. It shows recorded outgoing request attempts, the configured daily allowance, and estimated daily/cycle overage costs. The previous cycle is also shown when tracking covers any of its days. The current day's recorded usage joins quota watch at 50% of the configured daily allowance. Costs are calculated per day, never by averaging requests across the month.
+
+The RapidAPI transaction inspected on 10 October 2026 charged **$36.10 for 361 excess requests** during **9 September–9 October 2026, 10:51 UTC**. The existing Basic plan has **100 requests per subscription day**, with **$0.10 per additional request**. Billing is request-based; that bill was not a byte-transfer charge. The invoice displays times to the minute; confirm the precise reset time if RapidAPI provides seconds. RapidAPI's [pricing documentation](https://docs.rapidapi.com/v2/docs/api-pricing) explains subscription-time daily resets, and its [billing export API](https://docs.rapidapi.com/docs/exporting-api-consumer-billing-data) is for enterprise hubs, not rapidapi.com accounts.
+
+Setup after reviewing both repositories' changes:
+
+1. On TV Roulette's Netlify project, set a dedicated random `UNOGS_USAGE_SECRET` and `UNOGS_BILLING_ANCHOR=2026-01-09T10:51:00Z`. Ensure the existing Netlify Blobs credentials are available to the title functions (`NETLIFY_SITE_ID`/`SITE_ID` and `NETLIFY_AUTH_TOKEN`). The tracker uses a separate `unogs-usage-v1` store; it does not clear the response cache. Set `UNOGS_DAILY_REQUEST_LIMIT=100` to enforce a shared daily cap. `UNOGS_OVERAGE_PRICE_USD=0.10` reflects the inspected plan; update them if the plan changes.
+2. On Daily Emails, set `TV_ROULETTE_USAGE_URL=https://tvroulette.app/api/unogs-usage` and `TV_ROULETTE_USAGE_SECRET` to the same reporting secret. Never use the RapidAPI key as the reporting secret.
+3. Deploy both apps to production after configuration. Daily Emails makes one bounded, authenticated, no-store read of the report; it never calls unogsNG, spends RapidAPI credits, or needs a browser session.
+
+Tracking begins with the first recorded request after the TV Roulette change goes live. Earlier days are **untracked**, not zero; first/current windows are partial and future days are upcoming. Calendar midnight is not the quota boundary: 10:51 UTC is 18:51 in Manila. These are **recorded attempts from TV Roulette**, not an authoritative RapidAPI invoice: failed requests, other apps/keys, configured pricing, and best-effort storage failures can differ from provider billing. Estimated cost over an incomplete cycle covers only recorded attempts. TV Roulette atomically reserves requests across instances before calling RapidAPI. Quota/storage failures use cached/local results. The initial partial day is blocked until the next reset because earlier usage is unknown; fresh calls pause within one minute either side of resets to allow for minute-only invoice timestamps. Immutable per-attempt records avoid lost concurrent increments; the source reads every storage page before returning counts. Missing configuration, timeouts, invalid dates/coverage, stale reports, or failed pages produce an unavailable card without blocking either email. No historic backfill, browser credentials, API keys, or private response bodies are included in the email.
 
 ## Validation and operations
 

@@ -3,11 +3,18 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { renderBriefHtml, renderBriefText, renderOperationsHtml, renderOperationsText } from "@/lib/email";
 import { briefFixture, operationsFixture } from "../tests/fixtures";
+import { rapidApiFixture } from "../tests/rapidapi-fixture";
 import type { GcpBillingDay } from "@/lib/gcp-billing";
 
 const output = path.resolve(".data/email-preview");
 const operations = operationsFixture();
+operations.generatedAt = rapidApiFixture().observedAt;
+operations.usage.rapidApi = { available: true, snapshot: rapidApiFixture(), detail: "Offline example: recorded attempts only. Untracked days are not zero; costs are estimates." };
 const month = operationsFixture();
+month.usage.rapidApi = operations.usage.rapidApi;
+const rapidApiFull = operationsFixture();
+rapidApiFull.generatedAt = rapidApiFixture().observedAt;
+rapidApiFull.usage.rapidApi = { available: true, snapshot: rapidApiFixture("2026-09-09T10:51:00.000Z"), detail: "Offline example: both billing periods contain recorded attempts; costs are estimates." };
 const billing = month.gcpBilling!;
 billing.startDate = "2026-09-01";
 billing.endDate = "2026-09-30";
@@ -34,6 +41,7 @@ for (const [filename, content] of [
   ["operations.html", renderOperationsHtml(operations)],
   ["operations.txt", renderOperationsText(operations)],
   ["operations-month.html", renderOperationsHtml(month)],
+  ["operations-rapidapi-full.html", renderOperationsHtml(rapidApiFull)],
   ["operations-mobile.html", '<!doctype html><html><head><title>Mobile email preview</title></head><body style="margin:0;background:#e2e8f0"><iframe title="390px mobile preview" src="operations-month.html" style="width:390px;height:3600px;border:0;display:block;margin:auto;"></iframe></body></html>'],
 ]) {
   const file = path.join(output, filename);
