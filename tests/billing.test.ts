@@ -84,6 +84,7 @@ test("billing totals include all query pages from the same job and location", as
   assert.equal(report?.error, undefined);
   assert.equal(report?.total, 60);
   assert.equal(report?.services[0].usageCost, 60);
+  assert.equal(report?.days.find(day => day.date === row(0).f[0].v)?.billedEvents, 3);
 });
 
 test("billing discovery finds the account export on later dataset and table pages", async (t) => {
@@ -155,6 +156,7 @@ test("zero-cost exports retain MTD, usage, and freshness without claiming pricin
   assert.equal(report?.total, 0);
   assert.equal(report?.period, "month_to_date");
   assert.equal(report?.apiUsage[0].skus[0].quantity, 42);
+  assert.equal(report?.days.find(day => day.date === free.f[0].v)?.billedEvents, 42);
   assert.match(report?.freshnessNote ?? "", /Export last updated/);
   assert.doesNotMatch(report?.freshnessNote ?? "", /still being priced/);
 });
@@ -187,8 +189,31 @@ test("Gemini image input/output billing units are tokens and unknown currency co
   const report=await collectGcpBilling();
   assert.equal(report?.apiUsage[0].skus[0].unit,"tokens");
   assert.equal(report?.apiUsage[0].calls,null);
+  assert.equal(report?.days.find(day => day.date === r.f[0].v)?.billedEvents, null);
   r.f[4].v="";
   assert.ok((await collectGcpBilling())?.error);
+});
+
+test("daily billed-event counts use request SKUs only and retain measured zero without an extra query", async t => {
+  setup(t);
+  const first = row(0); first.f[1].v = "Places API"; first.f[6].v = "5";
+  const second = row(2); second.f[1].v = "Places API"; second.f[6].v = "6";
+  const tokens = row(1); tokens.f[1].v = "Gemini API"; tokens.f[2].v = "Gemini Image Output"; tokens.f[6].v = "500000"; tokens.f[7].v = "count";
+  const bytes = row(0); bytes.f[6].v = "999999"; bytes.f[7].v = "bytes";
+  let queries = 0;
+  t.mock.method(globalThis, "fetch", async (_input: unknown, init: RequestInit) => {
+    assert.equal(init.method, "POST"); queries++;
+    return Response.json({ jobComplete: true, rows: [first, second, tokens, bytes] });
+  });
+  let report = await collectGcpBilling();
+  assert.equal(queries, 1);
+  assert.equal(report?.days.find(day => day.date === first.f[0].v)?.billedEvents, 11);
+  assert.equal(report?.total, 3);
+  assert.ok(report?.days.some(day => day.billedEvents === null));
+  first.f[6].v = "0"; second.f[6].v = "0";
+  report = await collectGcpBilling();
+  assert.equal(queries, 2);
+  assert.equal(report?.days.find(day => day.date === first.f[0].v)?.billedEvents, 0);
 });
 
 test("historical rows cannot become a verified zero-cost current month",async t=> {

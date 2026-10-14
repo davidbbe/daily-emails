@@ -60,6 +60,8 @@ export type GcpBillingDay = {
   date: string;
   /** Service display name → USD for that UTC day */
   costs: Record<string, number>;
+  /** Request-like billed SKU events; excludes tokens/bytes. Null means unavailable. */
+  billedEvents?: number | null;
 };
 
 export type GcpBillingReport = {
@@ -669,6 +671,7 @@ function reportFromRows(
     }
   >();
   const dayCosts = new Map<string, Record<string, number>>();
+  const dayEvents = new Map<string, { count: number; valid: boolean }>();
   let total = 0;
   let previousTotal = 0;
   let savings = 0;
@@ -694,6 +697,12 @@ function reportFromRows(
       const day = dayCosts.get(row.day) ?? {};
       day[row.service] = (day[row.service] ?? 0) + net;
       dayCosts.set(row.day, day);
+      if (unit === "calls") {
+        const events = dayEvents.get(row.day) ?? { count: 0, valid: true };
+        if (row.usageAmount == null || !Number.isFinite(row.usageAmount) || row.usageAmount < 0) events.valid = false;
+        else events.count += row.usageAmount;
+        dayEvents.set(row.day, events);
+      }
     } else if (previousDays.has(row.day)) {
       bucket.previous += net;
       previousTotal += net;
@@ -797,6 +806,7 @@ function reportFromRows(
   const days = emptyDays(window.startDate, window.endDate).map((day) => ({
     date: day.date,
     costs: dayCosts.get(day.date) ?? {},
+    billedEvents: dayEvents.get(day.date)?.valid ? Math.round(dayEvents.get(day.date)!.count) : null,
   }));
   const latestUsageDate = rows.map((r) => r.day).sort().at(-1);
   const firstUsageDate = rows.map((r) => r.day).sort()[0];

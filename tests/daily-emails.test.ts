@@ -86,6 +86,8 @@ test("operations retries reuse a separate payload-derived idempotency key", asyn
   assert.equal(body.subject, "Analytics, Billing & Usage · 3 Oct 2026");
   assert.deepEqual(body.to, ["reader@example.com"]);
   assert.ok(body.html && body.text);
+  assert.equal(body.attachments[0].content_id, "gcp-cumulative-net-cost");
+  assert.match(body.html, /src="cid:gcp-cumulative-net-cost"/);
 });
 
 test("a billing renderer failure retains analytics, usage and the billing source link", async (t) => {
@@ -162,7 +164,7 @@ test("billing chart retains negative net credits, full dates and unreported days
   report.gcpBilling!.days=[{date:"2026-10-01",costs:{"Places API":-0.35}},{date:"2026-10-02",costs:{}}];
   report.gcpBilling!.comparisonAvailable=false;
   const html=renderOperationsHtml(report);
-  assert.match(html,/Daily net cost · USD/);assert.match(html,/Oct 1/);assert.match(html,/-\$0.35/);
-  assert.match(html,/Unreported/);assert.match(html,/Comparison unavailable/);
+  assert.match(html,/Cumulative net cost · USD/);assert.match(html,/cid:gcp-cumulative-net-cost/);assert.match(html,/-\$0.35/);
+  assert.match(html,/Missing dates are gaps/);assert.match(html,/Comparison unavailable/);
   assert.match(html,/Net cost by service/);assert.doesNotMatch(html,/MTD calls/);
 });

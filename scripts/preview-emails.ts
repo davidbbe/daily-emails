@@ -5,6 +5,9 @@ import { renderBriefHtml, renderBriefText, renderOperationsHtml, renderOperation
 import { briefFixture, operationsFixture } from "../tests/fixtures";
 import { rapidApiFixture } from "../tests/rapidapi-fixture";
 import type { GcpBillingDay } from "@/lib/gcp-billing";
+import { rapidApiChartAttachments, rapidApiChartId } from "@/lib/rapidapi-chart";
+import { gcpBillingChartAttachments, GCP_COST_CHART_ID } from "@/lib/gcp-billing-chart";
+import type { OperationsReport } from "@/lib/email";
 
 const output = path.resolve(".data/email-preview");
 const operations = operationsFixture();
@@ -23,6 +26,7 @@ billing.previousEndDate = "2026-08-30";
 billing.days = Array.from({ length: 30 }, (_, i): GcpBillingDay => ({
   date: `2026-09-${String(i + 1).padStart(2, "0")}`,
   costs: i === 29 ? {} : { "Places API": i >= 14 && i < 21 ? -0.1 : 0.15, "Gemini API": i >= 14 && i < 21 ? 0 : 0.08 },
+  billedEvents: i === 29 ? null : 30 + (i % 7) * 10,
 }));
 for (const service of billing.services) service.usageCost = Number(billing.days.reduce((sum, day) => sum + (day.costs[service.name] ?? 0), 0).toFixed(2));
 billing.total = Number(billing.services.reduce((sum, service) => sum + service.usageCost, 0).toFixed(2));
@@ -35,13 +39,29 @@ const brief = {
 };
 
 await mkdir(output, { recursive: true });
+async function operationsPreview(report: OperationsReport, name: string) {
+  const [rapidApiCharts, billingCharts] = await Promise.all([rapidApiChartAttachments(report.usage.rapidApi), gcpBillingChartAttachments(report.gcpBilling)]);
+  const attachments = [...billingCharts, ...rapidApiCharts];
+  const sources: Record<number, string | null> = { 0: null, 1: null };
+  let billingSource: string | null = null;
+  for (const attachment of attachments) {
+    const filename = `${name}-${attachment.filename}`;
+    await writeFile(path.join(output, filename), Buffer.from(attachment.content, "base64"));
+    if (attachment.content_id === GCP_COST_CHART_ID) billingSource = filename;
+    else {
+      const index = attachment.content_id === rapidApiChartId(0) ? 0 : 1;
+      sources[index] = filename;
+    }
+  }
+  return renderOperationsHtml(report, sources, billingSource);
+}
 for (const [filename, content] of [
   ["brief.html", renderBriefHtml(brief)],
   ["brief.txt", renderBriefText(brief)],
-  ["operations.html", renderOperationsHtml(operations)],
+  ["operations.html", await operationsPreview(operations, "operations")],
   ["operations.txt", renderOperationsText(operations)],
-  ["operations-month.html", renderOperationsHtml(month)],
-  ["operations-rapidapi-full.html", renderOperationsHtml(rapidApiFull)],
+  ["operations-month.html", await operationsPreview(month, "operations-month")],
+  ["operations-rapidapi-full.html", await operationsPreview(rapidApiFull, "operations-rapidapi-full")],
   ["operations-mobile.html", '<!doctype html><html><head><title>Mobile email preview</title></head><body style="margin:0;background:#e2e8f0"><iframe title="390px mobile preview" src="operations-month.html" style="width:390px;height:3600px;border:0;display:block;margin:auto;"></iframe></body></html>'],
 ]) {
   const file = path.join(output, filename);

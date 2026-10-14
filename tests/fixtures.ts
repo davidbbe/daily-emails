@@ -29,11 +29,20 @@ export function operationsFixture(): OperationsReport {
       ],
       apiUsageStartDate: "2026-10-01", apiUsageEndDate: "2026-10-02",
       apiUsage: [{ name: "Places API", color: "#4185f4", marker: "circle", calls: 850, skus: [{ name: "Nearby Search Enterprise", quantity: 850, unit: "calls", freeMonthly: 1000 }] }],
-      days: [{ date: "2026-10-01", costs: { "Places API": 2, "Gemini API": 1 } }, { date: "2026-10-02", costs: { "Places API": 3, "Gemini API": 2 } }],
+      days: [{ date: "2026-10-01", costs: { "Places API": 2, "Gemini API": 1 }, billedEvents: 300 }, { date: "2026-10-02", costs: { "Places API": 3, "Gemini API": 2 }, billedEvents: 550 }],
       freshnessNote: "Export data can arrive late; these totals may change.",
     },
     usage: {
       collectedAt: "2026-10-03T09:00:00.000Z", thresholdPercent: 50, watch: [quota, advancedQuota],
+      blobStorage: {
+        observedAt: "2026-10-03T09:00:00.000Z", available: true, totalBytes: 79_988_437, totalObjects: 1347,
+        detail: "Offline example. All team Blob stores counted once; provider metadata may lag changes. Snapshot differs from the rolling storage average used for quotas.",
+        stores: [
+          { id: "photos", name: "restaurant-roulette-photos", size: 47_574_614, count: 1302, projects: [{ id: "restaurant", name: "restaurant-roulette" }], connectionsComplete: true, access: "public", region: "iad1", status: "available" },
+          { id: "cards", name: "ai-cards-blob", size: 23_427_875, count: 31, projects: [{ id: "cards", name: "ai-cards" }], connectionsComplete: true, access: "public", region: "iad1", status: "available" },
+          { id: "shared", name: "ai-cards-staging-blob", size: 8_985_948, count: 14, projects: [{ id: "cards", name: "ai-cards" }, { id: "staging", name: "ai-cards-staging" }], connectionsComplete: true, access: "public", region: "iad1", status: "available" },
+        ],
+      },
       metrics: [
         { id: "ai-gateway", label: "AI Gateway month-to-date spend", used: 2, limit: 5, unit: "USD", percent: 40, available: true, limitBasis: "budget", source: "live", detail: "Oct 1–3 UTC · measured account spend · $3.00 credit balance · $5 configured budget; not a provider cap" },
         { id: "fast-data-transfer", label: "Fast Data Transfer", used: 12_000_000_000, limit: 100_000_000_000, unit: "bytes", percent: 12, available: true, source: "live", detail: "3 Sept 2026, 09:00 UTC–3 Oct 2026, 09:00 UTC · rolling last 30 days, including today · all projects in team · Hobby included allowance" },

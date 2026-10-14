@@ -1,4 +1,4 @@
-import { get, list, put } from "@vercel/blob";
+import { get, put } from "@vercel/blob";
 import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -46,6 +46,29 @@ export type UsageReport = {
   /** Metrics at or above the watch threshold */
   watch: UsageMetric[];
   rapidApi?: RapidApiUsageReport;
+  blobStorage?: BlobStorageReport;
+};
+
+export type BlobStoreUsage = {
+  id: string;
+  name: string;
+  size: number | null;
+  count: number | null;
+  projects: Array<{ id: string; name: string }>;
+  connectionsComplete: boolean;
+  access?: string;
+  region?: string;
+  status?: string | null;
+};
+
+export type BlobStorageReport = {
+  observedAt: string;
+  available: boolean;
+  /** Null if any store's size or count is missing; never sum a partial total. */
+  totalBytes: number | null;
+  totalObjects: number | null;
+  stores: BlobStoreUsage[];
+  detail: string;
 };
 
 function envNumber(name: string, fallback: number) {
@@ -96,7 +119,7 @@ function formatUsd(value: number) {
 }
 
 /** SI units so transfer figures match the Vercel Usage dashboard (8.66 GB, not 8.05 GiB). */
-function formatBytes(bytes: number) {
+export function formatBytes(bytes: number) {
   if (bytes < 1000) return `${bytes} B`;
   if (bytes < 1000 * 1000) return `${(bytes / 1000).toFixed(1)} KB`;
   if (bytes < 1000 * 1000 * 1000) {
@@ -176,60 +199,55 @@ function canUseBlob() {
   );
 }
 
-async function collectBlobStorage(): Promise<UsageMetric> {
-  const limit = null;
-  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
-  if (!canUseBlob()) {
-    return unavailable(
-      "blob-storage",
-      "Blob storage",
-      limit,
-      "bytes",
-      "Blob not configured (set BLOB_READ_WRITE_TOKEN)",
-    );
-  }
+const blobStoreSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  type: z.string(),
+  size: z.number().finite().nonnegative().nullish(),
+  count: z.number().int().nonnegative().nullish(),
+  totalConnectedProjects: z.number().int().nonnegative().optional(),
+  projectsMetadata: z.array(z.object({ projectId: z.string().min(1), name: z.string().min(1) })).optional(),
+  access: z.string().optional(),
+  region: z.string().optional(),
+  status: z.string().nullable().optional(),
+});
 
+/** Store metadata covers the whole team without listing every store's objects. */
+export async function collectTeamBlobStorage(now = new Date()): Promise<BlobStorageReport> {
+  const failed = (detail: string): BlobStorageReport => ({
+    observedAt: now.toISOString(), available: false, totalBytes: null, totalObjects: null, stores: [], detail,
+  });
+  const teamId = resolveTeamId();
+  if (!teamId) return failed("Team storage breakdown unavailable: set VERCEL_TEAM_ID or link the project.");
   try {
-    let cursor: string | undefined;
-    let totalBytes = 0;
-    let blobCount = 0;
-    const signal = AbortSignal.timeout(20_000);
-    const cursors = new Set<string>();
-
-    do {
-      // Pass token explicitly — with BLOB_STORE_ID set locally, the SDK can
-      // prefer store/OIDC auth and fail without VERCEL_OIDC_TOKEN.
-      const page = await list({
-        cursor,
-        limit: 1000,
-        abortSignal: signal,
-        ...(token ? { token } : {}),
-      });
-      for (const blob of page.blobs) {
-        if (!Number.isFinite(blob.size) || blob.size < 0) throw new Error("Invalid Blob object size");
-        totalBytes += blob.size;
-        blobCount += 1;
-      }
-      cursor = page.hasMore ? page.cursor : undefined;
-      if (page.hasMore && (!cursor || cursors.has(cursor))) throw new Error("Incomplete Blob listing");
-      if (cursor) cursors.add(cursor);
-    } while (cursor);
-
-    return metric({
-      id: "blob-storage",
-      label: "Blob storage · connected store",
-      used: totalBytes,
-      limit,
-      unit: "bytes",
-      detail: `${formatBytes(totalBytes)} across ${blobCount} object${blobCount === 1 ? "" : "s"} · current snapshot of this store; excludes other team stores and is not Vercel’s billed storage average`,
-      limitBasis: "snapshot",
-      source: "live",
-      available: true,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Blob list failed";
-    console.warn("usage: Blob storage failed", error);
-    return unavailable("blob-storage", "Blob storage", limit, "bytes", message);
+    // The CLI's blob list-stores --all uses this unpaginated team inventory.
+    // Parsing strips credentials and environment variables from store metadata.
+    const response = z.object({
+      stores: z.array(z.object({ type: z.string() }).passthrough()),
+      pagination: z.object({ next: z.union([z.string(), z.number()]).nullish() }).optional(),
+    }).parse(await vercelApiGetJson(`/v1/storage/stores?teamId=${encodeURIComponent(teamId)}`));
+    if (response.pagination?.next != null) throw new Error("Incomplete store inventory");
+    const seen = new Set<string>();
+    const stores = response.stores.filter(s => s.type === "blob").map(raw => {
+      const s = blobStoreSchema.parse(raw);
+      if (seen.has(s.id)) throw new Error("Duplicate Blob store");
+      seen.add(s.id);
+      const projects = [...new Map((s.projectsMetadata ?? []).map(p => [p.projectId, { id: p.projectId, name: p.name }])).values()];
+      return {
+        id: s.id, name: s.name, size: s.size ?? null, count: s.count ?? null, projects,
+        connectionsComplete: s.totalConnectedProjects != null && projects.length === s.totalConnectedProjects,
+        access: s.access, region: s.region, status: s.status,
+      };
+    }).sort((a, b) => (b.size ?? -1) - (a.size ?? -1) || a.name.localeCompare(b.name));
+    return {
+      observedAt: now.toISOString(), available: true, stores,
+      totalBytes: stores.every(s => s.size !== null) ? stores.reduce((sum, s) => sum + s.size!, 0) : null,
+      totalObjects: stores.every(s => s.count !== null) ? stores.reduce((sum, s) => sum + s.count!, 0) : null,
+      detail: "All Blob stores in the configured Vercel team, counted once. Provider store metadata may lag changes; this snapshot is separate from the rolling storage average used for quotas. Non-Blob integrations are excluded.",
+    };
+  } catch {
+    // Do not surface raw responses, which may contain sensitive store metadata.
+    return failed("Team storage breakdown unavailable: Vercel store inventory could not be verified. Check VERCEL_TOKEN and team storage permissions.");
   }
 }
 
@@ -756,19 +774,18 @@ export async function collectPlatformUsage(now = new Date()): Promise<UsageMetri
 
 /** Collect AI Gateway, Blob, platform, and Resend usage. Failures are soft. */
 export async function collectUsageReport(): Promise<UsageReport> {
-  const [aiGateway, blobStorage, platformMetrics, resendMetrics, rapidApi] =
+  const [aiGateway, platformMetrics, resendMetrics, rapidApi, teamBlobStorage] =
     await Promise.all([
       collectAiGateway(),
-      collectBlobStorage(),
       collectPlatformUsage(),
       collectResendQuota(),
       collectRapidApiUsage(),
+      collectTeamBlobStorage(),
     ]);
 
   const metrics = [
     aiGateway,
     ...platformMetrics,
-    blobStorage,
     ...resendMetrics,
     rapidApiDailyMetric(rapidApi),
   ];
@@ -783,5 +800,6 @@ export async function collectUsageReport(): Promise<UsageReport> {
     metrics,
     watch,
     rapidApi,
+    blobStorage: teamBlobStorage,
   };
 }

@@ -27,10 +27,15 @@ import {
 } from "@/lib/gcp-billing";
 import type { RedditSubFeed, RedditWindow } from "@/lib/reddit";
 import { estimatedOverage, recordedRequests, type RapidApiUsageReport } from "@/lib/rapidapi-usage";
+import { rapidApiChartAttachments, rapidApiChartId, RAPIDAPI_CHART_WIDTH, RAPIDAPI_CHART_HEIGHT, type InlineChartAttachment } from "@/lib/rapidapi-chart";
+import { cumulativeBillingSeries, gcpBillingChartAttachments, GCP_COST_CHART_ID, GCP_COST_CHART_HEIGHT } from "@/lib/gcp-billing-chart";
+import { COST_CHART_WIDTH } from "@/lib/cost-line-chart";
 import { looksNonEnglish, type BriefTrendItem } from "@/lib/trends";
 import {
+  formatBytes,
   formatMetricLimit,
   formatMetricUsed,
+  type BlobStorageReport,
   type UsageMetric,
   type UsageReport,
 } from "@/lib/usage";
@@ -616,42 +621,12 @@ function serviceMarker(service: { color: string; marker: "circle" | "square" }) 
   return `<span style="display:inline-block;width:10px;height:10px;border-radius:${radius};background:${service.color};vertical-align:middle;margin-right:8px;"></span>`;
 }
 
-function dayTotal(day: GcpBillingReport["days"][number]) {
-  return Object.values(day.costs ?? {}).reduce((sum, n) => sum + n, 0);
-}
-
-/** Short dated rows stay readable on phones; amounts remain available without CSS. */
-function renderGcpBillingChart(report: GcpBillingReport) {
-  const days = report.days ?? [];
-  if (days.length === 0) return `<div style="font-size:13px;color:#64748b;">No daily cost data.</div>`;
-  const grouped = days.length > 14;
-  const buckets: Array<{ start: string; end: string; total: number; reported: number; count: number }> = [];
-  for (let i = 0; i < days.length; i += grouped ? 7 : 1) {
-    const slice = days.slice(i, i + (grouped ? 7 : 1));
-    buckets.push({ start:slice[0].date, end:slice.at(-1)!.date, total:slice.reduce((s,d)=>s+dayTotal(d),0),
-      reported:slice.filter(d=>Object.keys(d.costs ?? {}).length > 0).length, count:slice.length });
-  }
-  const max = Math.max(...buckets.map(b=>Math.abs(b.total)), 0.01);
-  const shortDate = (iso:string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"});
-  const rows = buckets.map(b=> {
-    const width = Math.min(100, Math.max(0, Math.abs(b.total)/max*100));
-    const negative = b.total < 0;
-    const label = b.start === b.end ? shortDate(b.start) : `${shortDate(b.start)}–${shortDate(b.end)}`;
-    const missing = b.reported < b.count;
-    return `<tr>
-      <td style="width:104px;padding:7px 8px 7px 0;font-size:12px;font-weight:600;line-height:1.4;color:#334155;">${escapeHtml(label)}</td>
-      <td style="padding:7px 4px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;border-radius:4px;"><tr>
-          ${width > 0 ? `<td width="${width.toFixed(3)}%" style="height:14px;background:${negative ? "#047857" : "#2563eb"};border-radius:4px;font-size:1px;line-height:1px;">&nbsp;</td>` : ""}
-          ${width < 100 ? `<td style="height:14px;font-size:1px;line-height:1px;">&nbsp;</td>` : ""}
-        </tr></table>
-      </td>
-      <td style="width:86px;padding:7px 0 7px 8px;text-align:right;font-size:13px;font-weight:700;color:${negative ? "#047857" : "#0f172a"};white-space:nowrap;">${b.reported === 0 ? "Unreported" : formatUsd(b.total)}${missing && b.reported > 0 ? "*" : ""}</td>
-    </tr>`;
-  }).join("");
-  return `<div style="font-size:14px;font-weight:700;color:#0f172a;padding-bottom:8px;">${grouped ? "Weekly" : "Daily"} net cost · USD</div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
-    <div style="padding-top:8px;font-size:12px;line-height:1.5;color:#64748b;">Blue: net charges · Green: net credits. ${grouped ? "Seven-day groups; the last group may be shorter. " : ""}Bars show magnitude; labels retain the sign. ${buckets.some(b=>b.reported<b.count) ? "* Export rows are missing for some dates; totals include reported costs only." : ""}</div>`;
+function renderGcpBillingChart(report: GcpBillingReport, source: string | null = 'cid:' + GCP_COST_CHART_ID) {
+  if (!report.days?.length) return '<div style="font-size:13px;color:#64748b;">No daily cost data.</div>';
+  const points = cumulativeBillingSeries(report);
+  const last = points.at(-1);
+  const image = source ? `<img src="${escapeHtml(source)}" width="${COST_CHART_WIDTH}" height="${GCP_COST_CHART_HEIGHT}" alt="Cumulative reported net cost: ${last ? formatUsd(last.cost) : 'unavailable'}. Days on horizontal axis; daily request-based billed events shown as bars." style="display:block;width:100%;max-width:100%;height:auto;border:0;" />` : '<div style="padding:12px 0;font-size:12px;color:#64748b;">Cost chart unavailable.</div>';
+  return `<div style="font-size:14px;font-weight:700;color:#0f172a;padding-bottom:8px;">Cumulative net cost · USD</div>${image}<div style="padding-top:6px;font-size:11px;color:#64748b;">Bars: request-based billed events · Token usage excluded</div>${points.length < report.days.length || points.slice(1).some(p => p.startsSegment) ? '<div style="padding-top:6px;font-size:11px;color:#64748b;">Reported dates only · Missing dates are gaps.</div>' : ''}`;
 }
 
 function renderGcpBillingServices(report: GcpBillingReport) {
@@ -726,23 +701,23 @@ function renderGcpBillingApiCallGroup(group: GcpBillingApiUsage) {
     ${skuRows}`;
 }
 
-function renderGcpBillingSection(report: GcpBillingReport | null | undefined) {
+function renderGcpBillingSection(report: GcpBillingReport | null | undefined, chartSource?: string | null) {
   if (!report) return "";
   try {
-    return renderGcpBillingSectionInner(report);
+    return renderGcpBillingSectionInner(report, chartSource);
   } catch (error) {
     console.warn("gcp-billing: email section failed", error);
     return renderUnavailableSection("Google Cloud Billing", BILLING_UNAVAILABLE, report.reportsUrl);
   }
 }
 
-function renderGcpBillingSectionInner(report: GcpBillingReport) {
+function renderGcpBillingSectionInner(report: GcpBillingReport, chartSource?: string | null) {
 
   if (report.error) {
     return `${sectionLabel("Google Cloud Billing")}
     <tr>
       <td style="padding:0 0 14px 0;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
           <tr>
             <td style="height:4px;background:#4285f4;line-height:1px;font-size:1px;">&nbsp;</td>
           </tr>
@@ -836,7 +811,7 @@ function renderGcpBillingSectionInner(report: GcpBillingReport) {
           }
           <tr>
             <td style="padding:14px 14px 8px 14px;">
-              ${renderGcpBillingChart(report)}
+              ${renderGcpBillingChart(report, chartSource)}
             </td>
           </tr>
           <tr>
@@ -941,7 +916,7 @@ function splitUsageMetrics(metrics: UsageMetric[]) {
   const vercel: UsageMetric[] = [];
   const resend: UsageMetric[] = [];
   for (const m of metrics) {
-    if (m.id === "rapidapi-unogs-daily") continue;
+    if (m.id === "rapidapi-unogs-daily" || m.id === "blob-storage") continue;
     if (isResendUsageMetric(m)) resend.push(m);
     else vercel.push(m);
   }
@@ -972,7 +947,7 @@ function renderUsageTable(opts: {
   metrics: UsageMetric[];
   rowsHtml?: string;
 }) {
-  if (opts.metrics.length === 0) return "";
+  if (opts.metrics.length === 0 && opts.rowsHtml == null) return "";
   const rows = opts.rowsHtml ?? opts.metrics.map(renderUsageRow).join("");
   return `<tr>
     <td style="padding:0 0 14px 0;">
@@ -1037,10 +1012,54 @@ function renderPlatformUsageTable(metrics: UsageMetric[], logoHtml: string) {
   });
 }
 
+function blobStorageContent(report: BlobStorageReport, metrics: UsageMetric[]) {
+  const bytes = formatBytes;
+  const average = metrics.find(m => m.id === "blob-team-storage");
+  const hobbyConfirmed = average?.limitBasis === "provider" && average.limit === 1_000_000_000;
+  const allowanceLabel = hobbyConfirmed ? "Hobby allowance" : "Hobby reference";
+  const text: string[] = [];
+  if (!report.available) {
+    text.push(report.detail, `${allowanceLabel}: 1 GB (monthly average)`);
+    return { text, html: `<tr><td colspan="2" style="padding:12px 0;font-size:12px;line-height:18px;color:#64748b;">${text.map(escapeHtml).join("<br />")}</td></tr>` };
+  }
+  const total = report.totalBytes == null ? "Unavailable" : bytes(report.totalBytes);
+  const objects = report.totalObjects == null ? "Object count unavailable" : `${formatCount(report.totalObjects)} objects`;
+  const inventory = `${report.stores.length} stores · ${objects}`;
+
+  // Assign dedicated stores to their sole connected project. Keep shared and
+  // unattributed stores separate rather than inventing per-file ownership.
+  const groups = new Map<string, { label: string; stores: BlobStorageReport["stores"] }>();
+  for (const store of report.stores) {
+    const projects = [...store.projects].sort((a, b) => a.id.localeCompare(b.id));
+    const key = store.connectionsComplete && projects.length > 0 ? projects.map(p => p.id).join("|") : store.id;
+    const label = !store.connectionsComplete ? "Project attribution unavailable" : projects.length === 0 ? "Unconnected store" : `${projects.length > 1 ? "Shared: " : ""}${projects.map(p => p.name).join(" + ")}`;
+    const group = groups.get(key) ?? { label, stores: [] };
+    group.stores.push(store);
+    groups.set(key, group);
+  }
+  const rows = [...groups.values()].map(group => {
+    const size = group.stores.every(s => s.size != null) ? group.stores.reduce((sum, s) => sum + s.size!, 0) : null;
+    const count = group.stores.every(s => s.count != null) ? group.stores.reduce((sum, s) => sum + s.count!, 0) : null;
+    const stores = group.stores.map(s => `${s.name} (${[s.size == null ? "size unavailable" : bytes(s.size), s.access, s.region, s.status ? `status: ${s.status}` : undefined].filter(Boolean).join(" · ")})`).join("; ");
+    text.push(`- ${group.label}: ${size == null ? "Unavailable" : bytes(size)} · ${count == null ? "object count unavailable" : `${formatCount(count)} objects`}`, `  ${stores}`);
+    return `<tr>
+      <td style="padding:9px 6px 9px 0;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:12px;line-height:17px;color:#0f172a;"><strong>${escapeHtml(group.label)}</strong><br /><span style="font-size:11px;color:#64748b;overflow-wrap:anywhere;">${escapeHtml(stores)}</span></td>
+      <td style="padding:9px 0 9px 6px;border-bottom:1px solid #f1f5f9;vertical-align:top;text-align:right;font-size:12px;line-height:17px;color:#334155;">${size == null ? "Unavailable" : bytes(size)}<br /><span style="font-size:11px;color:#64748b;">${count == null ? "Count unavailable" : `${formatCount(count)} objects`}</span></td>
+    </tr>`;
+  }).join("");
+  text.push(`${allowanceLabel}: 1 GB (monthly average)`, `Total stored: ${total} · ${inventory}`);
+  if (report.totalBytes == null) text.push("One or more store sizes missing.");
+  return { text, html: `<tr><th scope="col" style="padding:10px 6px 6px 0;text-align:left;font-size:10px;color:#64748b;">Project / store</th><th scope="col" style="padding:10px 0 6px 6px;text-align:right;font-size:10px;color:#64748b;">Storage / objects</th></tr>
+    ${rows}
+    <tr>
+    <td width="60%" style="padding:14px 8px 14px 0;vertical-align:top;"><div style="font-size:11px;color:#64748b;">${allowanceLabel}</div><div style="margin-top:4px;font-size:22px;font-weight:700;color:#0f172a;">1 GB</div><div style="margin-top:4px;font-size:11px;color:#64748b;">Monthly average</div></td>
+    <td width="40%" style="padding:14px 0 14px 8px;text-align:right;vertical-align:top;"><div style="font-size:11px;color:#64748b;">Total stored</div><div style="margin-top:4px;font-size:22px;font-weight:700;color:#0f172a;">${escapeHtml(total)}</div><div style="margin-top:4px;font-size:11px;color:#64748b;">${escapeHtml(inventory)}</div>${report.totalBytes == null ? '<div style="margin-top:4px;font-size:11px;color:#92400e;">One or more store sizes missing.</div>' : ""}</td>
+    </tr>` };
+}
+
 function renderUsageReport(usage: UsageReport) {
   const { vercel, resend } = splitUsageMetrics(usage.metrics);
   const gateway = vercel.filter(m => m.id === "ai-gateway");
-  const store = vercel.filter(m => m.id === "blob-storage");
   const platform = vercel.filter(m => m.id !== "ai-gateway" && m.id !== "blob-storage");
   const vercelLogo = `<img src="https://assets.vercel.com/image/upload/q_auto/front/assets/design/vercel-triangle-black.png" width="16" height="14" alt="" style="display:block;border:0;outline:none;text-decoration:none;width:16px;height:14px;" />`;
   const resendLogo = `<img src="https://cdn.resend.com/brand/resend-wordmark-black.png" width="78" height="18" alt="Resend" style="display:block;border:0;outline:none;text-decoration:none;width:78px;height:18px;" />`;
@@ -1051,10 +1070,11 @@ function renderUsageReport(usage: UsageReport) {
       metrics: gateway,
     })}
     ${renderPlatformUsageTable(platform, vercelLogo)}
-    ${renderUsageTable({
-      headerHtml: renderUsageBrandHeader({ logoHtml: vercelLogo, title: "Connected Blob store", subtitle: "Current snapshot" }),
-      metrics: store,
-    })}
+    ${usage.blobStorage ? renderUsageTable({
+      headerHtml: renderUsageBrandHeader({ logoHtml: vercelLogo, title: "Blob storage", subtitle: formatHumanDate(usage.blobStorage.observedAt, { withTime: true }) }),
+      metrics: [],
+      rowsHtml: blobStorageContent(usage.blobStorage, usage.metrics).html,
+    }) : ""}
     ${renderUsageTable({
       headerHtml: renderUsageBrandHeader({
         logoHtml: resendLogo,
@@ -1064,7 +1084,7 @@ function renderUsageReport(usage: UsageReport) {
     })}`;
 }
 
-function renderRapidApiUsage(report?: RapidApiUsageReport) {
+function renderRapidApiUsage(report?: RapidApiUsageReport, chartSources?: Record<number, string | null>) {
   if (!report) return "";
   const snapshot = report.snapshot;
   const dashboard = "https://rapidapi.com/console/5745913/billing/subscriptions-and-usage";
@@ -1073,22 +1093,22 @@ function renderRapidApiUsage(report?: RapidApiUsageReport) {
     ? `Tracking started ${formatHumanDate(snapshot.trackingStartedAt)}.`
     : "Tracking has not started yet.";
   return `${sectionLabel("RapidAPI · TV Roulette")}
-    <tr><td style="padding:0 0 14px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;"><tr><td style="padding:18px;">
+    <tr><td style="padding:0 0 14px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;"><tr><td style="padding:18px;">
       <div style="font-size:17px;font-weight:700;color:#0f172a;">unogsNG · TV Roulette</div>
       <div style="padding:6px 0 12px;font-size:12px;line-height:1.6;color:#64748b;">${snapshot.dailyLimit.toLocaleString("en-US")} requests per subscription day · ${formatUsd(snapshot.overageRateUsd)} per extra request (configured plan). The allowance resets each day; it is not pooled across the month.${snapshot.dailyCapEnforced ? ` TV Roulette enforces a ${snapshot.dailyLimit}-request daily cap.` : ""}<br />Observed ${escapeHtml(formatHumanDate(snapshot.observedAt))}. ${escapeHtml(tracking)}</div>
       ${snapshot.periods.map((period, index) => {
         if (index > 0 && !period.days.some(day => day.requests != null)) return "";
-        const rows = period.days.map(day => {
-          const over = day.requests == null ? null : Math.max(0, day.requests - snapshot.dailyLimit) * snapshot.overageRateUsd;
-          const color = over != null && over > 0 ? "#b45309" : "#334155";
-          const status = day.status === "untracked" ? "Untracked" : day.status === "upcoming" ? "Upcoming" : day.status === "partial" ? "Partial" : "";
-          return `<tr style="color:${color};"><td style="padding:5px 0;">${escapeHtml(formatHumanDate(day.start, { withTime: false }))}${status ? `<br /><span style="font-size:10px;color:#94a3b8;">${status}</span>` : ""}</td><td style="text-align:right;">${day.requests == null ? "—" : day.requests.toLocaleString("en-US")}</td><td style="text-align:right;">${over == null ? "—" : formatUsd(over)}</td></tr>`;
-        }).join("");
+        const source = chartSources === undefined ? `cid:${rapidApiChartId(index)}` : chartSources[index];
+        const excessDays = period.days.filter(day => day.requests != null && day.requests > snapshot.dailyLimit);
+        const excessRows = excessDays.map(day => `<tr><td style="padding:6px 6px 6px 0;border-bottom:1px solid #f1f5f9;">${escapeHtml(formatHumanDate(day.start, { withTime: false }))}${day.status === "partial" ? ' <span style="font-size:10px;color:#64748b;">(partial)</span>' : ""}</td><td style="padding:6px;text-align:right;border-bottom:1px solid #f1f5f9;">${day.requests!.toLocaleString("en-US")}</td><td style="padding:6px 0 6px 6px;text-align:right;border-bottom:1px solid #f1f5f9;">${formatUsd((day.requests! - snapshot.dailyLimit) * snapshot.overageRateUsd)}</td></tr>`).join("");
+        const excessTable = excessRows ? `<div style="padding:12px 0 4px;font-size:12px;font-weight:600;color:#334155;">Days over the free quota</div><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12px;color:#334155;"><thead><tr><th scope="col" style="padding:6px 6px 6px 0;text-align:left;font-size:11px;color:#64748b;">Day (UTC)</th><th scope="col" style="padding:6px;text-align:right;font-size:11px;color:#64748b;">Calls</th><th scope="col" style="padding:6px 0 6px 6px;text-align:right;font-size:11px;color:#64748b;">Est. overage</th></tr></thead><tbody>${excessRows}</tbody></table>` : "";
+        const chart = source ? `<img src="${escapeHtml(source)}" width="${RAPIDAPI_CHART_WIDTH}" height="${RAPIDAPI_CHART_HEIGHT}" alt="Cumulative estimated overage: ${formatUsd(estimatedOverage(period, snapshot))}. Days on horizontal axis; cost in USD on vertical axis." style="display:block;width:100%;max-width:100%;height:auto;border:0;" />` : '<div style="padding:12px 0;font-size:12px;color:#64748b;">Cost chart unavailable.</div>';
         return `<div style="padding:12px 0 6px;font-size:13px;font-weight:700;color:#0f172a;">${index === 0 ? "Current billing period" : "Previous billing period"}</div>
           <div style="font-size:12px;line-height:1.6;color:#475569;">Billing start: ${escapeHtml(formatHumanDate(period.start))}<br />Billing end: ${escapeHtml(formatHumanDate(period.end))} (exclusive)<br /><strong>${recordedRequests(period).toLocaleString("en-US")} recorded requests · ${formatUsd(estimatedOverage(period, snapshot))} estimated overage</strong></div>
-          <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px;border-collapse:collapse;font-size:12px;line-height:1.4;color:#334155;"><thead><tr><th scope="col" style="padding:6px 0;text-align:left;font-size:11px;color:#64748b;">Day starting (UTC)</th><th scope="col" style="padding:6px 0;text-align:right;font-size:11px;color:#64748b;">Recorded</th><th scope="col" style="padding:6px 0;text-align:right;font-size:11px;color:#64748b;">Est. overage</th></tr></thead><tbody>${rows}</tbody></table>`;
+          <div style="padding-top:14px;font-size:12px;font-weight:600;color:#334155;">Cumulative estimated overage · Daily calls</div>${chart}
+          <div style="padding-top:6px;font-size:11px;color:#64748b;">Dashed line: ${snapshot.dailyLimit.toLocaleString("en-US")} free calls per day</div>${excessTable}`;
       }).join("")}
-      <div style="padding-top:12px;font-size:11px;line-height:1.6;color:#64748b;">Each row is a 24-hour quota window starting at ${escapeHtml(snapshot.billingAnchor.slice(11, 19))} UTC, not midnight. Partial windows include today or the start of tracking. ${escapeHtml(report.detail)}</div>
+      <div style="padding-top:8px;font-size:11px;line-height:1.5;color:#64748b;">Recorded costs only · Orange points are partial days · Untracked and future days are blank.</div>
       <a href="${dashboard}" style="display:inline-block;padding:12px 0 0;font-size:12px;font-weight:700;color:#1a73e8;text-decoration:none;">Open RapidAPI billing →</a>
     </td></tr></table></td></tr>`;
 }
@@ -1106,9 +1126,10 @@ function rapidApiUsageText(report?: RapidApiUsageReport): string[] {
       `Billing start: ${formatHumanDate(period.start)}`,
       `Billing end: ${formatHumanDate(period.end)} (exclusive)`,
       `${recordedRequests(period)} recorded requests · ${formatUsd(estimatedOverage(period, snapshot))} estimated overage`);
-    for (const day of period.days) lines.push(`- ${formatHumanDate(day.start)}–${formatHumanDate(day.end)}: ${day.requests == null ? day.status : `${day.requests} recorded requests · ${formatUsd(Math.max(0, day.requests - snapshot.dailyLimit) * snapshot.overageRateUsd)} estimated overage · ${day.status}`}`);
+    const excessDays = period.days.filter(day => day.requests != null && day.requests > snapshot.dailyLimit);
+    if (excessDays.length) lines.push("Days over the free quota:", ...excessDays.map(day => `- ${formatHumanDate(day.start)}: ${day.requests} calls · ${formatUsd((day.requests! - snapshot.dailyLimit) * snapshot.overageRateUsd)} estimated overage${day.status === "partial" ? " (partial day)" : ""}`));
   });
-  lines.push("Each row is a 24-hour subscription quota window, not a midnight calendar day.", report.detail,
+  lines.push("Recorded costs only. Untracked and future days are omitted.",
     "https://rapidapi.com/console/5745913/billing/subscriptions-and-usage");
   return lines;
 }
@@ -1377,7 +1398,7 @@ function renderOverviewStat(label: string, value: string, detail: string) {
   </td>`;
 }
 
-export function renderOperationsHtml(report: OperationsReport) {
+export function renderOperationsHtml(report: OperationsReport, chartSources?: Record<number, string | null>, billingChartSource?: string | null) {
   const { usage, gcpBilling: billing } = report;
   const date = formatHumanDate(report.generatedAt);
   const dateShort = formatHumanDate(report.generatedAt, { withTime: false });
@@ -1431,8 +1452,8 @@ export function renderOperationsHtml(report: OperationsReport) {
           ${sectionLabel("Quota watch", { first: true })}
           ${renderUsageWatch(usage)}
           ${report.sites.length ? renderSitesSection(report.sites) : renderUnavailableSection("Google Analytics", ANALYTICS_UNAVAILABLE)}
-          ${billing ? renderGcpBillingSection(billing) : renderUnavailableSection("Google Cloud Billing", BILLING_UNAVAILABLE)}
-          ${renderRapidApiUsage(usage.rapidApi)}
+          ${billing ? renderGcpBillingSection(billing, billingChartSource) : renderUnavailableSection("Google Cloud Billing", BILLING_UNAVAILABLE)}
+          ${renderRapidApiUsage(usage.rapidApi, chartSources)}
           ${sectionLabel("Provider usage")}
           <tr><td style="padding:0 4px 12px;font-size:12px;line-height:1.5;color:#64748b;">Observed ${escapeHtml(formatHumanDate(usage.collectedAt))}. Usage is collected before both daily emails are sent. Cached readings and reset times are labeled below.</td></tr>
           ${renderUsageReport(usage)}
@@ -1533,6 +1554,13 @@ export function renderOperationsText(report: OperationsReport) {
         );
         if (billing.insight) lines.push(`  ${billing.insight}`);
         if (billing.freshnessNote) lines.push(`  ${formatHumanDatesInText(billing.freshnessNote)}`);
+        lines.push("  Cumulative reported net cost:");
+        const costPoints = cumulativeBillingSeries(billing);
+        for (const point of costPoints) {
+          const events = billing.days.find(day => day.date === new Date(point.at).toISOString().slice(0, 10))?.billedEvents;
+          lines.push(`  - ${formatHumanDate(new Date(point.at).toISOString(), { withTime: false })}: ${formatUsd(point.cost)}${events == null ? "" : ` · ${formatCallCount(events)} billed events`}`);
+        }
+        if (costPoints.length < billing.days.length || costPoints.slice(1).some(p => p.startsSegment)) lines.push("  Reported dates only; missing dates are gaps.");
         const listed = new Set<string>();
         const skuLines = (group: { skus: GcpBillingReport["apiUsage"][number]["skus"] }) => {
           for (const sku of group.skus) {
@@ -1616,6 +1644,10 @@ export function renderOperationsText(report: OperationsReport) {
     }
   }
 
+  if (usage.blobStorage) {
+    lines.push("", "BLOB STORAGE", formatHumanDate(usage.blobStorage.observedAt, { withTime: true }), ...blobStorageContent(usage.blobStorage, usage.metrics).text);
+  }
+
   return lines.join("\n");
 }
 
@@ -1627,9 +1659,9 @@ export function getEmailConfiguration() {
   return { apiKey, from: getEmailFrom(), to: getEmailTo() };
 }
 
-async function sendEmail(kind: "brief" | "operations", subject: string, html: string, text: string) {
+async function sendEmail(kind: "brief" | "operations", subject: string, html: string, text: string, attachments: InlineChartAttachment[] = []) {
   const { apiKey, from, to } = getEmailConfiguration();
-  const body = JSON.stringify({ from, to: [to], subject, html, text });
+  const body = JSON.stringify({ from, to: [to], subject, html, text, ...(attachments.length ? { attachments } : {}) });
   const idempotencyKey = `daily-${kind}/${createHash("sha256").update(body).digest("hex")}`;
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -1670,5 +1702,8 @@ export async function sendBriefEmail(brief: DailyBrief) {
 export async function sendOperationsEmail(report: OperationsReport) {
   getEmailConfiguration();
   const dateLabel = formatHumanDate(report.generatedAt, { withTime: false });
-  return sendEmail("operations", `Analytics, Billing & Usage · ${dateLabel}`, renderOperationsHtml(report), renderOperationsText(report));
+  const [rapidApiCharts, billingCharts] = await Promise.all([rapidApiChartAttachments(report.usage.rapidApi), gcpBillingChartAttachments(report.gcpBilling)]);
+  const attachments = [...billingCharts, ...rapidApiCharts];
+  const chartSources = Object.fromEntries([0, 1].map(index => [index, attachments.some(a => a.content_id === rapidApiChartId(index)) ? `cid:${rapidApiChartId(index)}` : null]));
+  return sendEmail("operations", `Analytics, Billing & Usage · ${dateLabel}`, renderOperationsHtml(report, chartSources, billingCharts.length ? `cid:${GCP_COST_CHART_ID}` : null), renderOperationsText(report), attachments);
 }

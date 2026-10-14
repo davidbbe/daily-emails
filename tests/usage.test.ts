@@ -127,7 +127,85 @@ test("live Resend usage survives a cache write failure", async (t) => {
   assert.ok((await collectResendQuota(now)).every((m) => m.available));
 });
 
-const { collectPlatformUsage, parsePlatformUsageCache, collectAiGateway } = await import("@/lib/usage");
+const { collectPlatformUsage, parsePlatformUsageCache, collectAiGateway, collectTeamBlobStorage } = await import("@/lib/usage");
+
+const blobStores = [
+  { id: "one", name: "photos", type: "blob", size: 40_000_000, count: 20, totalConnectedProjects: 1, projectsMetadata: [{ projectId: "a", name: "Restaurant <Roulette>" }], access: "public", region: "iad1", status: "available", secrets: { token: "must-not-render" } },
+  { id: "two", name: "shared", type: "blob", size: 10_000_000, count: 5, totalConnectedProjects: 2, projectsMetadata: [{ projectId: "a", name: "Restaurant <Roulette>" }, { projectId: "b", name: "Cards" }] },
+  { id: "three", name: "cards", type: "blob", size: 20_000_000, count: 10, totalConnectedProjects: 1, projectsMetadata: [{ projectId: "b", name: "Cards" }] },
+  { id: "integration", name: "Database", type: "integration", size: 999_000_000 },
+];
+
+test("team Blob snapshot counts each store once, preserves shared connections and excludes integrations and secrets", async t => {
+  await platformSetup(t);
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init: RequestInit) => {
+    const url = new URL(String(input));
+    assert.equal(url.pathname, "/v1/storage/stores");
+    assert.equal(url.searchParams.get("teamId"), "offline-team");
+    assert.equal(init.method, "GET");
+    assert.ok(init.signal);
+    return Response.json({ stores: blobStores });
+  });
+  const snapshot = await collectTeamBlobStorage(now);
+  assert.equal(snapshot.available, true);
+  assert.equal(snapshot.totalBytes, 70_000_000);
+  assert.equal(snapshot.totalObjects, 35);
+  assert.equal(snapshot.stores.length, 3);
+  assert.equal(snapshot.stores.find(s => s.id === "two")?.projects.length, 2);
+  assert.doesNotMatch(JSON.stringify(snapshot), /must-not-render|secrets/);
+  const report = operationsFixture();
+  report.usage.blobStorage = snapshot;
+  for (const rendered of [renderOperationsHtml(report), renderOperationsText(report)]) {
+    for (const detail of ["Hobby allowance", "1 GB", "70.00 MB", "35 objects", "40.00 MB", "20.00 MB", "10.00 MB", "Shared:"]) assert.ok(rendered.includes(detail), detail);
+    assert.doesNotMatch(rendered, /must-not-render|secrets/);
+    assert.doesNotMatch(rendered, /% of total|Project breakdown uses connected stores|connected store|Snapshot only|Hobby free plan:|Remaining storage allowance/);
+  }
+  assert.match(renderOperationsHtml(report), /Restaurant &lt;Roulette&gt;/);
+});
+
+test("missing store measurements preserve known rows but never fabricate team totals or project ownership", async t => {
+  await platformSetup(t);
+  t.mock.method(globalThis, "fetch", async () => Response.json({ stores: [blobStores[0], { ...blobStores[1], size: undefined, count: undefined, totalConnectedProjects: 3 }] }));
+  const snapshot = await collectTeamBlobStorage(now);
+  assert.equal(snapshot.available, true);
+  assert.equal(snapshot.totalBytes, null);
+  assert.equal(snapshot.totalObjects, null);
+  assert.equal(snapshot.stores[1].connectionsComplete, false);
+  const report = operationsFixture(); report.usage.blobStorage = snapshot;
+  for (const rendered of [renderOperationsHtml(report), renderOperationsText(report)]) {
+    assert.match(rendered, /[Oo]ne or more store sizes missing/);
+    assert.match(rendered, /Project attribution unavailable/);
+    assert.match(rendered, /40.00 MB/);
+    assert.doesNotMatch(rendered, /% of total/);
+  }
+});
+
+test("invalid, duplicate, paginated and failed Blob inventories do not masquerade as an empty team", async t => {
+  await platformSetup(t);
+  for (const payload of [{ stores: [{ ...blobStores[0], size: -1 }] }, { stores: [blobStores[0], blobStores[0]] }, { stores: blobStores, pagination: { next: "more" } }, {}]) {
+    t.mock.method(globalThis, "fetch", async () => Response.json(payload));
+    const snapshot = await collectTeamBlobStorage(now);
+    assert.equal(snapshot.available, false); assert.equal(snapshot.totalBytes, null);
+    const report = operationsFixture(); report.usage.blobStorage = snapshot;
+    assert.match(renderOperationsHtml(report), /Team storage breakdown unavailable/);
+  }
+  t.mock.method(globalThis, "fetch", async () => new Response("secret response body", { status: 403 }));
+  const failed = await collectTeamBlobStorage(now);
+  assert.equal(failed.available, false); assert.doesNotMatch(failed.detail, /secret response body/);
+  t.mock.method(globalThis, "fetch", async () => Response.json({ stores: [] }));
+  const empty = await collectTeamBlobStorage(now);
+  assert.equal(empty.available, true); assert.equal(empty.totalBytes, 0); assert.equal(empty.totalObjects, 0);
+});
+
+test("Blob allowance is labeled a reference for another or unknown plan", () => {
+  const report = operationsFixture();
+  const average = report.usage.metrics.find(m => m.id === "blob-team-storage")!;
+  average.limit = null; average.limitBasis = "unknown";
+  for (const rendered of [renderOperationsHtml(report), renderOperationsText(report)]) {
+    assert.match(rendered, /Hobby reference/);
+    assert.doesNotMatch(rendered, /Remaining storage allowance/);
+  }
+});
 const totals: Record<string, number> = {
   fast_data_transfer: 300, edge_requests: 120, function_invocations: 30,
   blob_simple_operations: 2681, blob_advanced_operations: 1362,
@@ -241,11 +319,11 @@ test("compact platform usage shares live dates but retains cache dates and failu
 test("HTML and plain text format dates in older notes without rewriting URLs", () => {
   const brief = operationsFixture();
   const detail = "2026-09-06–2026-10-05 UTC · provider updated 2026-10-06T10:00:15.011Z · https://example.com/2026-10-06";
-  brief.usage = { collectedAt: now.toISOString(), thresholdPercent: 50, watch: [], metrics: [{ id: "blob-storage", label: "Blob storage · connected store", used: 24_770_000, limit: null, unit: "bytes", percent: 0, available: true, limitBasis: "snapshot", detail }] };
+  brief.usage = { collectedAt: now.toISOString(), thresholdPercent: 50, watch: [], metrics: [{ id: "resend-daily", label: "Resend daily emails", used: 3, limit: 100, unit: "emails", percent: 3, available: true, limitBasis: "provider", detail }] };
   for (const rendered of [renderOperationsHtml(brief), renderOperationsText(brief)]) {
     assert.match(rendered, /6 Sept 2026–5 Oct 2026 UTC/);
     assert.match(rendered, /6 Oct 2026, 10:00 UTC/);
-    assert.match(rendered, /Snapshot only/);
+    assert.match(rendered, /3 emails/);
     assert.match(rendered, /https:\/\/example.com\/2026-10-06/);
     assert.doesNotMatch(rendered, /Cap unverified|No cap|provider updated 2026-/);
   }
