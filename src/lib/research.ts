@@ -2,6 +2,8 @@ import {
   categories,
   fetchTrendingNews,
   fetchTrendingNow,
+  normalizeTrendingRow,
+  parseTrendingRssXml,
   type TrendingNowItem,
 } from "google-trends-now";
 import Parser from "rss-parser";
@@ -158,42 +160,213 @@ async function attachNews(
   }
 }
 
+const TRENDS_PAGE_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+export type TrendNewsFields = Pick<TrendItem, "newsTitle" | "newsUrl" | "newsSource">;
+
+function trendVolume(item: TrendingNowItem) {
+  const value = Number(item.search_volume);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function normalizeTrendTitle(title: string) {
+  return title.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+function decodeXml(value: string) {
+  return value
+    .replace(/^<!\[CDATA\[([\s\S]*)\]\]>$/, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .trim();
+}
+
+function xmlTag(block: string, localName: string) {
+  const match = block.match(
+    new RegExp(
+      `<(?:[\\w.-]+:)?${localName}\\b[^>]*>([\\s\\S]*?)</(?:[\\w.-]+:)?${localName}>`,
+      "i",
+    ),
+  );
+  return match ? decodeXml(match[1]) : "";
+}
+
+function sliceJsonArray(text: string, start: number) {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index++) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === "[") depth += 1;
+    else if (char === "]") {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index + 1);
+    }
+  }
+  throw new Error("Trends page list was truncated");
+}
+
+/** Rows embedded in the public Trending Now page (`AF_initDataCallback`). */
+export function embeddedTrendRows(html: string): unknown[][] {
+  const marker = "AF_initDataCallback({key: 'ds:0'";
+  const markerAt = html.indexOf(marker);
+  if (markerAt < 0) throw new Error("Trends page has no embedded list");
+  const dataAt = html.indexOf("data:", markerAt);
+  const arrayAt = html.indexOf("[", dataAt);
+  if (dataAt < 0 || arrayAt < 0) throw new Error("Trends page list was missing");
+  const parsed = JSON.parse(sliceJsonArray(html, arrayAt)) as unknown;
+  const rows = Array.isArray(parsed) ? parsed[1] : undefined;
+  if (!Array.isArray(rows)) throw new Error("Trends page list was empty");
+  return rows.filter((row): row is unknown[] => Array.isArray(row));
+}
+
+/** First related headline from a Google Trends RSS document, keyed by title. */
+export function rssNewsByTitle(xml: string): Map<string, TrendNewsFields> {
+  const news = new Map<string, TrendNewsFields>();
+  for (const match of xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)) {
+    const block = match[1];
+    const title = xmlTag(block, "title");
+    if (!title) continue;
+    const newsTitle = xmlTag(block, "news_item_title");
+    const newsUrl = xmlTag(block, "news_item_url");
+    const newsSource = xmlTag(block, "news_item_source");
+    if (!newsTitle && !newsUrl) continue;
+    news.set(normalizeTrendTitle(title), {
+      newsTitle: newsTitle || undefined,
+      newsUrl: newsUrl || undefined,
+      newsSource: newsSource || undefined,
+    });
+  }
+  return news;
+}
+
+/** Drop Sports when categories exist, then keep the highest-volume rows. */
+export function selectTrendingItems(
+  items: TrendingNowItem[],
+  limit: number,
+  dropSports: boolean,
+) {
+  const pool = dropSports ? items.filter((item) => !isSportsTrend(item)) : items;
+  return [...pool].sort((a, b) => trendVolume(b) - trendVolume(a)).slice(0, limit);
+}
+
+async function fetchEmbeddedTrends(geo: string): Promise<TrendingNowItem[]> {
+  const url = `https://trends.google.com/trending?geo=${encodeURIComponent(geo)}&hl=en&hours=24`;
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": TRENDS_PAGE_UA,
+      Accept: "text/html",
+    },
+    signal: AbortSignal.timeout(20_000),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`trends page HTTP ${response.status}`);
+  const rows = embeddedTrendRows(await response.text());
+  return rows.map((row, index) =>
+    normalizeTrendingRow(row, { position: index + 1, geo, hours: 24 }),
+  );
+}
+
+async function fetchTrendRss(geo: string) {
+  const url = `https://trends.google.com/trending/rss?geo=${encodeURIComponent(geo)}`;
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": TRENDS_PAGE_UA,
+      Accept: "application/rss+xml,text/xml,*/*",
+    },
+    signal: AbortSignal.timeout(15_000),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`trends RSS HTTP ${response.status}`);
+  const xml = await response.text();
+  return {
+    items: parseTrendingRssXml(xml, { geo, hours: 24 }),
+    news: rssNewsByTitle(xml),
+  };
+}
+
 /**
- * Pull 2× the display limit from Trending Now, drop Sports-category rows,
- * then keep the top `limit` remaining (by search volume).
+ * Trending Now for one country.
+ * The batch endpoint can answer successfully with no rows (it started doing
+ * that in Nov 2026). The public trends page still embeds the full list,
+ * including categories, and RSS is the last resort.
  */
 async function fetchCountryTrends(geo: string, limit = 10): Promise<TrendItem[]> {
   const fetchLimit = Math.max(limit * 2, limit);
-  const output = await fetchTrendingNow({
-    geo,
-    hours: 24,
-    status: "active",
-    sort: "volume",
-    limit: fetchLimit,
-    fallback: "rss",
-    timeoutMs: 20000,
-  });
+  let selected: TrendingNowItem[] = [];
+  let source: "batch" | "page" | "rss" = "batch";
 
-  if (output.fetch_status !== "success" && output.items.length === 0) {
-    throw new Error(
-      `Google Trends failed for geo=${geo}: ${output.error ?? output.fetch_status}`,
-    );
+  try {
+    const output = await fetchTrendingNow({
+      geo,
+      hours: 24,
+      status: "active",
+      sort: "volume",
+      limit: fetchLimit,
+      fallback: "none",
+      timeoutMs: 20000,
+    });
+    if (output.items.length > 0) {
+      selected = selectTrendingItems(output.items, limit, output.source !== "rss_limited");
+      source = output.source === "rss_limited" ? "rss" : "batch";
+    }
+  } catch (error) {
+    console.warn(`trends: geo=${geo} batch failed`, error);
   }
 
-  if (output.source === "rss_limited") {
+  if (selected.length === 0) {
+    try {
+      const active = (await fetchEmbeddedTrends(geo)).filter((item) => item.active === true);
+      selected = selectTrendingItems(active, limit, true);
+      if (selected.length > 0) source = "page";
+    } catch (error) {
+      console.warn(`trends: geo=${geo} trends page failed`, error);
+    }
+  }
+
+  let rssNews = new Map<string, TrendNewsFields>();
+  try {
+    const rss = await fetchTrendRss(geo);
+    rssNews = rss.news;
+    if (selected.length === 0) {
+      selected = selectTrendingItems(rss.items, limit, false);
+      source = "rss";
+    }
+  } catch (error) {
+    console.warn(`trends: geo=${geo} RSS failed`, error);
+  }
+
+  if (selected.length === 0) {
+    throw new Error(`Google Trends failed for geo=${geo}`);
+  }
+
+  if (source === "rss") {
     console.warn(
       `trends: geo=${geo} fell back to RSS (no category field); sports filter skipped`,
     );
+  } else if (source === "page") {
+    console.warn(`trends: geo=${geo} used the public trends page (${selected.length} items)`);
   }
 
-  const withoutSports =
-    output.source === "rss_limited"
-      ? output.items
-      : output.items.filter((item) => !isSportsTrend(item));
-
-  const selected = withoutSports.slice(0, limit);
   const newsFields = await Promise.all(
-    selected.map((item) => attachNews(item, geo)),
+    selected.map(async (item) => {
+      if (source === "batch") {
+        const resolved = await attachNews(item, geo);
+        if (resolved.newsTitle) return resolved;
+      }
+      return rssNews.get(normalizeTrendTitle(item.query)) ?? {};
+    }),
   );
 
   return selected.map((item, index) => {

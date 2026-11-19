@@ -260,7 +260,7 @@ export const TREND_REGIONS = [
 
 export type TrendRegionId = (typeof TREND_REGIONS)[number]["id"];
 
-/** Subreddits included in the daily brief (top posts, no LLM) */
+/** Subreddits in the daily brief. Highest-scoring posts from the last 24 hours, no LLM. */
 export const REDDIT_SUBREDDITS = [
   { id: "pics", limit: 6 },
   { id: "generativeAI", limit: 6 },
